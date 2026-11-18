@@ -68,6 +68,37 @@ test_cli() {
 
   output="$(bash "$SCRIPT" --version 2>&1)"
   assert_contains "3.0.0" "$output" "version matches script version"
+  assert_contains "--menu" "$(bash "$SCRIPT" --help 2>&1)" "help documents interactive menu"
+  assert_contains "--doctor" "$(bash "$SCRIPT" --help 2>&1)" "help documents doctor command"
+  assert_contains "--yes" "$(bash "$SCRIPT" --help 2>&1)" "help documents explicit non-interactive confirmation"
+
+  code=0
+  bash "$SCRIPT" </dev/null >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "default non-interactive invocation never blocks or mutates"
+
+  code=0
+  bash "$SCRIPT" --menu </dev/null >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "explicit menu rejects non-interactive input"
+
+  code=0
+  bash "$SCRIPT" --status --doctor >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "conflicting report modes are rejected"
+
+  output="$(bash "$SCRIPT" --status 2>&1)"
+  assert_contains "System Status" "$output" "status command prints a read-only report"
+
+  output="$(bash "$SCRIPT" --doctor 2>&1)"
+  assert_contains "Diagnostics" "$output" "doctor command runs local checks"
+
+  local json_file
+  json_file="$(mktemp)"
+  bash "$SCRIPT" --status --json >"$json_file"
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); assert d["schema_version"] == 1; assert d["command"] == "status"; assert "apt" in d and "backups" in d and "checks" in d' "$json_file"
+  assert_exit_code 0 "$?" "status JSON follows schema version 1"
+  bash "$SCRIPT" --doctor --json >"$json_file"
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); assert d["schema_version"] == 1; assert d["command"] == "doctor"; assert isinstance(d["checks"], list) and d["checks"]' "$json_file"
+  assert_exit_code 0 "$?" "doctor JSON contains structured health checks"
+  rm -f "$json_file"
 
   code=0
   bash "$SCRIPT" --invalid-option >/dev/null 2>&1 || code=$?

@@ -115,7 +115,12 @@ test_filesystem_operations() {
   mkdir -p "$APT_CONF_DIR"
   printf 'injected config\n' >"${APT_CONF_DIR}/99-unrelated"
   local restore_status=0
-  _restore_backup "$backup_dir" >/dev/null 2>&1 || restore_status=$?
+  local restore_log="${_TEST_ROOT}/restore.log"
+  _restore_backup "$backup_dir" >"$restore_log" 2>&1 || restore_status=$?
+  if [[ "$restore_status" -ne 0 ]]; then
+    printf '%s\n' 'Restore diagnostic:'
+    cat "$restore_log"
+  fi
   assert_exit_code 0 "$restore_status" "restore succeeds"
   assert_file_contains "$APT_SOURCES_FILE" "old.example" "restore restores sources.list content"
   assert_file_contains "${APT_SOURCES_DIR}/ubuntu.sources" "old.example" "restore restores sources directory content"

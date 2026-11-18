@@ -1187,7 +1187,7 @@ _collect_status() {
   REPORT_CURRENT_MIRROR=""
   if [[ -r "$APT_DEB822_FILE" ]]; then
     REPORT_CURRENT_MIRROR="$(awk -F': ' '$1 == "URIs" {print $2; exit}' "$APT_DEB822_FILE" 2>/dev/null || true)"
-    REPORT_CURRENT_MIRROR="$(printf '%s' "$REPORT_CURRENT_MIRROR" | sed -E 's#(https?://)[^/@]+@#\\1[REDACTED]@#g')"
+    REPORT_CURRENT_MIRROR="$(printf '%s' "$REPORT_CURRENT_MIRROR" | sed -E 's#(https?://)[^/@]+@#\1[REDACTED]@#g')"
   fi
   REPORT_BACKUP_ACCESSIBLE=false
   REPORT_BACKUP_COUNT=0
@@ -1195,26 +1195,26 @@ _collect_status() {
   if [[ -d "$BACKUP_BASE" && -r "$BACKUP_BASE" ]]; then
     REPORT_BACKUP_ACCESSIBLE=true
     REPORT_BACKUP_COUNT="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d '[:space:]')"
-    REPORT_LATEST_BACKUP="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\\t%p\\n' 2>/dev/null | sort -rn | head -1 | cut -f2-)"
+    REPORT_LATEST_BACKUP="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn | head -1 | cut -f2-)"
   fi
 }
 
 _print_status_report() {
   _collect_status
-  printf '\\n%s\\n' "$APP_NAME — System Status"
-  printf '%-24s %s\\n' "Operating system:" "$REPORT_OS_PRETTY"
-  printf '%-24s %s\\n' "Ubuntu codename:" "$REPORT_CODENAME"
-  printf '%-24s %s\\n' "Legacy sources.list:" "$REPORT_SOURCES_LIST"
-  printf '%-24s %s\\n' "Deb822 ubuntu.sources:" "$REPORT_DEB822"
-  printf '%-24s %s\\n' "Managed APT config:" "$REPORT_MANAGED_CONFIG"
-  printf '%-24s %s\\n' "Current mirror:" "${REPORT_CURRENT_MIRROR:-not detected}"
+  printf '\n%s\n' "$APP_NAME — System Status"
+  printf '%-24s %s\n' "Operating system:" "$REPORT_OS_PRETTY"
+  printf '%-24s %s\n' "Ubuntu codename:" "$REPORT_CODENAME"
+  printf '%-24s %s\n' "Legacy sources.list:" "$REPORT_SOURCES_LIST"
+  printf '%-24s %s\n' "Deb822 ubuntu.sources:" "$REPORT_DEB822"
+  printf '%-24s %s\n' "Managed APT config:" "$REPORT_MANAGED_CONFIG"
+  printf '%-24s %s\n' "Current mirror:" "${REPORT_CURRENT_MIRROR:-not detected}"
   if [[ "$REPORT_BACKUP_ACCESSIBLE" == true ]]; then
-    printf '%-24s %s\\n' "Available backups:" "$REPORT_BACKUP_COUNT"
-    printf '%-24s %s\\n' "Latest backup:" "${REPORT_LATEST_BACKUP:-none}"
+    printf '%-24s %s\n' "Available backups:" "$REPORT_BACKUP_COUNT"
+    printf '%-24s %s\n' "Latest backup:" "${REPORT_LATEST_BACKUP:-none}"
   else
-    printf '%-24s %s\\n' "Backup directory:" "not accessible (root may be required)"
+    printf '%-24s %s\n' "Backup directory:" "not accessible (root may be required)"
   fi
-  printf '\\n'
+  printf '\n'
 }
 
 _doctor_add_check() {
@@ -1292,27 +1292,27 @@ _print_json() {
   _collect_status
   local checks_json
   checks_json="$(_report_checks_json)"
-  printf '{\\n'
-  printf '  "schema_version": 1,\\n'
-  printf '  "version": %s,\\n' "$(_json_quote "$APP_VERSION")"
-  printf '  "command": %s,\\n' "$(_json_quote "$REPORT_COMMAND")"
-  printf '  "status": %s,\\n' "$(_json_quote "$REPORT_STATUS")"
-  printf '  "timestamp": %s,\\n' "$(_json_quote "$(date -u '+%Y-%m-%dT%H:%M:%SZ')")"
-  printf '  "system": {"id": %s, "pretty_name": %s, "version_id": %s, "codename": %s},\\n' \\
+  printf '{\n'
+  printf '  "schema_version": 1,\n'
+  printf '  "version": %s,\n' "$(_json_quote "$APP_VERSION")"
+  printf '  "command": %s,\n' "$(_json_quote "$REPORT_COMMAND")"
+  printf '  "status": %s,\n' "$(_json_quote "$REPORT_STATUS")"
+  printf '  "timestamp": %s,\n' "$(_json_quote "$(date -u '+%Y-%m-%dT%H:%M:%SZ')")"
+  printf '  "system": {"id": %s, "pretty_name": %s, "version_id": %s, "codename": %s},\n' \\
     "$(_json_quote "$REPORT_OS_ID")" "$(_json_quote "$REPORT_OS_PRETTY")" \\
     "$(_json_quote "$REPORT_VERSION_ID")" "$(_json_quote "$REPORT_CODENAME")"
-  printf '  "apt": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "current_mirror": %s},\\n' \\
+  printf '  "apt": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "current_mirror": %s},\n' \\
     "$(_json_quote "$REPORT_SOURCES_LIST")" "$(_json_quote "$REPORT_DEB822")" \\
     "$(_json_quote "$REPORT_MANAGED_CONFIG")" "$(_json_quote "$REPORT_CURRENT_MIRROR")"
-  printf '  "backups": {"accessible": %s, "count": %s, "latest": %s},\\n' \\
+  printf '  "backups": {"accessible": %s, "count": %s, "latest": %s},\n' \\
     "$REPORT_BACKUP_ACCESSIBLE" "$REPORT_BACKUP_COUNT" "$(_json_quote "$REPORT_LATEST_BACKUP")"
-  printf '  "operation": {"mirror": %s, "response_time_seconds": %s, "dry_run": %s, "skip_update": %s},\\n' \\
+  printf '  "operation": {"mirror": %s, "response_time_seconds": %s, "dry_run": %s, "skip_update": %s},\n' \\
     "$(_json_quote "$SELECTED_MIRROR")" "$(_json_quote "$SELECTED_TIME")" "$DRY_RUN" "$SKIP_UPDATE"
-  printf '  "paths": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "backup_root": %s},\\n' \\
+  printf '  "paths": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "backup_root": %s},\n' \\
     "$(_json_quote "$APT_SOURCES_FILE")" "$(_json_quote "$APT_DEB822_FILE")" \\
     "$(_json_quote "$APT_CONF_FILE")" "$(_json_quote "$BACKUP_BASE")"
-  printf '  "checks": %s\\n' "$checks_json"
-  printf '}\\n'
+  printf '  "checks": %s\n' "$checks_json"
+  printf '}\n'
 }
 
 _status_report() {
@@ -1329,12 +1329,12 @@ _doctor_report() {
   if [[ "$JSON_OUTPUT" == true ]]; then
     _print_json
   else
-    printf '\\n%s\\n' "$APP_NAME — Diagnostics"
+    printf '\n%s\n' "$APP_NAME — Diagnostics"
     local i
     for ((i = 0; i < ${#REPORT_CHECK_NAMES[@]}; i++)); do
-      printf '  %-8s %-28s %s\\n' "${REPORT_CHECK_STATUSES[$i]}" "${REPORT_CHECK_NAMES[$i]}" "${REPORT_CHECK_DETAILS[$i]}"
+      printf '  %-8s %-28s %s\n' "${REPORT_CHECK_STATUSES[$i]}" "${REPORT_CHECK_NAMES[$i]}" "${REPORT_CHECK_DETAILS[$i]}"
     done
-    printf '\\nOverall status: %s\\n\\n' "$REPORT_STATUS"
+    printf '\nOverall status: %s\n\n' "$REPORT_STATUS"
   fi
 }
 

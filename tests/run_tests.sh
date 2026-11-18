@@ -26,24 +26,24 @@ _TEST_ROOT=""
 
 assert_exit_code() {
   local expected="$1" actual="$2" name="$3"
-  ((_tests_run+=1))
+  ((_tests_run += 1))
   if [[ "$actual" -eq "$expected" ]]; then
-    ((_tests_passed+=1))
+    ((_tests_passed += 1))
     printf '%bPASS%b %s\n' "$GREEN" "$RESET" "$name"
   else
-    ((_tests_failed+=1))
+    ((_tests_failed += 1))
     printf '%bFAIL%b %s (expected %d, got %d)\n' "$RED" "$RESET" "$name" "$expected" "$actual"
   fi
 }
 
 assert_contains() {
   local expected="$1" actual="$2" name="$3"
-  ((_tests_run+=1))
+  ((_tests_run += 1))
   if [[ "$actual" == *"$expected"* ]]; then
-    ((_tests_passed+=1))
+    ((_tests_passed += 1))
     printf '%bPASS%b %s\n' "$GREEN" "$RESET" "$name"
   else
-    ((_tests_failed+=1))
+    ((_tests_failed += 1))
     printf '%bFAIL%b %s (missing: %s)\n' "$RED" "$RESET" "$name" "$expected"
   fi
 }
@@ -130,12 +130,12 @@ test_filesystem_operations() {
   assert_exit_code 0 "$restore_status" "restore succeeds"
   assert_file_contains "$APT_SOURCES_FILE" "old.example" "restore restores sources.list content"
   assert_file_contains "${APT_SOURCES_DIR}/ubuntu.sources" "old.example" "restore restores sources directory content"
-  ((_tests_run+=1))
+  ((_tests_run += 1))
   if [[ ! -e "$APT_CONF_DIR" ]]; then
-    ((_tests_passed+=1))
+    ((_tests_passed += 1))
     printf '%bPASS%b restore removes directories absent from snapshot\n' "$GREEN" "$RESET"
   else
-    ((_tests_failed+=1))
+    ((_tests_failed += 1))
     printf '%bFAIL%b restore removes directories absent from snapshot\n' "$RED" "$RESET"
   fi
 
@@ -143,18 +143,38 @@ test_filesystem_operations() {
   restored_mode="$(stat -c '%a' "$APT_SOURCES_FILE")"
   assert_contains "640" "$restored_mode" "restore preserves original file mode"
 
+  rm -f "$APT_SOURCES_FILE"
+  rm -rf "$APT_SOURCES_DIR" "$APT_CONF_DIR"
+  local empty_backup empty_restore_status=0
+  empty_backup="$(_create_backup)"
+  mkdir -p "$APT_SOURCES_DIR" "$APT_CONF_DIR"
+  printf 'new source file\n' >"$APT_SOURCES_FILE"
+  printf 'new source entry\n' >"${APT_SOURCES_DIR}/new.list"
+  printf 'new apt config\n' >"${APT_CONF_DIR}/99-new"
+  _restore_backup "$empty_backup" >/dev/null 2>&1 || empty_restore_status=$?
+  assert_exit_code 0 "$empty_restore_status" "restore accepts an empty APT snapshot"
+  ((_tests_run += 1))
+  if [[ ! -e "$APT_SOURCES_FILE" && ! -e "$APT_SOURCES_DIR" && ! -e "$APT_CONF_DIR" ]]; then
+    ((_tests_passed += 1))
+    printf '%bPASS%b empty snapshot removes all subsequently created managed paths\n' "$GREEN" "$RESET"
+  else
+    ((_tests_failed += 1))
+    printf '%bFAIL%b empty snapshot removes all subsequently created managed paths\n' "$RED" "$RESET"
+  fi
+
+  mkdir -p "$APT_SOURCES_DIR"
   _atomic_write "${APT_SOURCES_DIR}/atomic.conf" 0600 <<'ATOMIC'
 Acquire::Retries "7";
 ATOMIC
   assert_file_contains "${APT_SOURCES_DIR}/atomic.conf" 'Acquire::Retries "7";' "atomic writer stores expected content"
   restored_mode="$(stat -c '%a' "${APT_SOURCES_DIR}/atomic.conf")"
   assert_contains "600" "$restored_mode" "atomic writer applies requested mode"
-  ((_tests_run+=1))
+  ((_tests_run += 1))
   if [[ -z "$(find "$APT_SOURCES_DIR" -maxdepth 1 -name '*.tmp.*' -print -quit)" ]]; then
-    ((_tests_passed+=1))
+    ((_tests_passed += 1))
     printf '%bPASS%b atomic writer leaves no temporary files\n' "$GREEN" "$RESET"
   else
-    ((_tests_failed+=1))
+    ((_tests_failed += 1))
     printf '%bFAIL%b atomic writer leaves no temporary files\n' "$RED" "$RESET"
   fi
 
@@ -166,12 +186,12 @@ ATOMIC
   USE_IPV6=true
   _write_apt_config
   assert_file_contains "$APT_CONF_FILE" 'Acquire::ForceIPv6 "true";' "APT config follows IPv6 mode"
-  ((_tests_run+=1))
+  ((_tests_run += 1))
   if ! grep -q 'Acquire::ForceIPv4' "$APT_CONF_FILE"; then
-    ((_tests_passed+=1))
+    ((_tests_passed += 1))
     printf '%bPASS%b IPv6 mode does not force IPv4 simultaneously\n' "$GREEN" "$RESET"
   else
-    ((_tests_failed+=1))
+    ((_tests_failed += 1))
     printf '%bFAIL%b IPv6 mode does not force IPv4 simultaneously\n' "$RED" "$RESET"
   fi
 
@@ -221,12 +241,12 @@ ATOMIC
   _apply_changes >/dev/null 2>&1
   backups_after="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d | wc -l)"
   atomic_after="$(sha256sum "${APT_SOURCES_DIR}/atomic.conf")"
-  ((_tests_run+=1))
+  ((_tests_run += 1))
   if [[ ! -e "$APT_DEB822_FILE" && ! -e "$APT_CONF_FILE" && "$backups_before" == "$backups_after" && "$atomic_before" == "$atomic_after" ]]; then
-    ((_tests_passed+=1))
+    ((_tests_passed += 1))
     printf '%bPASS%b dry-run leaves APT files and backup count unchanged\n' "$GREEN" "$RESET"
   else
-    ((_tests_failed+=1))
+    ((_tests_failed += 1))
     printf '%bFAIL%b dry-run leaves APT files and backup count unchanged\n' "$RED" "$RESET"
   fi
 
@@ -241,12 +261,12 @@ ATOMIC
   _atomic_write "${APT_SOURCES_DIR}/must-not-exist.conf" 0600 <<<"blocked" >/dev/null 2>&1 || atomic_failure=$?
   unset -f cat
   assert_exit_code 1 "$atomic_failure" "atomic write reports temporary write failure"
-  ((_tests_run+=1))
+  ((_tests_run += 1))
   if [[ ! -e "${APT_SOURCES_DIR}/must-not-exist.conf" ]]; then
-    ((_tests_passed+=1))
+    ((_tests_passed += 1))
     printf '%bPASS%b failed atomic write leaves no destination file\n' "$GREEN" "$RESET"
   else
-    ((_tests_failed+=1))
+    ((_tests_failed += 1))
     printf '%bFAIL%b failed atomic write leaves no destination file\n' "$RED" "$RESET"
   fi
 
@@ -281,10 +301,10 @@ ATOMIC
 test_probe_parser_and_list_criteria() {
   _probe_url_code() {
     case "$1" in
-      */noble/InRelease) printf '200\t0.010000\t\n' ;;
-      */noble-updates/InRelease) printf '200\t0.020000\t\n' ;;
-      */noble-security/InRelease) printf '200\t0.030000\t\n' ;;
-      *) printf '404\t0.040000\tmissing endpoint\n' ;;
+    */noble/InRelease) printf '200\t0.010000\t\n' ;;
+    */noble-updates/InRelease) printf '200\t0.020000\t\n' ;;
+    */noble-security/InRelease) printf '200\t0.030000\t\n' ;;
+    *) printf '404\t0.040000\tmissing endpoint\n' ;;
     esac
   }
 

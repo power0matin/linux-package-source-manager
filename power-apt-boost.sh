@@ -955,13 +955,15 @@ _restore_backup() {
 
   local tar_entries tar_entry
   tar_entries="$(tar -tf "$backup_path/apt-config.tar")" || { error "Could not inspect backup archive."; return "$EXIT_RESTORE"; }
-  while IFS= read -r tar_entry; do
-    case "$tar_entry" in
-      etc/apt/sources.list|etc/apt/sources.list.d|etc/apt/sources.list.d/*|etc/apt/apt.conf.d|etc/apt/apt.conf.d/*) ;;
-      *) error "Unsafe path in snapshot archive: $tar_entry"; return "$EXIT_RESTORE" ;;
-    esac
-    [[ "$tar_entry" != *"/../"* && "$tar_entry" != ../* && "$tar_entry" != */.. ]] || return "$EXIT_RESTORE"
-  done <<<"$tar_entries"
+  if [[ -n "$tar_entries" ]]; then
+    while IFS= read -r tar_entry; do
+      case "$tar_entry" in
+        etc/apt/sources.list|etc/apt/sources.list.d|etc/apt/sources.list.d/*|etc/apt/apt.conf.d|etc/apt/apt.conf.d/*) ;;
+        *) error "Unsafe path in snapshot archive: $tar_entry"; return "$EXIT_RESTORE" ;;
+      esac
+      [[ "$tar_entry" != *"/../"* && "$tar_entry" != ../* && "$tar_entry" != */.. ]] || return "$EXIT_RESTORE"
+    done <<<"$tar_entries"
+  fi
 
   mkdir -p "$APT_ETC_DIR" || return "$EXIT_RESTORE"
   local stage_dir extracted_root previous_root archive_root
@@ -977,8 +979,8 @@ _restore_backup() {
   archive_root="$extracted_root/etc/apt"
 
   [[ "$sources_list_state" != present || -e "$archive_root/sources.list" || -L "$archive_root/sources.list" ]] || { rm -rf "$stage_dir"; return "$EXIT_RESTORE"; }
-  [[ "$sources_dir_state" != present || -d "$archive_root/sources.list.d" ]] || { rm -rf "$stage_dir"; return "$EXIT_RESTORE"; }
-  [[ "$conf_dir_state" != present || -d "$archive_root/apt.conf.d" ]] || { rm -rf "$stage_dir"; return "$EXIT_RESTORE"; }
+  [[ "$sources_dir_state" != present || -e "$archive_root/sources.list.d" || -L "$archive_root/sources.list.d" ]] || { rm -rf "$stage_dir"; return "$EXIT_RESTORE"; }
+  [[ "$conf_dir_state" != present || -e "$archive_root/apt.conf.d" || -L "$archive_root/apt.conf.d" ]] || { rm -rf "$stage_dir"; return "$EXIT_RESTORE"; }
 
   local -a target_names=(sources.list sources.list.d apt.conf.d)
   local -a moved_targets=()

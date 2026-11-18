@@ -181,7 +181,20 @@ test_filesystem_operations() {
 
   local escaped_json="${_TEST_ROOT}/escaped.json"
   local escaped_value
-  escaped_value=  printf 'deb http://old.example/ubuntu noble main\n' >"$APT_SOURCES_FILE"
+  escaped_value="$(printf 'quote " slash \\\\ tab\\t newline\\nend')"
+  printf '{"value":%s}\n' "$(_json_quote "$escaped_value")" >"$escaped_json"
+  local json_escape_status=0
+  python3 - "$escaped_json" "$escaped_value" <<'PY' || json_escape_status=$?
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    actual = json.load(stream)["value"]
+assert actual == sys.argv[2]
+PY
+  assert_exit_code 0 "$json_escape_status" "JSON quoting round-trips quotes, backslashes, tabs and newlines"
+
+  printf 'deb http://old.example/ubuntu noble main\n' >"$APT_SOURCES_FILE"
   printf 'Types: deb\nURIs: https://old.example/ubuntu\n' >"${APT_SOURCES_DIR}/ubuntu.sources"
   chmod 0640 "$APT_SOURCES_FILE"
 

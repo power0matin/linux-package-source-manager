@@ -163,9 +163,8 @@ sudo bash power-apt-boost.sh --verbose
 | `/etc/apt/sources.list.d/ubuntu.sources` | Created/overwritten |
 | `/etc/apt/apt.conf.d/99-power-apt-boost` | Created/overwritten |
 | `/etc/apt/sources.list` | Removed (if no third-party repos) |
-| `/var/lib/apt/lists/*` | Removed before the update step (currently also when `--skip-update` is used) |
-| `/var/cache/apt/archives/*` | Cleaned by `apt-get clean` |
-| `/var/backups/power-apt-boost/` | Backup directory and snapshots created |
+| `/var/backups/power-apt-boost/` | Validated APT snapshots (archive, manifest and SHA-256 checksum) |
+| `/run/lock/power-apt-boost.lock` | Mutation lock file |
 
 ## Backup & Restore
 
@@ -197,7 +196,7 @@ sudo bash power-apt-boost.sh --restore-path /var/backups/power-apt-boost/2025-01
 
 ### Manual restore
 
-Prefer the script's `--restore` / `--restore-path` command and inspect the selected snapshot before restoring it. The current restore implementation does not yet guarantee an exact reconstruction of every pre-existing or newly created file; complete snapshot/restore semantics are a Phase 1 requirement. Do not use a broad manual directory copy as a substitute for a verified restore on a production host.
+Prefer the script's `--restore` / `--restore-path` command. New snapshots record the existence state of the complete managed APT source/config directories, include a SHA-256 checksum, and restore those paths as a unit. Legacy snapshots remain readable but cannot guarantee exact removal of files that did not exist when they were created.
 
 ## What It Does NOT Change
 
@@ -207,7 +206,7 @@ The current tool is an APT source/configuration utility. It does not:
 - Change firewall rules, routes, DNS resolver configuration, VPN settings or SSH configuration.
 - Manage Python, Node.js, Docker registry, Go, Rust or other non-APT package-manager configuration.
 
-**Important filesystem effects outside `/etc/apt`:** the current apply path removes APT list data under `/var/lib/apt/lists/`, runs `apt-get clean` (which clears the APT archive cache), and creates snapshots under `/var/backups/power-apt-boost/`. In the current implementation, list cleanup also happens when `--skip-update` is selected. These behaviors are recorded for correction in Phase 1 of the [roadmap](ROADMAP.md).
+**Filesystem effects outside `/etc/apt`:** the tool creates validated snapshots under `/var/backups/power-apt-boost/` and a mutation lock under `/run/lock/`. It no longer manually deletes APT package lists or clears the archive cache. `apt-get update` still performs its normal package-index maintenance.
 
 ## Mirror Testing
 
@@ -219,7 +218,7 @@ Power APT Boost tests each mirror against three endpoints:
 /dists/<codename>-security/InRelease
 ```
 
-Only mirrors that return HTTP 200 for all three are considered. The current selector compares the wall-clock duration of the three parallel HTTP probes; this is a basic reachability/response-time proxy, not a sustained bandwidth benchmark or a mirror-freshness check.
+Only mirrors that return HTTP 200 for all three are considered. The selector measures the wall-clock duration of three concurrent endpoint probes. This is a reachability/response-time proxy, not a sustained bandwidth benchmark or a mirror-freshness check. The `--list` command uses the same three-endpoint health criteria.
 
 ### Default mirrors
 
@@ -275,7 +274,12 @@ sudo bash power-apt-boost.sh --mirror https://mirror.arvancloud.ir/ubuntu
 | 1 | General error (including root/OS/network/apply/restore failures in the current implementation) |
 | 2 | Usage error (invalid or unknown arguments) |
 
-The implementation currently uses only exit codes 0, 1 and 2. More specific stable error codes are a planned CLI improvement, not a current guarantee.
+| 3 | Network or `apt-get update` failure |
+| 4 | Root privileges required |
+| 5 | Unsupported operating system |
+| 6 | No working mirror found |
+| 7 | Backup creation failed |
+| 8 | Restore or rollback failed |
 
 ## Troubleshooting
 
@@ -317,7 +321,7 @@ If you have third-party APT sources in `/etc/apt/sources.list`, Power APT Boost 
 | 22.04 LTS Jammy | CLI smoke checks |
 | 20.04 LTS Focal | CLI smoke checks |
 
-These are limited container-based CLI checks, not full integration validation of APT source mutation, backup, restore or rollback. Requires Bash 4.0+ and one of: curl, wget.
+CI runs offline regression tests for snapshot creation, checksum verification, exact restore, atomic writes, IP-family configuration, country filtering, dry-run behavior and mirror endpoint criteria. Live mirror connectivity is not part of the automated test suite. Requires Bash 4.0+ and one of: curl, wget.
 
 ## Security
 

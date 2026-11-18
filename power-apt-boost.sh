@@ -344,7 +344,7 @@ detect_ubuntu() {
     exit "$EXIT_NOT_UBUNTU"
   }
 
-  # shellcheck disable=SC1091
+  # shellcheck disable=SC1090,SC1091
   source "$OS_RELEASE_FILE"
 
   [[ "${ID:-}" == "ubuntu" ]] || {
@@ -402,7 +402,7 @@ _get_mirrors() {
   if [[ -n "$country_lower" ]]; then
     local found_country=false
     for entry in "${_MIRROR_CATALOG[@]}"; do
-      IFS='|' read -r country region mirror_url <<<"$entry"
+      IFS='|' read -r country _ mirror_url <<<"$entry"
       if [[ "$country" == "$country_lower" ]]; then
         found_country=true
         mirrors+=("$mirror_url")
@@ -411,7 +411,7 @@ _get_mirrors() {
     [[ "$found_country" == true ]] || die "Unsupported country code: $COUNTRY_FILTER" "$EXIT_USAGE"
   else
     for entry in "${_MIRROR_CATALOG[@]}"; do
-      IFS='|' read -r country region mirror_url <<<"$entry"
+      IFS='|' read -r country _ mirror_url <<<"$entry"
       mirrors+=("$mirror_url")
     done
   fi
@@ -958,7 +958,7 @@ _restore_backup() {
   if [[ -n "$tar_entries" ]]; then
     while IFS= read -r tar_entry; do
       case "$tar_entry" in
-        etc/apt/sources.list|etc/apt/sources.list.d|etc/apt/sources.list.d/*|etc/apt/apt.conf.d|etc/apt/apt.conf.d/*) ;;
+        etc|etc/|etc/apt|etc/apt/|etc/apt/sources.list|etc/apt/sources.list.d|etc/apt/sources.list.d/*|etc/apt/apt.conf.d|etc/apt/apt.conf.d/*) ;;
         *) error "Unsafe path in snapshot archive: $tar_entry"; return "$EXIT_RESTORE" ;;
       esac
       [[ "$tar_entry" != *"/../"* && "$tar_entry" != ../* && "$tar_entry" != */.. ]] || return "$EXIT_RESTORE"

@@ -2,11 +2,11 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 2.0.x   | :white_check_mark: |
-| 1.2.x   | :x:                |
-| < 1.2   | :x:                |
+| Version | Support status |
+| ------- | -------------- |
+| v2.1.0 | :white_check_mark: Latest published release |
+| v2.0.x and earlier | :x: Unsupported |
+| `main` / script version `3.0.0` | Development source; not a published release |
 
 ## Reporting a Vulnerability
 
@@ -51,15 +51,21 @@ This policy covers the `power-apt-boost.sh` script and its direct behavior. The 
 
 - Exfiltrates data
 - Downloads or executes remote code
-- Modifies system files outside APT configuration
-- Communicates with any servers other than Ubuntu mirrors
+- Changes unrelated system settings such as firewall rules, routes, DNS resolver configuration, VPN settings or SSH configuration.
+- Probes arbitrary external endpoints unless the user explicitly supplies a custom `--mirror` URL. During `apt-get update`, APT contacts the repositories configured on the host.
 
-### Integrity
+### Integrity and current limitations
 
-- The script uses `set -euo pipefail` for safety
-- All file operations are atomic (write to temp, move into place)
-- Backups are created before any changes
-- The `--dry-run` flag allows testing without changes
+- The script uses `set -euo pipefail`; strict shell options do not by themselves provide transactional file operations.
+- The current source/config writes are not all atomic.
+- Backup copy failures are not consistently treated as fatal, and restore does not yet guarantee exact reconstruction of files that existed or did not exist before the operation.
+- Rollback after a failed `apt-get update` is best-effort in the current source and must not be treated as a guaranteed full-system restore.
+- `--dry-run` is intended to test mirror selection without applying persistent APT configuration changes.
+- Atomic writes, validated snapshots, exact restore and verified rollback are mandatory Phase 1 work. Until that work is merged, inspect the script and maintain an independent recovery path before applying it to a production host.
+
+## Release status
+
+The `main` branch currently declares script version `3.0.0`, but that version has not been published as a Git tag/release. The latest published release is `v2.1.0`. For production use, prefer the tagged release unless you have reviewed and intentionally chosen the unreleased source.
 
 ## Best Practices for Users
 

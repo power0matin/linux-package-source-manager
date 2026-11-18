@@ -1558,6 +1558,413 @@ _parse_args() {
   done
 }
 
+_is_interactive() {
+  [[ -t 0 && -t 1 ]]
+}
+
+_confirm_action() {
+  local prompt="$1"
+  local answer=""
+  if [[ "$YES" == true ]]; then return 0; fi
+  if ! _is_interactive; then
+    error "Non-interactive changes require --yes. Use --dry-run to preview without applying."
+    return "$EXIT_USAGE"
+  fi
+  printf '%s [y/N]: ' "$prompt" >&2
+  IFS= read -r answer || answer=""
+  case "${answer,,}" in
+    y | yes) return 0 ;;
+    *) info "Cancelled. No system changes were made."; return 10 ;;
+  esac
+}
+
+_print_apply_preview() {
+  _print_section_header "CHANGE PREVIEW"
+  printf 'Selected mirror: %s\\n' "$SELECTED_MIRROR"
+  printf 'APT source file: %s\\n' "$APT_DEB822_FILE"
+  printf 'APT network config: %s\\n' "$APT_CONF_FILE"
+  printf 'Backup root: %s\\n' "$BACKUP_BASE"
+  if [[ -f "$APT_SOURCES_FILE" ]]; then
+    printf 'Legacy sources.list: may be removed if it contains only Ubuntu archive entries (%s)\\n' "$APT_SOURCES_FILE"
+  fi
+  if [[ "$SKIP_UPDATE" == true ]]; then
+    printf 'APT update: skipped; existing package lists and archive cache are preserved\\n'
+  else
+    printf 'APT update: apt-get update will run after configuration changes\\n'
+  fi
+}
+
+_confirm_apply() {
+  [[ "$DRY_RUN" == true ]] && return 0
+  _print_apply_preview
+  _confirm_action "Apply this APT mirror configuration?"
+}
+
+_confirm_restore() {
+  local backup_path="$1"
+  _print_section_header "RESTORE PREVIEW"
+  printf 'Snapshot: %s\\n' "$backup_path"
+  printf 'Managed targets restored exactly: %s, %s, %s\\n' "$APT_SOURCES_FILE" "$APT_SOURCES_DIR" "$APT_CONF_DIR"
+  printf 'APT update: apt-get update will run after restoration\\n'
+  _confirm_action "Restore this snapshot?"
+}
+
+_resolve_backup_path() {
+  local backup_path="$1"
+  if [[ -z "$backup_path" && -d "$BACKUP_BASE" ]]; then
+    backup_path="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\\t%p\\n' 2>/dev/null | sort -rn | head -1 | cut -f2-)"
+  fi
+  if [[ -z "$backup_path" || ! -d "$backup_path" ]]; then
+    local legacy_root="${_SYSTEM_ROOT}/root"
+    if [[ -d "$legacy_root" ]]; then
+      backup_path="$(find "$legacy_root" -maxdepth 1 -name 'apt-backup-*' -type d -printf '%T@\\t%p\\n' 2>/dev/null | sort -rn | head -1 | cut -f2-)"
+    fi
+  fi
+  [[ -n "$backup_path" && -d "$backup_path" ]] || return "$EXIT_RESTORE"
+  printf '%s\\n' "$backup_path"
+}
+
+_menu_choose() {
+  local title="$1"
+  local prompt="$2"
+  shift 2
+  local -a tags=() labels=() whiptail_args=()
+  while (($# >= 2)); do
+    tags+=("$1")
+    labels+=("$2")
+    whiptail_args+=("$1" "$2")
+    shift 2
+  done
+
+  if command -v whiptail >/dev/null 2>&1; then
+    whiptail --title "$title" --menu "$prompt" 22 78 12 "${whiptail_args[@]}" 3>&1 1>&2 2>&3
+    return $?
+  fi
+
+  printf '\\n%s\\n%s\\n' "$title" "$prompt" >&2
+  local i
+  for ((i = 0; i < ${#tags[@]}; i++)); do
+    printf '  %d) %s\\n' "$((i + 1))" "${labels[$i]}" >&2
+  done
+  printf 'Select an option: ' >&2
+  local answer=""
+  IFS= read -r answer || return 1
+  if [[ "$answer" =~ ^[0-9]+$ ]] && ((answer >= 1 && answer <= ${#tags[@]})); then
+    printf '%s\\n' "${tags[$((answer - 1))]}"
+    return 0
+  fi
+  for ((i = 0; i < ${#tags[@]}; i++)); do
+    if [[ "$answer" == "${tags[$i]}" ]]; then
+      printf '%s\\n' "${tags[$i]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+_menu_input() {
+  local title="$1"
+  local prompt="$2"
+  local default_value="${3:-}"
+  local answer=""
+  if command -v whiptail >/dev/null 2>&1; then
+    whiptail --title "$title" --inputbox "$prompt" 10 78 "$default_value" 3>&1 1>&2 2>&3
+    return $?
+  fi
+  printf '%s [%s]: ' "$prompt" "$default_value" >&2
+  IFS= read -r answer || return 1
+  printf '%s\\n' "${answer:-$default_value}"
+}
+
+_menu_message() {
+  local title="$1"
+  local message="$2"
+  if command -v whiptail >/dev/null 2>&1; then
+    whiptail --title "$title" --msgbox "$message" 16 78
+  else
+    printf '\\n%s\\n%s\\n' "$title" "$message" >&2
+    printf 'Press Enter to continue: ' >&2
+    local ignored=""
+    IFS= read -r ignored || true
+  fi
+}
+
+_run_list_flow() {
+  _check_probe_tool
+  detect_ubuntu
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    list_mirrors >&2
+    REPORT_COMMAND="list"
+    REPORT_STATUS="complete"
+    _collect_status
+    REPORT_CHECK_NAMES=("mirror_catalog")
+    REPORT_CHECK_STATUSES=("complete")
+    REPORT_CHECK_DETAILS=("Mirror reachability checks completed; see stderr for detailed results")
+    _print_json
+  else
+    list_mirrors
+  fi
+}
+
+_run_benchmark_only() {
+  _check_probe_tool
+  detect_ubuntu
+  SELECTED_MIRROR=""
+  SELECTED_TIME=""
+  _select_mirror
+  printf '\\nSelected mirror: %s\\nProbe time: %ss\\n\\n' "$SELECTED_MIRROR" "$SELECTED_TIME"
+}
+
+_run_apply_flow() {
+  if [[ "$DRY_RUN" != true && "$YES" != true ]] && ! _is_interactive; then
+    error "Applying APT changes from a non-interactive session requires --yes. Use --dry-run to preview."
+    return "$EXIT_USAGE"
+  fi
+  if [[ "$(id -u)" -ne 0 ]]; then
+    error "This operation must be run as root."
+    return "$EXIT_NOT_ROOT"
+  fi
+
+  _print_banner
+  _check_commands
+  _check_probe_tool
+  detect_ubuntu
+  if [[ "$DRY_RUN" != true ]]; then _acquire_mutation_lock; fi
+
+  if [[ -n "$FORCE_MIRROR" ]]; then
+    _print_section_header "TESTING SPECIFIED MIRROR"
+    msg "  Mirror: ${COLOR_BOLD}${FORCE_MIRROR}${COLOR_RESET}"
+    local result_file rtime rstatus
+    result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.force.XXXXXX")"
+    _tmp_dirs+=("$result_file")
+    _test_mirror "$FORCE_MIRROR" "$result_file" "$CODENAME"
+    rtime="$(awk '{print $1}' "$result_file")"
+    rstatus="$(awk '{print $2}' "$result_file")"
+    rm -f "$result_file" 2>/dev/null || true
+    if [[ "$rstatus" == "pass" ]]; then
+      SELECTED_MIRROR="$FORCE_MIRROR"
+      SELECTED_TIME="$rtime"
+    else
+      error "Mirror is not reachable: $FORCE_MIRROR"
+      return "$EXIT_NO_MIRROR"
+    fi
+  else
+    _select_mirror
+  fi
+
+  if [[ "$DRY_RUN" != true ]]; then
+    local confirm_status=0
+    _confirm_apply || confirm_status=$?
+    if [[ "$confirm_status" -ne 0 ]]; then return "$confirm_status"; fi
+  fi
+
+  REPORT_COMMAND="apply"
+  REPORT_STATUS="success"
+  [[ "$DRY_RUN" == true ]] && REPORT_STATUS="dry_run"
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _apply_changes >&2
+    _print_json
+  else
+    _apply_changes
+    _print_summary
+  fi
+}
+
+_run_restore_flow() {
+  if [[ "$YES" != true ]] && ! _is_interactive; then
+    error "Restoring APT configuration from a non-interactive session requires --yes."
+    return "$EXIT_USAGE"
+  fi
+  if [[ "$(id -u)" -ne 0 ]]; then
+    error "This operation must be run as root."
+    return "$EXIT_NOT_ROOT"
+  fi
+  _check_commands
+
+  local selected_backup confirm_status=0
+  if ! selected_backup="$(_resolve_backup_path "$RESTORE_PATH")"; then
+    error "No backup snapshot was found."
+    return "$EXIT_RESTORE"
+  fi
+  _confirm_restore "$selected_backup" || confirm_status=$?
+  if [[ "$confirm_status" -ne 0 ]]; then return "$confirm_status"; fi
+
+  _acquire_mutation_lock
+  REPORT_COMMAND="restore"
+  REPORT_STATUS="success"
+  SELECTED_MIRROR="restored"
+  SELECTED_TIME=""
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _restore_backup "$selected_backup" >&2 || return "$EXIT_RESTORE"
+    apt-get update >&2 || return "$EXIT_NETWORK"
+    _print_json
+  else
+    _restore_backup "$selected_backup" || return "$EXIT_RESTORE"
+    apt-get update || return "$EXIT_NETWORK"
+    info "APT sources restored and updated successfully."
+  fi
+}
+
+_menu_overview() {
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _status_report
+  else
+    _print_status_report
+    _menu_message "Overview" "System status refreshed."
+  fi
+}
+
+_menu_apt() {
+  local choice rc
+  while true; do
+    choice="$(_menu_choose "APT Management" "Choose an action" \\
+      "apply_best" "Find and apply the fastest mirror" \\
+      "apply_custom" "Test and apply a custom mirror" \\
+      "list" "List and test available mirrors" \\
+      "back" "Back to main menu")" || return 0
+    case "$choice" in
+      apply_best)
+        FORCE_MIRROR=""
+        DRY_RUN=false
+        rc=0
+        _run_apply_flow || rc=$?
+        [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+        ;;
+      apply_custom)
+        FORCE_MIRROR="$(_menu_input "Custom mirror" "Enter an Ubuntu mirror base URL" "")" || continue
+        [[ "$FORCE_MIRROR" =~ ^https?://[^[:space:]]+$ ]] || {
+          _menu_message "Invalid mirror URL" "Enter an http:// or https:// URL without spaces."
+          continue
+        }
+        FORCE_MIRROR="${FORCE_MIRROR%/}"
+        DRY_RUN=false
+        rc=0
+        _run_apply_flow || rc=$?
+        [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+        ;;
+      list)
+        _run_list_flow
+        _menu_message "APT mirrors" "Mirror testing completed."
+        ;;
+      back) return 0 ;;
+    esac
+  done
+}
+
+_menu_benchmark() {
+  _run_benchmark_only
+  _menu_message "Benchmark" "Benchmark completed. No system configuration was changed."
+}
+
+_menu_backups() {
+  if [[ "$(id -u)" -ne 0 ]]; then
+    _menu_message "Backup and Restore" "Run the menu as root to inspect protected system backups."
+    return 0
+  fi
+  local listing
+  listing="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\\t%p\\n' 2>/dev/null | sort -rn || true)"
+  if [[ -z "$listing" ]]; then
+    _menu_message "Backup and Restore" "No Power APT Boost backup snapshots were found."
+    return 0
+  fi
+  local -a args=()
+  local line path
+  while IFS= read -r line; do
+    path="${line#*$'\\t'}"
+    args+=("$path" "${path##*/}")
+  done <<<"$listing"
+  local selected rc
+  selected="$(_menu_choose "Backup and Restore" "Select a snapshot to restore" "${args[@]}" "back" "Back")" || return 0
+  [[ "$selected" == back ]] && return 0
+  RESTORE_PATH="$selected"
+  rc=0
+  _run_restore_flow || rc=$?
+  [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Restore result" "Restore finished with exit code $rc."
+}
+
+_menu_diagnostics() {
+  local choice
+  choice="$(_menu_choose "Diagnostics" "Choose a report" \\
+    "status" "System status" \\
+    "doctor" "Run local health checks" \\
+    "back" "Back to main menu")" || return 0
+  case "$choice" in
+    status)
+      _status_report
+      [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Status report completed."
+      ;;
+    doctor)
+      _doctor_report
+      [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Health checks completed."
+      ;;
+    back) return 0 ;;
+  esac
+}
+
+_menu_settings() {
+  local choice value
+  while true; do
+    choice="$(_menu_choose "Settings" "Settings apply to this session only" \\
+      "timeout" "Probe timeout: ${TIMEOUT_TOTAL}s" \\
+      "country" "Country filter: ${COUNTRY_FILTER:-all}" \\
+      "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \\
+      "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \\
+      "back" "Back to main menu")" || return 0
+    case "$choice" in
+      timeout)
+        value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
+        if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 300)); then
+          TIMEOUT_TOTAL="$value"
+        else
+          _menu_message "Invalid timeout" "Enter a whole number from 1 to 300."
+        fi
+        ;;
+      country)
+        value="$(_menu_input "Country filter" "Enter a two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
+        if [[ -z "$value" || "$value" =~ ^[A-Za-z]{2}$ ]]; then
+          COUNTRY_FILTER="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+        else
+          _menu_message "Invalid country" "Country filters must use two letters."
+        fi
+        ;;
+      ipv6)
+        [[ "$USE_IPV6" == true ]] && USE_IPV6=false || USE_IPV6=true
+        ;;
+      spinner)
+        [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
+        ;;
+      back) return 0 ;;
+    esac
+  done
+}
+
+_menu_main() {
+  if ! _is_interactive; then
+    error "The interactive menu requires a TTY. Use --help for non-interactive commands."
+    return "$EXIT_USAGE"
+  fi
+  while true; do
+    local choice
+    choice="$(_menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \\
+      "overview" "Overview" \\
+      "apt" "APT management" \\
+      "benchmark" "Mirror benchmark" \\
+      "backups" "Backup and Restore" \\
+      "diagnostics" "Diagnostics" \\
+      "settings" "Settings" \\
+      "exit" "Exit")" || return 0
+    case "$choice" in
+      overview) _menu_overview ;;
+      apt) _menu_apt ;;
+      benchmark) _menu_benchmark ;;
+      backups) _menu_backups ;;
+      diagnostics) _menu_diagnostics ;;
+      settings) _menu_settings ;;
+      exit) return 0 ;;
+    esac
+  done
+}
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 main() {

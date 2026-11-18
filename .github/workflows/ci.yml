@@ -43,7 +43,7 @@ jobs:
       - name: Install test dependencies
         run: |
           apt-get update
-          apt-get install -y bash coreutils tar curl util-linux python3-minimal gawk grep sed findutils
+          apt-get install -y bash coreutils tar curl util-linux python3-minimal gawk grep sed findutils curl util-linux python3-minimal gawk grep sed findutils
       - name: Checkout
         uses: actions/checkout@v4
       - name: Run offline regression suite

@@ -1154,7 +1154,1138 @@ DRYRUN
 
 # ─── Output ──────────────────────────────────────────────────────────────────# ─── Output ───────────────────────────────────────────────────────────────────
 
-${report}_print_json() {
+_json_quote() {
+  local value="${1-}"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//
+  local status="success" action="mirror_selected"
+  if [[ "$DRY_RUN" == true ]]; then action="dry_run"; fi
+  if [[ "$RESTORE" == true ]]; then action="backup_restored"; fi
+
+  cat <<JSON
+{
+  "version": "${APP_VERSION}",
+  "action": "${action}",
+  "status": "${status}",
+  "codename": "${CODENAME:-unknown}",
+  "mirror": "${SELECTED_MIRROR:-}",
+  "response_time": "${SELECTED_TIME:-}",
+  "dry_run": ${DRY_RUN},
+  "skip_update": ${SKIP_UPDATE},
+  "timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+  "files": {
+    "deb822": "${APT_DEB822_FILE}",
+    "config": "${APT_CONF_FILE}"
+  }
+}
+JSON
+}
+
+_print_summary() {
+  if [[ "$DRY_RUN" == true ]]; then
+    cat <<EOF
+
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+  ${COLOR_YELLOW}${COLOR_BOLD}DRY RUN COMPLETED${COLOR_RESET}
+
+  Fastest mirror:  ${COLOR_BOLD}${SELECTED_MIRROR}${COLOR_RESET}
+  Response time:   ${COLOR_BOLD}${SELECTED_TIME}s${COLOR_RESET}
+
+  ${COLOR_DIM}No system changes were made.${COLOR_RESET}
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+
+EOF
+    return
+  fi
+
+  cat <<EOF
+
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+  ${COLOR_GREEN}${COLOR_BOLD}SUCCESS — APT mirror optimized${COLOR_RESET}
+
+  ${COLOR_BOLD}Mirror:${COLOR_RESET}  ${SELECTED_MIRROR}
+  ${COLOR_BOLD}Speed:${COLOR_RESET}   ${SELECTED_TIME}s
+
+  ${COLOR_DIM}Config files:${COLOR_RESET}
+    ${APT_DEB822_FILE}
+    ${APT_CONF_FILE}
+
+  ${COLOR_DIM}To undo:${COLOR_RESET}
+    ${COLOR_CYAN}sudo bash ${_SCRIPT_NAME} --restore${COLOR_RESET}
+
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+
+EOF
+}
+
+_print_banner() {
+  if [[ "$QUIET" == true || "$JSON_OUTPUT" == true ]]; then return; fi
+  cat <<'EOF'
+
+██████   ██████  ██     ██ ███████ ██████       █████  ██████  ████████     ██████   ██████   ██████  ███████ ████████ 
+██   ██ ██    ██ ██     ██ ██      ██   ██     ██   ██ ██   ██    ██        ██   ██ ██    ██ ██    ██ ██         ██    
+██████  ██    ██ ██  █  ██ █████   ██████      ███████ ██████     ██        ██████  ██    ██ ██    ██ ███████    ██    
+██      ██    ██ ██ ███ ██ ██      ██   ██     ██   ██ ██         ██        ██   ██ ██    ██ ██    ██      ██    ██    
+██       ██████   ███ ███  ███████ ██   ██     ██   ██ ██         ██        ██████   ██████   ██████  ███████    ██    
+                                                                                                                       
+                                                                                                                       
+EOF
+  echo "" >&2
+  printf '%b\n' "  ${COLOR_DIM}Fast Ubuntu APT mirror selector & network optimizer${COLOR_RESET}" >&2
+  printf '%b\n' "  ${COLOR_DIM}v${APP_VERSION} · ${APP_LICENSE} · ${APP_AUTHOR}${COLOR_RESET}" >&2
+  printf '%b\n' "  ${COLOR_DIM}${APP_GITHUB}${COLOR_RESET}" >&2
+  echo "" >&2
+}
+
+_print_help() {
+  cat <<EOF
+${COLOR_BOLD}${COLOR_CYAN}Power APT Boost${COLOR_RESET} v${APP_VERSION}
+Fast Ubuntu APT mirror selector and network optimizer
+
+${COLOR_BOLD}${COLOR_BLUE}USAGE${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} [OPTIONS]
+  curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash
+
+${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
+  ${COLOR_GREEN}-h, --help${COLOR_RESET}              Show this help message
+  ${COLOR_GREEN}-v, --version${COLOR_RESET}           Show version information
+  ${COLOR_GREEN}-m, --mirror URL${COLOR_RESET}        Use a specific Ubuntu mirror
+  ${COLOR_GREEN}-r, --restore${COLOR_RESET}           Restore APT config from backup
+  ${COLOR_GREEN}    --restore-path PATH${COLOR_RESET}   Restore from a specific backup
+  ${COLOR_GREEN}    --dry-run${COLOR_RESET}            Test mirrors without changing config
+  ${COLOR_GREEN}    --skip-update${COLOR_RESET}        Write config but skip apt-get update
+  ${COLOR_GREEN}    --list${COLOR_RESET}               List available mirrors and test them
+  ${COLOR_GREEN}    --json${COLOR_RESET}               Output results as JSON (for scripting)
+  ${COLOR_GREEN}    --verbose${COLOR_RESET}             Show detailed output
+  ${COLOR_GREEN}    --quiet${COLOR_RESET}               Suppress non-essential output
+  ${COLOR_GREEN}    --no-spinner${COLOR_RESET}          Disable spinner (for CI/CD)
+  ${COLOR_GREEN}    --timeout SECS${COLOR_RESET}        Probe timeout (default: 20)
+  ${COLOR_GREEN}    --country CODE${COLOR_RESET}        Filter mirrors by country code
+  ${COLOR_GREEN}    --ipv6${COLOR_RESET}                Use IPv6 for mirror testing
+  ${COLOR_GREEN}    --log-file PATH${COLOR_RESET}       Write log to file
+
+${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
+  ${COLOR_DIM}# Auto-select fastest mirror${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME}
+
+  ${COLOR_DIM}# Test without changing system config${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --dry-run
+
+  ${COLOR_DIM}# Use a specific mirror${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --mirror https://mirror.example.com/ubuntu
+
+  ${COLOR_DIM}# Restore from latest backup${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --restore
+
+  ${COLOR_DIM}# Machine-readable output for CI/CD pipelines${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --json --quiet
+
+  ${COLOR_DIM}# List and test all available mirrors${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --list
+
+  ${COLOR_DIM}# Filter mirrors by country${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --country us
+
+${COLOR_BOLD}${COLOR_BLUE}WHAT IT DOES${COLOR_RESET}
+  1. Detects your Ubuntu version
+  2. Tests multiple mirrors in parallel for speed
+  3. Selects the fastest working mirror
+  4. Backs up current APT configuration
+  5. Writes optimized APT sources (deb822 format)
+  6. Configures network optimizations (retries, timeouts)
+  7. Cleans stale package lists
+  8. Runs apt-get update
+
+${COLOR_BOLD}${COLOR_BLUE}BACKUPS${COLOR_RESET}
+  Location:  ${BACKUP_BASE}/
+  Restore:   sudo bash ${_SCRIPT_NAME} --restore
+  Or:        sudo bash ${_SCRIPT_NAME} --restore-path /var/backups/${APP_SLUG}/<timestamp>
+
+${COLOR_BOLD}${COLOR_BLUE}EXIT CODES${COLOR_RESET}
+  ${COLOR_GREEN}0${COLOR_RESET}  Success         ${COLOR_GREEN}4${COLOR_RESET}  Not running as root
+  1  General error      5  Not Ubuntu
+  2  Usage error        6  No working mirror found
+  3  Network error      7  Backup failed
+  4  Root required      8  Restore/rollback failed
+
+${COLOR_BOLD}${COLOR_BLUE}AUTHOR${COLOR_RESET}
+  ${APP_AUTHOR} · ${APP_GITHUB}
+EOF
+}
+
+# ─── Argument Parsing ────────────────────────────────────────────────────────
+
+_parse_args() {
+  if [[ $# -eq 0 ]]; then return; fi
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    -h | --help)
+      _print_help
+      exit "$EXIT_OK"
+      ;;
+    -v | --version)
+      echo "$APP_NAME v$APP_VERSION"
+      exit "$EXIT_OK"
+      ;;
+    -m | --mirror)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a URL argument.\n  Example: $1 https://mirror.example.com/ubuntu" "$EXIT_USAGE"
+      FORCE_MIRROR="${2%/}"
+      shift 2
+      ;;
+    -r | --restore)
+      RESTORE=true
+      shift
+      ;;
+    --restore-path)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a path argument.\n  Example: $1 /var/backups/${APP_SLUG}/2025-01-01_12-00-00" "$EXIT_USAGE"
+      RESTORE_PATH="${2}"
+      RESTORE=true
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    --skip-update)
+      SKIP_UPDATE=true
+      shift
+      ;;
+    --list)
+      _check_probe_tool
+      list_mirrors
+      exit "$EXIT_OK"
+      ;;
+    --json)
+      JSON_OUTPUT=true
+      QUIET=true
+      NO_SPINNER=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --no-spinner)
+      # shellcheck disable=SC2034
+      NO_SPINNER=true
+      shift
+      ;;
+    --timeout)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a number.\n  Example: $1 30" "$EXIT_USAGE"
+      [[ ! "$2" =~ ^[0-9]+$ ]] && die "Option $1 requires a positive integer.\n  Got: $2" "$EXIT_USAGE"
+      (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
+      TIMEOUT_TOTAL="$2"
+      shift 2
+      ;;
+    --country)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a country code.\n  Example: $1 us" "$EXIT_USAGE"
+      [[ "$2" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
+      COUNTRY_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+      shift 2
+      ;;
+    --ipv6)
+      USE_IPV6=true
+      shift
+      ;;
+    --log-file)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a file path.\n  Example: $1 /var/log/apt-boost.log" "$EXIT_USAGE"
+      LOG_FILE="$2"
+      LOG_ENABLED=true
+      shift 2
+      ;;
+    -*)
+      printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Unknown option: $1${COLOR_RESET}\n" >&2
+      printf '%b\n' "  ${COLOR_DIM}Run '${COLOR_RESET}${COLOR_BOLD}$0 --help${COLOR_RESET}${COLOR_DIM}' for usage information.${COLOR_RESET}\n" >&2
+      exit "$EXIT_USAGE"
+      ;;
+    *)
+      printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Unexpected argument: $1${COLOR_RESET}\n" >&2
+      printf '%b\n' "  ${COLOR_DIM}Run '${COLOR_RESET}${COLOR_BOLD}$0 --help${COLOR_RESET}${COLOR_DIM}' for usage information.${COLOR_RESET}\n" >&2
+      exit "$EXIT_USAGE"
+      ;;
+    esac
+  done
+}
+
+# ─── Main ─────────────────────────────────────────────────────────────────────
+
+main() {
+  _setup_colors
+  _parse_args "$@"
+
+  if [[ "$LOG_ENABLED" == true ]]; then
+    mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+    : >"$LOG_FILE"
+    _log_to_file "Session started: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  fi
+
+  if [[ "$RESTORE" == true ]]; then
+    need_root
+    _check_commands
+    _acquire_mutation_lock
+    if ! _restore_backup "$RESTORE_PATH"; then
+      die "APT configuration restore failed. Inspect recovery data before retrying." "$EXIT_RESTORE"
+    fi
+    if ! apt-get update; then
+      die "APT configuration was restored, but apt-get update failed. Check repository connectivity." "$EXIT_NETWORK"
+    fi
+    if [[ "$JSON_OUTPUT" == true ]]; then
+      SELECTED_MIRROR="restored"
+      SELECTED_TIME=""
+      _print_json
+    fi
+    exit "$EXIT_OK"
+  fi
+
+  _print_banner
+  need_root
+  _check_commands
+  _check_probe_tool
+  detect_ubuntu
+  if [[ "$DRY_RUN" != true ]]; then
+    _acquire_mutation_lock
+  fi
+
+  if [[ -n "$FORCE_MIRROR" ]]; then
+    _print_section_header "TESTING SPECIFIED MIRROR"
+    msg "  Mirror: ${COLOR_BOLD}${FORCE_MIRROR}${COLOR_RESET}"
+    echo ""
+    local result_file
+    result_file=$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.force.XXXXXX")
+    _test_mirror "$FORCE_MIRROR" "$result_file" "$CODENAME"
+    local rtime rstatus
+    rtime=$(awk '{print $1}' "$result_file")
+    rstatus=$(awk '{print $2}' "$result_file")
+    rm -f "$result_file" 2>/dev/null || true
+    if [[ "$rstatus" == "pass" ]]; then
+      SELECTED_MIRROR="$FORCE_MIRROR"
+      SELECTED_TIME="$rtime"
+    else
+      printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Mirror is not reachable:${COLOR_RESET}\n" >&2
+      printf '%b\n' "  ${COLOR_DIM}Possible causes:${COLOR_RESET}\n" >&2
+      printf '%b\n' "    - URL is incorrect\n" >&2
+      printf '%b\n' "    - Mirror server is down\n" >&2
+      printf '%b\n' "    - Network connectivity issue\n" >&2
+      exit "$EXIT_NO_MIRROR"
+    fi
+  else
+    _select_mirror
+  fi
+
+  _apply_changes
+  _print_summary
+
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _print_json
+  fi
+}
+
+if [[ "${POWER_APT_BOOST_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi
+\n'/\\n}"
+  value="${value//
+  local status="success" action="mirror_selected"
+  if [[ "$DRY_RUN" == true ]]; then action="dry_run"; fi
+  if [[ "$RESTORE" == true ]]; then action="backup_restored"; fi
+
+  cat <<JSON
+{
+  "version": "${APP_VERSION}",
+  "action": "${action}",
+  "status": "${status}",
+  "codename": "${CODENAME:-unknown}",
+  "mirror": "${SELECTED_MIRROR:-}",
+  "response_time": "${SELECTED_TIME:-}",
+  "dry_run": ${DRY_RUN},
+  "skip_update": ${SKIP_UPDATE},
+  "timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+  "files": {
+    "deb822": "${APT_DEB822_FILE}",
+    "config": "${APT_CONF_FILE}"
+  }
+}
+JSON
+}
+
+_print_summary() {
+  if [[ "$DRY_RUN" == true ]]; then
+    cat <<EOF
+
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+  ${COLOR_YELLOW}${COLOR_BOLD}DRY RUN COMPLETED${COLOR_RESET}
+
+  Fastest mirror:  ${COLOR_BOLD}${SELECTED_MIRROR}${COLOR_RESET}
+  Response time:   ${COLOR_BOLD}${SELECTED_TIME}s${COLOR_RESET}
+
+  ${COLOR_DIM}No system changes were made.${COLOR_RESET}
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+
+EOF
+    return
+  fi
+
+  cat <<EOF
+
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+  ${COLOR_GREEN}${COLOR_BOLD}SUCCESS — APT mirror optimized${COLOR_RESET}
+
+  ${COLOR_BOLD}Mirror:${COLOR_RESET}  ${SELECTED_MIRROR}
+  ${COLOR_BOLD}Speed:${COLOR_RESET}   ${SELECTED_TIME}s
+
+  ${COLOR_DIM}Config files:${COLOR_RESET}
+    ${APT_DEB822_FILE}
+    ${APT_CONF_FILE}
+
+  ${COLOR_DIM}To undo:${COLOR_RESET}
+    ${COLOR_CYAN}sudo bash ${_SCRIPT_NAME} --restore${COLOR_RESET}
+
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+
+EOF
+}
+
+_print_banner() {
+  if [[ "$QUIET" == true || "$JSON_OUTPUT" == true ]]; then return; fi
+  cat <<'EOF'
+
+██████   ██████  ██     ██ ███████ ██████       █████  ██████  ████████     ██████   ██████   ██████  ███████ ████████ 
+██   ██ ██    ██ ██     ██ ██      ██   ██     ██   ██ ██   ██    ██        ██   ██ ██    ██ ██    ██ ██         ██    
+██████  ██    ██ ██  █  ██ █████   ██████      ███████ ██████     ██        ██████  ██    ██ ██    ██ ███████    ██    
+██      ██    ██ ██ ███ ██ ██      ██   ██     ██   ██ ██         ██        ██   ██ ██    ██ ██    ██      ██    ██    
+██       ██████   ███ ███  ███████ ██   ██     ██   ██ ██         ██        ██████   ██████   ██████  ███████    ██    
+                                                                                                                       
+                                                                                                                       
+EOF
+  echo "" >&2
+  printf '%b\n' "  ${COLOR_DIM}Fast Ubuntu APT mirror selector & network optimizer${COLOR_RESET}" >&2
+  printf '%b\n' "  ${COLOR_DIM}v${APP_VERSION} · ${APP_LICENSE} · ${APP_AUTHOR}${COLOR_RESET}" >&2
+  printf '%b\n' "  ${COLOR_DIM}${APP_GITHUB}${COLOR_RESET}" >&2
+  echo "" >&2
+}
+
+_print_help() {
+  cat <<EOF
+${COLOR_BOLD}${COLOR_CYAN}Power APT Boost${COLOR_RESET} v${APP_VERSION}
+Fast Ubuntu APT mirror selector and network optimizer
+
+${COLOR_BOLD}${COLOR_BLUE}USAGE${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} [OPTIONS]
+  curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash
+
+${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
+  ${COLOR_GREEN}-h, --help${COLOR_RESET}              Show this help message
+  ${COLOR_GREEN}-v, --version${COLOR_RESET}           Show version information
+  ${COLOR_GREEN}-m, --mirror URL${COLOR_RESET}        Use a specific Ubuntu mirror
+  ${COLOR_GREEN}-r, --restore${COLOR_RESET}           Restore APT config from backup
+  ${COLOR_GREEN}    --restore-path PATH${COLOR_RESET}   Restore from a specific backup
+  ${COLOR_GREEN}    --dry-run${COLOR_RESET}            Test mirrors without changing config
+  ${COLOR_GREEN}    --skip-update${COLOR_RESET}        Write config but skip apt-get update
+  ${COLOR_GREEN}    --list${COLOR_RESET}               List available mirrors and test them
+  ${COLOR_GREEN}    --json${COLOR_RESET}               Output results as JSON (for scripting)
+  ${COLOR_GREEN}    --verbose${COLOR_RESET}             Show detailed output
+  ${COLOR_GREEN}    --quiet${COLOR_RESET}               Suppress non-essential output
+  ${COLOR_GREEN}    --no-spinner${COLOR_RESET}          Disable spinner (for CI/CD)
+  ${COLOR_GREEN}    --timeout SECS${COLOR_RESET}        Probe timeout (default: 20)
+  ${COLOR_GREEN}    --country CODE${COLOR_RESET}        Filter mirrors by country code
+  ${COLOR_GREEN}    --ipv6${COLOR_RESET}                Use IPv6 for mirror testing
+  ${COLOR_GREEN}    --log-file PATH${COLOR_RESET}       Write log to file
+
+${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
+  ${COLOR_DIM}# Auto-select fastest mirror${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME}
+
+  ${COLOR_DIM}# Test without changing system config${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --dry-run
+
+  ${COLOR_DIM}# Use a specific mirror${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --mirror https://mirror.example.com/ubuntu
+
+  ${COLOR_DIM}# Restore from latest backup${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --restore
+
+  ${COLOR_DIM}# Machine-readable output for CI/CD pipelines${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --json --quiet
+
+  ${COLOR_DIM}# List and test all available mirrors${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --list
+
+  ${COLOR_DIM}# Filter mirrors by country${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --country us
+
+${COLOR_BOLD}${COLOR_BLUE}WHAT IT DOES${COLOR_RESET}
+  1. Detects your Ubuntu version
+  2. Tests multiple mirrors in parallel for speed
+  3. Selects the fastest working mirror
+  4. Backs up current APT configuration
+  5. Writes optimized APT sources (deb822 format)
+  6. Configures network optimizations (retries, timeouts)
+  7. Cleans stale package lists
+  8. Runs apt-get update
+
+${COLOR_BOLD}${COLOR_BLUE}BACKUPS${COLOR_RESET}
+  Location:  ${BACKUP_BASE}/
+  Restore:   sudo bash ${_SCRIPT_NAME} --restore
+  Or:        sudo bash ${_SCRIPT_NAME} --restore-path /var/backups/${APP_SLUG}/<timestamp>
+
+${COLOR_BOLD}${COLOR_BLUE}EXIT CODES${COLOR_RESET}
+  ${COLOR_GREEN}0${COLOR_RESET}  Success         ${COLOR_GREEN}4${COLOR_RESET}  Not running as root
+  1  General error      5  Not Ubuntu
+  2  Usage error        6  No working mirror found
+  3  Network error      7  Backup failed
+  4  Root required      8  Restore/rollback failed
+
+${COLOR_BOLD}${COLOR_BLUE}AUTHOR${COLOR_RESET}
+  ${APP_AUTHOR} · ${APP_GITHUB}
+EOF
+}
+
+# ─── Argument Parsing ────────────────────────────────────────────────────────
+
+_parse_args() {
+  if [[ $# -eq 0 ]]; then return; fi
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    -h | --help)
+      _print_help
+      exit "$EXIT_OK"
+      ;;
+    -v | --version)
+      echo "$APP_NAME v$APP_VERSION"
+      exit "$EXIT_OK"
+      ;;
+    -m | --mirror)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a URL argument.\n  Example: $1 https://mirror.example.com/ubuntu" "$EXIT_USAGE"
+      FORCE_MIRROR="${2%/}"
+      shift 2
+      ;;
+    -r | --restore)
+      RESTORE=true
+      shift
+      ;;
+    --restore-path)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a path argument.\n  Example: $1 /var/backups/${APP_SLUG}/2025-01-01_12-00-00" "$EXIT_USAGE"
+      RESTORE_PATH="${2}"
+      RESTORE=true
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    --skip-update)
+      SKIP_UPDATE=true
+      shift
+      ;;
+    --list)
+      _check_probe_tool
+      list_mirrors
+      exit "$EXIT_OK"
+      ;;
+    --json)
+      JSON_OUTPUT=true
+      QUIET=true
+      NO_SPINNER=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --no-spinner)
+      # shellcheck disable=SC2034
+      NO_SPINNER=true
+      shift
+      ;;
+    --timeout)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a number.\n  Example: $1 30" "$EXIT_USAGE"
+      [[ ! "$2" =~ ^[0-9]+$ ]] && die "Option $1 requires a positive integer.\n  Got: $2" "$EXIT_USAGE"
+      (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
+      TIMEOUT_TOTAL="$2"
+      shift 2
+      ;;
+    --country)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a country code.\n  Example: $1 us" "$EXIT_USAGE"
+      [[ "$2" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
+      COUNTRY_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+      shift 2
+      ;;
+    --ipv6)
+      USE_IPV6=true
+      shift
+      ;;
+    --log-file)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a file path.\n  Example: $1 /var/log/apt-boost.log" "$EXIT_USAGE"
+      LOG_FILE="$2"
+      LOG_ENABLED=true
+      shift 2
+      ;;
+    -*)
+      printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Unknown option: $1${COLOR_RESET}\n" >&2
+      printf '%b\n' "  ${COLOR_DIM}Run '${COLOR_RESET}${COLOR_BOLD}$0 --help${COLOR_RESET}${COLOR_DIM}' for usage information.${COLOR_RESET}\n" >&2
+      exit "$EXIT_USAGE"
+      ;;
+    *)
+      printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Unexpected argument: $1${COLOR_RESET}\n" >&2
+      printf '%b\n' "  ${COLOR_DIM}Run '${COLOR_RESET}${COLOR_BOLD}$0 --help${COLOR_RESET}${COLOR_DIM}' for usage information.${COLOR_RESET}\n" >&2
+      exit "$EXIT_USAGE"
+      ;;
+    esac
+  done
+}
+
+# ─── Main ─────────────────────────────────────────────────────────────────────
+
+main() {
+  _setup_colors
+  _parse_args "$@"
+
+  if [[ "$LOG_ENABLED" == true ]]; then
+    mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+    : >"$LOG_FILE"
+    _log_to_file "Session started: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  fi
+
+  if [[ "$RESTORE" == true ]]; then
+    need_root
+    _check_commands
+    _acquire_mutation_lock
+    if ! _restore_backup "$RESTORE_PATH"; then
+      die "APT configuration restore failed. Inspect recovery data before retrying." "$EXIT_RESTORE"
+    fi
+    if ! apt-get update; then
+      die "APT configuration was restored, but apt-get update failed. Check repository connectivity." "$EXIT_NETWORK"
+    fi
+    if [[ "$JSON_OUTPUT" == true ]]; then
+      SELECTED_MIRROR="restored"
+      SELECTED_TIME=""
+      _print_json
+    fi
+    exit "$EXIT_OK"
+  fi
+
+  _print_banner
+  need_root
+  _check_commands
+  _check_probe_tool
+  detect_ubuntu
+  if [[ "$DRY_RUN" != true ]]; then
+    _acquire_mutation_lock
+  fi
+
+  if [[ -n "$FORCE_MIRROR" ]]; then
+    _print_section_header "TESTING SPECIFIED MIRROR"
+    msg "  Mirror: ${COLOR_BOLD}${FORCE_MIRROR}${COLOR_RESET}"
+    echo ""
+    local result_file
+    result_file=$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.force.XXXXXX")
+    _test_mirror "$FORCE_MIRROR" "$result_file" "$CODENAME"
+    local rtime rstatus
+    rtime=$(awk '{print $1}' "$result_file")
+    rstatus=$(awk '{print $2}' "$result_file")
+    rm -f "$result_file" 2>/dev/null || true
+    if [[ "$rstatus" == "pass" ]]; then
+      SELECTED_MIRROR="$FORCE_MIRROR"
+      SELECTED_TIME="$rtime"
+    else
+      printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Mirror is not reachable:${COLOR_RESET}\n" >&2
+      printf '%b\n' "  ${COLOR_DIM}Possible causes:${COLOR_RESET}\n" >&2
+      printf '%b\n' "    - URL is incorrect\n" >&2
+      printf '%b\n' "    - Mirror server is down\n" >&2
+      printf '%b\n' "    - Network connectivity issue\n" >&2
+      exit "$EXIT_NO_MIRROR"
+    fi
+  else
+    _select_mirror
+  fi
+
+  _apply_changes
+  _print_summary
+
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _print_json
+  fi
+}
+
+if [[ "${POWER_APT_BOOST_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi
+\r'/\\r}"
+  value="${value//
+  local status="success" action="mirror_selected"
+  if [[ "$DRY_RUN" == true ]]; then action="dry_run"; fi
+  if [[ "$RESTORE" == true ]]; then action="backup_restored"; fi
+
+  cat <<JSON
+{
+  "version": "${APP_VERSION}",
+  "action": "${action}",
+  "status": "${status}",
+  "codename": "${CODENAME:-unknown}",
+  "mirror": "${SELECTED_MIRROR:-}",
+  "response_time": "${SELECTED_TIME:-}",
+  "dry_run": ${DRY_RUN},
+  "skip_update": ${SKIP_UPDATE},
+  "timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+  "files": {
+    "deb822": "${APT_DEB822_FILE}",
+    "config": "${APT_CONF_FILE}"
+  }
+}
+JSON
+}
+
+_print_summary() {
+  if [[ "$DRY_RUN" == true ]]; then
+    cat <<EOF
+
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+  ${COLOR_YELLOW}${COLOR_BOLD}DRY RUN COMPLETED${COLOR_RESET}
+
+  Fastest mirror:  ${COLOR_BOLD}${SELECTED_MIRROR}${COLOR_RESET}
+  Response time:   ${COLOR_BOLD}${SELECTED_TIME}s${COLOR_RESET}
+
+  ${COLOR_DIM}No system changes were made.${COLOR_RESET}
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+
+EOF
+    return
+  fi
+
+  cat <<EOF
+
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+  ${COLOR_GREEN}${COLOR_BOLD}SUCCESS — APT mirror optimized${COLOR_RESET}
+
+  ${COLOR_BOLD}Mirror:${COLOR_RESET}  ${SELECTED_MIRROR}
+  ${COLOR_BOLD}Speed:${COLOR_RESET}   ${SELECTED_TIME}s
+
+  ${COLOR_DIM}Config files:${COLOR_RESET}
+    ${APT_DEB822_FILE}
+    ${APT_CONF_FILE}
+
+  ${COLOR_DIM}To undo:${COLOR_RESET}
+    ${COLOR_CYAN}sudo bash ${_SCRIPT_NAME} --restore${COLOR_RESET}
+
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+
+EOF
+}
+
+_print_banner() {
+  if [[ "$QUIET" == true || "$JSON_OUTPUT" == true ]]; then return; fi
+  cat <<'EOF'
+
+██████   ██████  ██     ██ ███████ ██████       █████  ██████  ████████     ██████   ██████   ██████  ███████ ████████ 
+██   ██ ██    ██ ██     ██ ██      ██   ██     ██   ██ ██   ██    ██        ██   ██ ██    ██ ██    ██ ██         ██    
+██████  ██    ██ ██  █  ██ █████   ██████      ███████ ██████     ██        ██████  ██    ██ ██    ██ ███████    ██    
+██      ██    ██ ██ ███ ██ ██      ██   ██     ██   ██ ██         ██        ██   ██ ██    ██ ██    ██      ██    ██    
+██       ██████   ███ ███  ███████ ██   ██     ██   ██ ██         ██        ██████   ██████   ██████  ███████    ██    
+                                                                                                                       
+                                                                                                                       
+EOF
+  echo "" >&2
+  printf '%b\n' "  ${COLOR_DIM}Fast Ubuntu APT mirror selector & network optimizer${COLOR_RESET}" >&2
+  printf '%b\n' "  ${COLOR_DIM}v${APP_VERSION} · ${APP_LICENSE} · ${APP_AUTHOR}${COLOR_RESET}" >&2
+  printf '%b\n' "  ${COLOR_DIM}${APP_GITHUB}${COLOR_RESET}" >&2
+  echo "" >&2
+}
+
+_print_help() {
+  cat <<EOF
+${COLOR_BOLD}${COLOR_CYAN}Power APT Boost${COLOR_RESET} v${APP_VERSION}
+Fast Ubuntu APT mirror selector and network optimizer
+
+${COLOR_BOLD}${COLOR_BLUE}USAGE${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} [OPTIONS]
+  curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash
+
+${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
+  ${COLOR_GREEN}-h, --help${COLOR_RESET}              Show this help message
+  ${COLOR_GREEN}-v, --version${COLOR_RESET}           Show version information
+  ${COLOR_GREEN}-m, --mirror URL${COLOR_RESET}        Use a specific Ubuntu mirror
+  ${COLOR_GREEN}-r, --restore${COLOR_RESET}           Restore APT config from backup
+  ${COLOR_GREEN}    --restore-path PATH${COLOR_RESET}   Restore from a specific backup
+  ${COLOR_GREEN}    --dry-run${COLOR_RESET}            Test mirrors without changing config
+  ${COLOR_GREEN}    --skip-update${COLOR_RESET}        Write config but skip apt-get update
+  ${COLOR_GREEN}    --list${COLOR_RESET}               List available mirrors and test them
+  ${COLOR_GREEN}    --json${COLOR_RESET}               Output results as JSON (for scripting)
+  ${COLOR_GREEN}    --verbose${COLOR_RESET}             Show detailed output
+  ${COLOR_GREEN}    --quiet${COLOR_RESET}               Suppress non-essential output
+  ${COLOR_GREEN}    --no-spinner${COLOR_RESET}          Disable spinner (for CI/CD)
+  ${COLOR_GREEN}    --timeout SECS${COLOR_RESET}        Probe timeout (default: 20)
+  ${COLOR_GREEN}    --country CODE${COLOR_RESET}        Filter mirrors by country code
+  ${COLOR_GREEN}    --ipv6${COLOR_RESET}                Use IPv6 for mirror testing
+  ${COLOR_GREEN}    --log-file PATH${COLOR_RESET}       Write log to file
+
+${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
+  ${COLOR_DIM}# Auto-select fastest mirror${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME}
+
+  ${COLOR_DIM}# Test without changing system config${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --dry-run
+
+  ${COLOR_DIM}# Use a specific mirror${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --mirror https://mirror.example.com/ubuntu
+
+  ${COLOR_DIM}# Restore from latest backup${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --restore
+
+  ${COLOR_DIM}# Machine-readable output for CI/CD pipelines${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --json --quiet
+
+  ${COLOR_DIM}# List and test all available mirrors${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --list
+
+  ${COLOR_DIM}# Filter mirrors by country${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --country us
+
+${COLOR_BOLD}${COLOR_BLUE}WHAT IT DOES${COLOR_RESET}
+  1. Detects your Ubuntu version
+  2. Tests multiple mirrors in parallel for speed
+  3. Selects the fastest working mirror
+  4. Backs up current APT configuration
+  5. Writes optimized APT sources (deb822 format)
+  6. Configures network optimizations (retries, timeouts)
+  7. Cleans stale package lists
+  8. Runs apt-get update
+
+${COLOR_BOLD}${COLOR_BLUE}BACKUPS${COLOR_RESET}
+  Location:  ${BACKUP_BASE}/
+  Restore:   sudo bash ${_SCRIPT_NAME} --restore
+  Or:        sudo bash ${_SCRIPT_NAME} --restore-path /var/backups/${APP_SLUG}/<timestamp>
+
+${COLOR_BOLD}${COLOR_BLUE}EXIT CODES${COLOR_RESET}
+  ${COLOR_GREEN}0${COLOR_RESET}  Success         ${COLOR_GREEN}4${COLOR_RESET}  Not running as root
+  1  General error      5  Not Ubuntu
+  2  Usage error        6  No working mirror found
+  3  Network error      7  Backup failed
+  4  Root required      8  Restore/rollback failed
+
+${COLOR_BOLD}${COLOR_BLUE}AUTHOR${COLOR_RESET}
+  ${APP_AUTHOR} · ${APP_GITHUB}
+EOF
+}
+
+# ─── Argument Parsing ────────────────────────────────────────────────────────
+
+_parse_args() {
+  if [[ $# -eq 0 ]]; then return; fi
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    -h | --help)
+      _print_help
+      exit "$EXIT_OK"
+      ;;
+    -v | --version)
+      echo "$APP_NAME v$APP_VERSION"
+      exit "$EXIT_OK"
+      ;;
+    -m | --mirror)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a URL argument.\n  Example: $1 https://mirror.example.com/ubuntu" "$EXIT_USAGE"
+      FORCE_MIRROR="${2%/}"
+      shift 2
+      ;;
+    -r | --restore)
+      RESTORE=true
+      shift
+      ;;
+    --restore-path)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a path argument.\n  Example: $1 /var/backups/${APP_SLUG}/2025-01-01_12-00-00" "$EXIT_USAGE"
+      RESTORE_PATH="${2}"
+      RESTORE=true
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    --skip-update)
+      SKIP_UPDATE=true
+      shift
+      ;;
+    --list)
+      _check_probe_tool
+      list_mirrors
+      exit "$EXIT_OK"
+      ;;
+    --json)
+      JSON_OUTPUT=true
+      QUIET=true
+      NO_SPINNER=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --no-spinner)
+      # shellcheck disable=SC2034
+      NO_SPINNER=true
+      shift
+      ;;
+    --timeout)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a number.\n  Example: $1 30" "$EXIT_USAGE"
+      [[ ! "$2" =~ ^[0-9]+$ ]] && die "Option $1 requires a positive integer.\n  Got: $2" "$EXIT_USAGE"
+      (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
+      TIMEOUT_TOTAL="$2"
+      shift 2
+      ;;
+    --country)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a country code.\n  Example: $1 us" "$EXIT_USAGE"
+      [[ "$2" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
+      COUNTRY_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+      shift 2
+      ;;
+    --ipv6)
+      USE_IPV6=true
+      shift
+      ;;
+    --log-file)
+      [[ ! "${2:-}" ]] && die "Option $1 requires a file path.\n  Example: $1 /var/log/apt-boost.log" "$EXIT_USAGE"
+      LOG_FILE="$2"
+      LOG_ENABLED=true
+      shift 2
+      ;;
+    -*)
+      printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Unknown option: $1${COLOR_RESET}\n" >&2
+      printf '%b\n' "  ${COLOR_DIM}Run '${COLOR_RESET}${COLOR_BOLD}$0 --help${COLOR_RESET}${COLOR_DIM}' for usage information.${COLOR_RESET}\n" >&2
+      exit "$EXIT_USAGE"
+      ;;
+    *)
+      printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Unexpected argument: $1${COLOR_RESET}\n" >&2
+      printf '%b\n' "  ${COLOR_DIM}Run '${COLOR_RESET}${COLOR_BOLD}$0 --help${COLOR_RESET}${COLOR_DIM}' for usage information.${COLOR_RESET}\n" >&2
+      exit "$EXIT_USAGE"
+      ;;
+    esac
+  done
+}
+
+# ─── Main ─────────────────────────────────────────────────────────────────────
+
+main() {
+  _setup_colors
+  _parse_args "$@"
+
+  if [[ "$LOG_ENABLED" == true ]]; then
+    mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+    : >"$LOG_FILE"
+    _log_to_file "Session started: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  fi
+
+  if [[ "$RESTORE" == true ]]; then
+    need_root
+    _check_commands
+    _acquire_mutation_lock
+    if ! _restore_backup "$RESTORE_PATH"; then
+      die "APT configuration restore failed. Inspect recovery data before retrying." "$EXIT_RESTORE"
+    fi
+    if ! apt-get update; then
+      die "APT configuration was restored, but apt-get update failed. Check repository connectivity." "$EXIT_NETWORK"
+    fi
+    if [[ "$JSON_OUTPUT" == true ]]; then
+      SELECTED_MIRROR="restored"
+      SELECTED_TIME=""
+      _print_json
+    fi
+    exit "$EXIT_OK"
+  fi
+
+  _print_banner
+  need_root
+  _check_commands
+  _check_probe_tool
+  detect_ubuntu
+  if [[ "$DRY_RUN" != true ]]; then
+    _acquire_mutation_lock
+  fi
+
+  if [[ -n "$FORCE_MIRROR" ]]; then
+    _print_section_header "TESTING SPECIFIED MIRROR"
+    msg "  Mirror: ${COLOR_BOLD}${FORCE_MIRROR}${COLOR_RESET}"
+    echo ""
+    local result_file
+    result_file=$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.force.XXXXXX")
+    _test_mirror "$FORCE_MIRROR" "$result_file" "$CODENAME"
+    local rtime rstatus
+    rtime=$(awk '{print $1}' "$result_file")
+    rstatus=$(awk '{print $2}' "$result_file")
+    rm -f "$result_file" 2>/dev/null || true
+    if [[ "$rstatus" == "pass" ]]; then
+      SELECTED_MIRROR="$FORCE_MIRROR"
+      SELECTED_TIME="$rtime"
+    else
+      printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Mirror is not reachable:${COLOR_RESET}\n" >&2
+      printf '%b\n' "  ${COLOR_DIM}Possible causes:${COLOR_RESET}\n" >&2
+      printf '%b\n' "    - URL is incorrect\n" >&2
+      printf '%b\n' "    - Mirror server is down\n" >&2
+      printf '%b\n' "    - Network connectivity issue\n" >&2
+      exit "$EXIT_NO_MIRROR"
+    fi
+  else
+    _select_mirror
+  fi
+
+  _apply_changes
+  _print_summary
+
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _print_json
+  fi
+}
+
+if [[ "${POWER_APT_BOOST_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi
+\t'/\\t}"
+  printf '"%s"' "$value"
+}
+
+_collect_status() {
+  REPORT_OS_ID="unknown"
+  REPORT_OS_PRETTY="unknown"
+  REPORT_VERSION_ID="unknown"
+  REPORT_CODENAME="unknown"
+  if [[ -r "$OS_RELEASE_FILE" ]]; then
+    # shellcheck disable=SC1090,SC1091
+    source "$OS_RELEASE_FILE"
+    REPORT_OS_ID="${ID:-unknown}"
+    REPORT_OS_PRETTY="${PRETTY_NAME:-${ID:-unknown}}"
+    REPORT_VERSION_ID="${VERSION_ID:-unknown}"
+    REPORT_CODENAME="${VERSION_CODENAME:-unknown}"
+  fi
+
+  REPORT_SOURCES_LIST="absent"
+  REPORT_DEB822="absent"
+  REPORT_MANAGED_CONFIG="absent"
+  [[ ! -e "$APT_SOURCES_FILE" ]] || REPORT_SOURCES_LIST="present"
+  [[ ! -e "$APT_DEB822_FILE" ]] || REPORT_DEB822="present"
+  [[ ! -e "$APT_CONF_FILE" ]] || REPORT_MANAGED_CONFIG="present"
+
+  REPORT_CURRENT_MIRROR=""
+  if [[ -r "$APT_DEB822_FILE" ]]; then
+    REPORT_CURRENT_MIRROR="$(awk -F': ' '$1 == "URIs" {print $2; exit}' "$APT_DEB822_FILE" 2>/dev/null || true)"
+    REPORT_CURRENT_MIRROR="$(printf '%s' "$REPORT_CURRENT_MIRROR" | sed -E 's#(https?://)[^/@]+@#\\1[REDACTED]@#g')"
+  fi
+
+  REPORT_BACKUP_ACCESSIBLE=false
+  REPORT_BACKUP_COUNT=0
+  REPORT_LATEST_BACKUP=""
+  if [[ -d "$BACKUP_BASE" && -r "$BACKUP_BASE" ]]; then
+    REPORT_BACKUP_ACCESSIBLE=true
+    REPORT_BACKUP_COUNT="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d '[:space:]')"
+    REPORT_LATEST_BACKUP="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\\t%p\\n' 2>/dev/null | sort -rn | head -1 | cut -f2-)"
+  fi
+}
+
+_print_status_report() {
+  _collect_status
+  printf '\\n%s\\n' "$APP_NAME — System Status"
+  printf '%-24s %s\\n' "Operating system:" "$REPORT_OS_PRETTY"
+  printf '%-24s %s\\n' "Ubuntu codename:" "$REPORT_CODENAME"
+  printf '%-24s %s\\n' "Legacy sources.list:" "$REPORT_SOURCES_LIST"
+  printf '%-24s %s\\n' "Deb822 ubuntu.sources:" "$REPORT_DEB822"
+  printf '%-24s %s\\n' "Managed APT config:" "$REPORT_MANAGED_CONFIG"
+  printf '%-24s %s\\n' "Current mirror:" "${REPORT_CURRENT_MIRROR:-not detected}"
+  if [[ "$REPORT_BACKUP_ACCESSIBLE" == true ]]; then
+    printf '%-24s %s\\n' "Available backups:" "$REPORT_BACKUP_COUNT"
+    printf '%-24s %s\\n' "Latest backup:" "${REPORT_LATEST_BACKUP:-none}"
+  else
+    printf '%-24s %s\\n' "Backup directory:" "not accessible (root may be required)"
+  fi
+  printf '\\n'
+}
+
+_doctor_add_check() {
+  REPORT_CHECK_NAMES+=("$1")
+  REPORT_CHECK_STATUSES+=("$2")
+  REPORT_CHECK_DETAILS+=("$3")
+  case "$2" in
+    error) REPORT_STATUS="error" ;;
+    warning)
+      [[ "$REPORT_STATUS" == "error" ]] || REPORT_STATUS="warning"
+      ;;
+  esac
+}
+
+_doctor_collect() {
+  _collect_status
+  REPORT_CHECK_NAMES=()
+  REPORT_CHECK_STATUSES=()
+  REPORT_CHECK_DETAILS=()
+  REPORT_STATUS="ok"
+
+  if [[ "$REPORT_OS_ID" == "ubuntu" ]]; then
+    _doctor_add_check "operating_system" "ok" "$REPORT_OS_PRETTY"
+  else
+    _doctor_add_check "operating_system" "error" "Ubuntu is required; detected $REPORT_OS_PRETTY"
+  fi
+
+  local cmd
+  for cmd in apt-get awk date grep mkdir cp id mktemp tar sha256sum flock chmod stat find sort head cut chown mv rm sed; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+      _doctor_add_check "command:$cmd" "ok" "available"
+    else
+      _doctor_add_check "command:$cmd" "error" "missing required command"
+    fi
+  done
+  if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+    _doctor_add_check "http_client" "ok" "curl or wget is available"
+  else
+    _doctor_add_check "http_client" "error" "curl or wget is required"
+  fi
+  if [[ -f "$KEYRING_PATH" ]]; then
+    _doctor_add_check "ubuntu_archive_keyring" "ok" "keyring exists"
+  else
+    _doctor_add_check "ubuntu_archive_keyring" "warning" "keyring not found at $KEYRING_PATH"
+  fi
+  if [[ "$(id -u)" -eq 0 ]]; then
+    _doctor_add_check "privileges" "ok" "running as root"
+  else
+    _doctor_add_check "privileges" "warning" "root is required for apply and restore operations"
+  fi
+  if [[ -r "$APT_ETC_DIR" ]]; then
+    _doctor_add_check "apt_configuration" "ok" "APT configuration directory is readable"
+  else
+    _doctor_add_check "apt_configuration" "warning" "APT configuration directory is not readable"
+  fi
+  if [[ "$REPORT_BACKUP_ACCESSIBLE" == true ]]; then
+    _doctor_add_check "backup_directory" "ok" "$REPORT_BACKUP_COUNT backup snapshot(s) visible"
+  else
+    _doctor_add_check "backup_directory" "warning" "backup directory is not currently accessible or has not been created"
+  fi
+}
+
+_report_checks_json() {
+  local i
+  printf '['
+  for ((i = 0; i < ${#REPORT_CHECK_NAMES[@]}; i++)); do
+    if ((i > 0)); then printf ','; fi
+    printf '{"name":%s,"status":%s,"detail":%s}' \\
+      "$(_json_quote "${REPORT_CHECK_NAMES[$i]}")" \\
+      "$(_json_quote "${REPORT_CHECK_STATUSES[$i]}")" \\
+      "$(_json_quote "${REPORT_CHECK_DETAILS[$i]}")"
+  done
+  printf ']'
+}
+
+_print_json() {
   local status="success" action="mirror_selected"
   if [[ "$DRY_RUN" == true ]]; then action="dry_run"; fi
   if [[ "$RESTORE" == true ]]; then action="backup_restored"; fi

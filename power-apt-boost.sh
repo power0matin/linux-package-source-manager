@@ -1599,6 +1599,9 @@ _parse_args() {
   if [[ "$LIST_REQUESTED" == true ]]; then
     [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" ]] || die "--list cannot be combined with apply options." "$EXIT_USAGE"
   fi
+  if [[ "$RESTORE" == true ]]; then
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" ]] || die "--restore cannot be combined with dry-run, skip-update or mirror selection." "$EXIT_USAGE"
+  fi
 }
 
 _is_interactive() {
@@ -1944,6 +1947,15 @@ _menu_diagnostics() {
   esac
 }
 
+_country_code_supported() {
+  local requested="$1" entry country region mirror_url
+  for entry in "${_MIRROR_CATALOG[@]}"; do
+    IFS='|' read -r country region mirror_url <<<"$entry"
+    [[ "$country" != "$requested" ]] || return 0
+  done
+  return 1
+}
+
 _menu_settings() {
   local choice value
   while true; do
@@ -1963,11 +1975,14 @@ _menu_settings() {
         fi
         ;;
       country)
-        value="$(_menu_input "Country filter" "Enter a two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
-        if [[ -z "$value" || "$value" =~ ^[A-Za-z]{2}$ ]]; then
-          COUNTRY_FILTER="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+        value="$(_menu_input "Country filter" "Enter a supported two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
+        value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+        if [[ -z "$value" ]]; then
+          COUNTRY_FILTER=""
+        elif [[ "$value" =~ ^[a-z]{2}$ ]] && _country_code_supported "$value"; then
+          COUNTRY_FILTER="$value"
         else
-          _menu_message "Invalid country" "Country filters must use two letters."
+          _menu_message "Unsupported country" "Choose a country code present in the built-in mirror catalog."
         fi
         ;;
       ipv6)

@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- Made APT snapshots fail closed, checksum-validated and aware of prior path-existence state.
+- Added exact restore for new snapshots, including removal of paths that were absent before the change, with staged recovery on restore failure.
+- Made deb822 and APT config writes atomic and preserved existing file ownership and mode.
+- Added a process-level mutation lock for apply and restore operations.
+- Removed manual APT list and archive-cache deletion; `--skip-update` now leaves package indexes untouched.
+- Unified probe timeout handling, corrected per-endpoint timing output and aligned `--list` with three-suite health tests.
+- Applied IPv6 consistently to mirror probes and generated APT configuration; made `--no-spinner` effective.
+- Replaced hostname-pattern country filtering with an explicit country/region mirror catalog.
+- Defined stable exit codes and signal-specific interruption codes.
+
+### Testing
+
+- Replaced live-network smoke tests with offline regression tests for backup, restore, atomic writes, dry-run and mirror health criteria.
+- Wired the full test runner, ShellCheck and shfmt checks into CI.
+
 ### Documentation
 
 - Added an Ubuntu-first product and engineering roadmap covering APT, Python, Node.js, Docker/OCI and additional package ecosystems.

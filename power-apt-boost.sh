@@ -1483,7 +1483,7 @@ _parse_args() {
         exit "$EXIT_OK"
         ;;
       -v | --version)
-        printf '%s v%s\\n' "$APP_NAME" "$APP_VERSION"
+        printf '%s v%s\n' "$APP_NAME" "$APP_VERSION"
         exit "$EXIT_OK"
         ;;
       -m | --mirror)

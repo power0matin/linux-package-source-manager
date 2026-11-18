@@ -143,6 +143,25 @@ test_filesystem_operations() {
   restored_mode="$(stat -c '%a' "$APT_SOURCES_FILE")"
   assert_contains "640" "$restored_mode" "restore preserves original file mode"
 
+  printf 'current-sources-list\n' >"$APT_SOURCES_FILE"
+  printf 'current-deb822\n' >"${APT_SOURCES_DIR}/ubuntu.sources"
+  mkdir -p "$APT_CONF_DIR"
+  printf 'current-apt-config\n' >"${APT_CONF_DIR}/99-current"
+  local mv_calls=0 injected_restore_code=0
+  mv() {
+    mv_calls=$((mv_calls + 1))
+    if [[ "$mv_calls" -eq 5 ]]; then
+      return 1
+    fi
+    command mv "$@"
+  }
+  _restore_backup "$backup_dir" >/dev/null 2>&1 || injected_restore_code=$?
+  unset -f mv
+  assert_exit_code 8 "$injected_restore_code" "restore reports a failed snapshot install"
+  assert_file_contains "$APT_SOURCES_FILE" "current-sources-list" "failed restore recovers original sources.list"
+  assert_file_contains "${APT_SOURCES_DIR}/ubuntu.sources" "current-deb822" "failed restore recovers original source directory"
+  assert_file_contains "${APT_CONF_DIR}/99-current" "current-apt-config" "failed restore recovers original apt config directory"
+
   rm -f "$APT_SOURCES_FILE"
   rm -rf "$APT_SOURCES_DIR" "$APT_CONF_DIR"
   local empty_backup empty_restore_status=0
@@ -269,6 +288,29 @@ ATOMIC
     ((_tests_failed += 1))
     printf '%bFAIL%b failed atomic write leaves no destination file\n' "$RED" "$RESET"
   fi
+
+  printf 'write-rollback-sources-list\n' >"$APT_SOURCES_FILE"
+  printf 'write-rollback-source-config\n' >"$APT_DEB822_FILE"
+  printf 'write-rollback-apt-config\n' >"$APT_CONF_FILE"
+  local write_mv_calls=0 write_rollback_code=0
+  mv() {
+    write_mv_calls=$((write_mv_calls + 1))
+    if [[ "$write_mv_calls" -eq 2 ]]; then
+      return 1
+    fi
+    command mv "$@"
+  }
+  DRY_RUN=false
+  SKIP_UPDATE=true
+  CODENAME=noble
+  SELECTED_MIRROR="https://broken.example/ubuntu"
+  SELECTED_TIME="0.001"
+  _apply_changes >/dev/null 2>&1 || write_rollback_code=$?
+  unset -f mv
+  assert_exit_code 1 "$write_rollback_code" "APT config write failure returns general error"
+  assert_file_contains "$APT_SOURCES_FILE" "write-rollback-sources-list" "APT write failure restores legacy sources.list"
+  assert_file_contains "$APT_DEB822_FILE" "write-rollback-source-config" "APT write failure restores deb822 source"
+  assert_file_contains "$APT_CONF_FILE" "write-rollback-apt-config" "APT write failure restores previous apt config"
 
   printf 'deb https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
   printf 'prior-source-config\n' >"$APT_DEB822_FILE"

@@ -91,6 +91,28 @@ COUNTRY_FILTER=""
 USE_IPV6=false
 LOG_FILE=""
 LOG_ENABLED=false
+YES=false
+MENU_REQUESTED=false
+STATUS_REQUESTED=false
+DOCTOR_REQUESTED=false
+LIST_REQUESTED=false
+
+REPORT_COMMAND="apply"
+REPORT_STATUS="success"
+REPORT_OS_ID="unknown"
+REPORT_OS_PRETTY="unknown"
+REPORT_VERSION_ID="unknown"
+REPORT_CODENAME="unknown"
+REPORT_SOURCES_LIST="absent"
+REPORT_DEB822="absent"
+REPORT_MANAGED_CONFIG="absent"
+REPORT_CURRENT_MIRROR=""
+REPORT_BACKUP_ACCESSIBLE=false
+REPORT_BACKUP_COUNT=0
+REPORT_LATEST_BACKUP=""
+REPORT_CHECK_NAMES=()
+REPORT_CHECK_STATUSES=()
+REPORT_CHECK_DETAILS=()
 
 _tmp_dirs=()
 _bg_pids=()
@@ -1132,7 +1154,7 @@ DRYRUN
 
 # ─── Output ──────────────────────────────────────────────────────────────────# ─── Output ───────────────────────────────────────────────────────────────────
 
-_print_json() {
+${report}_print_json() {
   local status="success" action="mirror_selected"
   if [[ "$DRY_RUN" == true ]]; then action="dry_run"; fi
   if [[ "$RESTORE" == true ]]; then action="backup_restored"; fi

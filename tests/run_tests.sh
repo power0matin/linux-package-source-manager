@@ -178,20 +178,83 @@ ATOMIC
   [[ -z "$_spinner_pid" ]] && spinner_code=0
   assert_exit_code 0 "$spinner_code" "no-spinner prevents spinner startup"
 
-  rm -f "$APT_DEB822_FILE" "$APT_CONF_FILE"
-  rmdir "$APT_SOURCES_DIR" 2>/dev/null || true
-  DRY_RUN=true
+  mkdir -p "$APT_SOURCES_DIR" "$APT_CONF_DIR" "${_SYSTEM_ROOT}/var/lib/apt/lists" "${_SYSTEM_ROOT}/var/cache/apt/archives"
+  printf 'cached-index\n' >"${_SYSTEM_ROOT}/var/lib/apt/lists/fixture-index"
+  printf 'cached-package\n' >"${_SYSTEM_ROOT}/var/cache/apt/archives/fixture.deb"
+  printf 'deb https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
+  printf 'prior-source-config\n' >"$APT_DEB822_FILE"
+  printf 'prior-apt-config\n' >"$APT_CONF_FILE"
+  local cache_index_before cache_package_before
+  cache_index_before="$(sha256sum "${_SYSTEM_ROOT}/var/lib/apt/lists/fixture-index")"
+  cache_package_before="$(sha256sum "${_SYSTEM_ROOT}/var/cache/apt/archives/fixture.deb")"
+  DRY_RUN=false
+  SKIP_UPDATE=true
+  CODENAME=noble
   SELECTED_MIRROR="https://example.invalid/ubuntu"
   SELECTED_TIME="0.001"
   _apply_changes >/dev/null 2>&1
+  assert_file_contains "${_SYSTEM_ROOT}/var/lib/apt/lists/fixture-index" "cached-index" "skip-update preserves package lists"
+  assert_file_contains "${_SYSTEM_ROOT}/var/cache/apt/archives/fixture.deb" "cached-package" "skip-update preserves downloaded packages"
+  local skip_backup
+  skip_backup="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' | sort -rn | head -1 | cut -f2)"
+  _restore_backup "$skip_backup" >/dev/null 2>&1
+
+  rm -f "$APT_DEB822_FILE" "$APT_CONF_FILE"
+  local backups_before backups_after atomic_before atomic_after
+  backups_before="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+  atomic_before="$(sha256sum "${APT_SOURCES_DIR}/atomic.conf")"
+  DRY_RUN=true
+  SKIP_UPDATE=false
+  SELECTED_MIRROR="https://example.invalid/ubuntu"
+  SELECTED_TIME="0.001"
+  _apply_changes >/dev/null 2>&1
+  backups_after="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+  atomic_after="$(sha256sum "${APT_SOURCES_DIR}/atomic.conf")"
   ((_tests_run+=1))
-  if [[ ! -e "$APT_DEB822_FILE" && ! -e "$APT_CONF_FILE" && ! -d "$BACKUP_BASE" ]]; then
+  if [[ ! -e "$APT_DEB822_FILE" && ! -e "$APT_CONF_FILE" && "$backups_before" == "$backups_after" && "$atomic_before" == "$atomic_after" ]]; then
     ((_tests_passed+=1))
-    printf '%bPASS%b dry-run does not mutate APT paths or create backups\n' "$GREEN" "$RESET"
+    printf '%bPASS%b dry-run leaves APT files and backup count unchanged\n' "$GREEN" "$RESET"
   else
     ((_tests_failed+=1))
-    printf '%bFAIL%b dry-run does not mutate APT paths or create backups\n' "$RED" "$RESET"
+    printf '%bFAIL%b dry-run leaves APT files and backup count unchanged\n' "$RED" "$RESET"
   fi
+
+  local backup_failure=0
+  tar() { return 1; }
+  _create_backup >/dev/null 2>&1 || backup_failure=$?
+  unset -f tar
+  assert_exit_code 7 "$backup_failure" "backup creation fails closed when tar fails"
+
+  local atomic_failure=0
+  cat() { return 1; }
+  _atomic_write "${APT_SOURCES_DIR}/must-not-exist.conf" 0600 <<<"blocked" >/dev/null 2>&1 || atomic_failure=$?
+  unset -f cat
+  assert_exit_code 1 "$atomic_failure" "atomic write reports temporary write failure"
+  ((_tests_run+=1))
+  if [[ ! -e "${APT_SOURCES_DIR}/must-not-exist.conf" ]]; then
+    ((_tests_passed+=1))
+    printf '%bPASS%b failed atomic write leaves no destination file\n' "$GREEN" "$RESET"
+  else
+    ((_tests_failed+=1))
+    printf '%bFAIL%b failed atomic write leaves no destination file\n' "$RED" "$RESET"
+  fi
+
+  printf 'deb https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
+  printf 'prior-source-config\n' >"$APT_DEB822_FILE"
+  printf 'prior-apt-config\n' >"$APT_CONF_FILE"
+  local rollback_code=0
+  (
+    apt-get() { return 1; }
+    DRY_RUN=false
+    SKIP_UPDATE=false
+    SELECTED_MIRROR="https://broken.example/ubuntu"
+    SELECTED_TIME="0.001"
+    _apply_changes >/dev/null 2>&1
+  ) || rollback_code=$?
+  assert_exit_code 3 "$rollback_code" "failed apt-get update returns network exit code after rollback"
+  assert_file_contains "$APT_SOURCES_FILE" "archive.ubuntu.com" "failed update restores legacy sources.list"
+  assert_file_contains "$APT_DEB822_FILE" "prior-source-config" "failed update restores prior deb822 content"
+  assert_file_contains "$APT_CONF_FILE" "prior-apt-config" "failed update restores prior apt config"
 
   local tampered_backup
   tampered_backup="$(mktemp -d "$BACKUP_BASE/tampered.XXXXXX")"

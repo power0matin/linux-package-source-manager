@@ -273,9 +273,9 @@ _handle_signal() {
   local signal_name="$1"
   local exit_code=130
   case "$signal_name" in
-    INT) exit_code=130 ;;
-    TERM) exit_code=143 ;;
-    HUP) exit_code=129 ;;
+  INT) exit_code=130 ;;
+  TERM) exit_code=143 ;;
+  HUP) exit_code=129 ;;
   esac
   _stop_spinner
   msg ""
@@ -360,7 +360,6 @@ detect_ubuntu() {
 
 # ─── Mirror List ──────────────────────────────────────────────────────────────
 
-
 _MIRROR_CATALOG=(
   "ir|Iran|https://ir.archive.ubuntu.com/ubuntu"
   "ir|Iran|https://mirror.arvancloud.ir/ubuntu"
@@ -442,34 +441,32 @@ list_mirrors() {
   done < <(_get_mirrors)
 }
 
-# ─── HTTP Probing
 # ─── HTTP Probing ─────────────────────────────────────────────────────────────
-
 
 _classify_curl_error() {
   local content
   content="$(cat "$1" 2>/dev/null || true)"
   case "$content" in
-    *"Could not resolve host"* | *"resolve"*) echo "DNS resolution failed" ;;
-    *"Connection refused"*) echo "Connection refused" ;;
-    *"Connection timed out"* | *"timed out"*) echo "Connection timed out" ;;
-    *"SSL"* | *"TLS"* | *"certificate"*) echo "TLS handshake failed" ;;
-    *"Network is unreachable"*) echo "Network unreachable" ;;
-    *"No route to host"*) echo "No route to host" ;;
-    *"Empty reply from server"*) echo "Empty reply from server" ;;
-    *) echo "Connection failed" ;;
+  *"Could not resolve host"* | *"resolve"*) echo "DNS resolution failed" ;;
+  *"Connection refused"*) echo "Connection refused" ;;
+  *"Connection timed out"* | *"timed out"*) echo "Connection timed out" ;;
+  *"SSL"* | *"TLS"* | *"certificate"*) echo "TLS handshake failed" ;;
+  *"Network is unreachable"*) echo "Network unreachable" ;;
+  *"No route to host"*) echo "No route to host" ;;
+  *"Empty reply from server"*) echo "Empty reply from server" ;;
+  *) echo "Connection failed" ;;
   esac
 }
 
 _classify_wget_error() {
   local output="$1"
   case "$output" in
-    *"Failed to resolve"* | *"Unknown host"*) echo "DNS resolution failed" ;;
-    *"Connection refused"*) echo "Connection refused" ;;
-    *"timed out"* | *"timed-out"*) echo "Connection timed out" ;;
-    *"SSL"* | *"certificate"*) echo "TLS handshake failed" ;;
-    *"Network is unreachable"*) echo "Network unreachable" ;;
-    *) echo "Connection failed" ;;
+  *"Failed to resolve"* | *"Unknown host"*) echo "DNS resolution failed" ;;
+  *"Connection refused"*) echo "Connection refused" ;;
+  *"timed out"* | *"timed-out"*) echo "Connection timed out" ;;
+  *"SSL"* | *"certificate"*) echo "TLS handshake failed" ;;
+  *"Network is unreachable"*) echo "Network unreachable" ;;
+  *) echo "Connection failed" ;;
   esac
 }
 
@@ -483,7 +480,7 @@ _probe_url_code() {
   local connect_timeout="$PROBE_TIMEOUT_CONNECT"
 
   [[ "$USE_IPV6" == true ]] && ip_flag="-6"
-  (( TIMEOUT_TOTAL < connect_timeout )) && connect_timeout="$TIMEOUT_TOTAL"
+  ((TIMEOUT_TOTAL < connect_timeout)) && connect_timeout="$TIMEOUT_TOTAL"
 
   if command -v curl >/dev/null 2>&1; then
     local curl_stderr curl_output
@@ -726,7 +723,6 @@ _select_mirror() {
 
 # ─── Backup ───────────────────────────────────────────────────────────────────
 
-
 _create_backup() {
   local backup_dir old_umask tar_root
   old_umask="$(umask)"
@@ -801,8 +797,14 @@ _create_backup() {
 _atomic_write() {
   local target="$1" mode="${2:-0644}" parent tmp
   parent="$(dirname -- "$target")"
-  mkdir -p "$parent" || { error "Cannot create directory: $parent"; return 1; }
-  tmp="$(mktemp "$target.tmp.XXXXXX")" || { error "Cannot create temporary file for $target"; return 1; }
+  mkdir -p "$parent" || {
+    error "Cannot create directory: $parent"
+    return 1
+  }
+  tmp="$(mktemp "$target.tmp.XXXXXX")" || {
+    error "Cannot create temporary file for $target"
+    return 1
+  }
   if ! cat >"$tmp"; then
     rm -f "$tmp"
     error "Cannot write temporary file for $target"
@@ -842,7 +844,7 @@ _write_apt_sources() {
     fi
   fi
 
-  if ! _atomic_write "$APT_DEB822_FILE" 0644 <<SOURCES
+  if ! _atomic_write "$APT_DEB822_FILE" 0644 <<SOURCES; then
 # Power APT Boost — Ubuntu mirror configuration
 # Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 # Mirror: $mirror_url
@@ -853,7 +855,6 @@ Suites: $CODENAME $CODENAME-updates $CODENAME-backports $CODENAME-security
 Components: main restricted universe multiverse
 Signed-By: $KEYRING_PATH
 SOURCES
-  then
     return 1
   fi
 
@@ -888,10 +889,10 @@ APTCONF
 
 _apt_target_path() {
   case "$1" in
-    sources.list) printf '%s\n' "$APT_SOURCES_FILE" ;;
-    sources.list.d) printf '%s\n' "$APT_SOURCES_DIR" ;;
-    apt.conf.d) printf '%s\n' "$APT_CONF_DIR" ;;
-    *) return 1 ;;
+  sources.list) printf '%s\n' "$APT_SOURCES_FILE" ;;
+  sources.list.d) printf '%s\n' "$APT_SOURCES_DIR" ;;
+  apt.conf.d) printf '%s\n' "$APT_CONF_DIR" ;;
+  *) return 1 ;;
   esac
 }
 
@@ -939,27 +940,39 @@ _restore_backup() {
   local format="" sources_list_state="" sources_dir_state="" conf_dir_state key value
   while IFS='=' read -r key value; do
     case "$key" in
-      format) format="$value" ;;
-      created_at) ;;
-      sources_list) sources_list_state="$value" ;;
-      sources_list.d) sources_dir_state="$value" ;;
-      apt.conf.d) conf_dir_state="$value" ;;
-      *) error "Unknown manifest key: $key"; return "$EXIT_RESTORE" ;;
+    format) format="$value" ;;
+    created_at) ;;
+    sources_list) sources_list_state="$value" ;;
+    sources_list.d) sources_dir_state="$value" ;;
+    apt.conf.d) conf_dir_state="$value" ;;
+    *)
+      error "Unknown manifest key: $key"
+      return "$EXIT_RESTORE"
+      ;;
     esac
   done <"$backup_path/manifest"
 
-  [[ "$format" == "1" ]] || { error "Unsupported backup manifest version."; return "$EXIT_RESTORE"; }
+  [[ "$format" == "1" ]] || {
+    error "Unsupported backup manifest version."
+    return "$EXIT_RESTORE"
+  }
   [[ "$sources_list_state" == present || "$sources_list_state" == absent ]] || return "$EXIT_RESTORE"
   [[ "$sources_dir_state" == present || "$sources_dir_state" == absent ]] || return "$EXIT_RESTORE"
   [[ "$conf_dir_state" == present || "$conf_dir_state" == absent ]] || return "$EXIT_RESTORE"
 
   local tar_entries tar_entry
-  tar_entries="$(tar -tf "$backup_path/apt-config.tar")" || { error "Could not inspect backup archive."; return "$EXIT_RESTORE"; }
+  tar_entries="$(tar -tf "$backup_path/apt-config.tar")" || {
+    error "Could not inspect backup archive."
+    return "$EXIT_RESTORE"
+  }
   if [[ -n "$tar_entries" ]]; then
     while IFS= read -r tar_entry; do
       case "$tar_entry" in
-        etc|etc/|etc/apt|etc/apt/|etc/apt/sources.list|etc/apt/sources.list.d|etc/apt/sources.list.d/*|etc/apt/apt.conf.d|etc/apt/apt.conf.d/*) ;;
-        *) error "Unsafe path in snapshot archive: $tar_entry"; return "$EXIT_RESTORE" ;;
+      etc | etc/ | etc/apt | etc/apt/ | etc/apt/sources.list | etc/apt/sources.list.d | etc/apt/sources.list.d/* | etc/apt/apt.conf.d | etc/apt/apt.conf.d/*) ;;
+      *)
+        error "Unsafe path in snapshot archive: $tar_entry"
+        return "$EXIT_RESTORE"
+        ;;
       esac
       [[ "$tar_entry" != *"/../"* && "$tar_entry" != ../* && "$tar_entry" != */.. ]] || return "$EXIT_RESTORE"
     done <<<"$tar_entries"
@@ -970,7 +983,10 @@ _restore_backup() {
   stage_dir="$(mktemp -d "$APT_ETC_DIR/.power-apt-boost-restore.XXXXXX")" || return "$EXIT_RESTORE"
   extracted_root="$stage_dir/extracted"
   previous_root="$stage_dir/previous"
-  mkdir -p "$extracted_root" "$previous_root" || { rm -rf "$stage_dir"; return "$EXIT_RESTORE"; }
+  mkdir -p "$extracted_root" "$previous_root" || {
+    rm -rf "$stage_dir"
+    return "$EXIT_RESTORE"
+  }
   if ! tar -xpf "$backup_path/apt-config.tar" -C "$extracted_root"; then
     rm -rf "$stage_dir"
     error "Could not extract the snapshot archive."
@@ -978,9 +994,18 @@ _restore_backup() {
   fi
   archive_root="$extracted_root/etc/apt"
 
-  [[ "$sources_list_state" != present || -e "$archive_root/sources.list" || -L "$archive_root/sources.list" ]] || { rm -rf "$stage_dir"; return "$EXIT_RESTORE"; }
-  [[ "$sources_dir_state" != present || -e "$archive_root/sources.list.d" || -L "$archive_root/sources.list.d" ]] || { rm -rf "$stage_dir"; return "$EXIT_RESTORE"; }
-  [[ "$conf_dir_state" != present || -e "$archive_root/apt.conf.d" || -L "$archive_root/apt.conf.d" ]] || { rm -rf "$stage_dir"; return "$EXIT_RESTORE"; }
+  [[ "$sources_list_state" != present || -e "$archive_root/sources.list" || -L "$archive_root/sources.list" ]] || {
+    rm -rf "$stage_dir"
+    return "$EXIT_RESTORE"
+  }
+  [[ "$sources_dir_state" != present || -e "$archive_root/sources.list.d" || -L "$archive_root/sources.list.d" ]] || {
+    rm -rf "$stage_dir"
+    return "$EXIT_RESTORE"
+  }
+  [[ "$conf_dir_state" != present || -e "$archive_root/apt.conf.d" || -L "$archive_root/apt.conf.d" ]] || {
+    rm -rf "$stage_dir"
+    return "$EXIT_RESTORE"
+  }
 
   local -a target_names=(sources.list sources.list.d apt.conf.d)
   local -a moved_targets=()
@@ -1005,9 +1030,9 @@ _restore_backup() {
   local install_failed=false
   for key in "${target_names[@]}"; do
     case "$key" in
-      sources.list) value="$sources_list_state" ;;
-      sources.list.d) value="$sources_dir_state" ;;
-      apt.conf.d) value="$conf_dir_state" ;;
+    sources.list) value="$sources_list_state" ;;
+    sources.list.d) value="$sources_dir_state" ;;
+    apt.conf.d) value="$conf_dir_state" ;;
     esac
     if [[ "$value" == present ]]; then
       if ! mv -- "$archive_root/$key" "$(_apt_target_path "$key")"; then
@@ -1052,8 +1077,7 @@ _acquire_mutation_lock() {
   chmod 0600 "$APT_LOCK_FILE" 2>/dev/null || true
 }
 
-# ─── Apply Changes ───────────────────────────────────────────# ─── Apply Changes ───────────────────────────────────────────────────────────
-
+# ─── Apply Changes ───────────────────────────────────────────────────────────
 
 _apply_changes() {
   _print_section_header "APPLYING CHANGES"
@@ -1329,7 +1353,7 @@ _parse_args() {
     --timeout)
       [[ ! "${2:-}" ]] && die "Option $1 requires a number.\n  Example: $1 30" "$EXIT_USAGE"
       [[ ! "$2" =~ ^[0-9]+$ ]] && die "Option $1 requires a positive integer.\n  Got: $2" "$EXIT_USAGE"
-      (( $2 >= 1 && $2 <= 300 )) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
+      (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
       TIMEOUT_TOTAL="$2"
       shift 2
       ;;

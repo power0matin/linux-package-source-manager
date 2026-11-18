@@ -877,7 +877,7 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 
 **Acceptance criteria**
 
-- [ ] Every injected failure during backup, write, apt update and restore returns the exact original APT state or explicitly reports rollback failure with recovery instructions.
+- [x] Injected backup, atomic-write, APT write, `apt-get update`, restore-install and checksum failures either preserve or restore the original managed APT state, or return the dedicated recovery error.
 - [x] The automated regression suite uses mocked probes and no live external mirror.
 - [ ] ShellCheck, shfmt and all offline tests pass.
 - [x] Existing documented CLI options remain available; unsupported country codes and invalid timeout ranges are rejected explicitly.

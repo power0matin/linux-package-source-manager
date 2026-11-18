@@ -1280,10 +1280,7 @@ _report_checks_json() {
   printf '['
   for ((i = 0; i < ${#REPORT_CHECK_NAMES[@]}; i++)); do
     if ((i > 0)); then printf ','; fi
-    printf '{"name":%s,"status":%s,"detail":%s}' \\
-      "$(_json_quote "${REPORT_CHECK_NAMES[$i]}")" \\
-      "$(_json_quote "${REPORT_CHECK_STATUSES[$i]}")" \\
-      "$(_json_quote "${REPORT_CHECK_DETAILS[$i]}")"
+    printf '{"name":%s,"status":%s,"detail":%s}' "$(_json_quote "${REPORT_CHECK_NAMES[$i]}")" "$(_json_quote "${REPORT_CHECK_STATUSES[$i]}")" "$(_json_quote "${REPORT_CHECK_DETAILS[$i]}")"
   done
   printf ']'
 }
@@ -1292,27 +1289,19 @@ _print_json() {
   _collect_status
   local checks_json
   checks_json="$(_report_checks_json)"
-  printf '{\n'
-  printf '  "schema_version": 1,\n'
-  printf '  "version": %s,\n' "$(_json_quote "$APP_VERSION")"
-  printf '  "command": %s,\n' "$(_json_quote "$REPORT_COMMAND")"
-  printf '  "status": %s,\n' "$(_json_quote "$REPORT_STATUS")"
-  printf '  "timestamp": %s,\n' "$(_json_quote "$(date -u '+%Y-%m-%dT%H:%M:%SZ')")"
-  printf '  "system": {"id": %s, "pretty_name": %s, "version_id": %s, "codename": %s},\n' \\
-    "$(_json_quote "$REPORT_OS_ID")" "$(_json_quote "$REPORT_OS_PRETTY")" \\
-    "$(_json_quote "$REPORT_VERSION_ID")" "$(_json_quote "$REPORT_CODENAME")"
-  printf '  "apt": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "current_mirror": %s},\n' \\
-    "$(_json_quote "$REPORT_SOURCES_LIST")" "$(_json_quote "$REPORT_DEB822")" \\
-    "$(_json_quote "$REPORT_MANAGED_CONFIG")" "$(_json_quote "$REPORT_CURRENT_MIRROR")"
-  printf '  "backups": {"accessible": %s, "count": %s, "latest": %s},\n' \\
-    "$REPORT_BACKUP_ACCESSIBLE" "$REPORT_BACKUP_COUNT" "$(_json_quote "$REPORT_LATEST_BACKUP")"
-  printf '  "operation": {"mirror": %s, "response_time_seconds": %s, "dry_run": %s, "skip_update": %s},\n' \\
-    "$(_json_quote "$SELECTED_MIRROR")" "$(_json_quote "$SELECTED_TIME")" "$DRY_RUN" "$SKIP_UPDATE"
-  printf '  "paths": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "backup_root": %s},\n' \\
-    "$(_json_quote "$APT_SOURCES_FILE")" "$(_json_quote "$APT_DEB822_FILE")" \\
-    "$(_json_quote "$APT_CONF_FILE")" "$(_json_quote "$BACKUP_BASE")"
-  printf '  "checks": %s\n' "$checks_json"
-  printf '}\n'
+  printf '{\\n'
+  printf '  "schema_version": 1,\\n'
+  printf '  "version": %s,\\n' "$(_json_quote "$APP_VERSION")"
+  printf '  "command": %s,\\n' "$(_json_quote "$REPORT_COMMAND")"
+  printf '  "status": %s,\\n' "$(_json_quote "$REPORT_STATUS")"
+  printf '  "timestamp": %s,\\n' "$(_json_quote "$(date -u '+%Y-%m-%dT%H:%M:%SZ')")"
+  printf '  "system": {"id": %s, "pretty_name": %s, "version_id": %s, "codename": %s},\\n' "$(_json_quote "$REPORT_OS_ID")" "$(_json_quote "$REPORT_OS_PRETTY")" "$(_json_quote "$REPORT_VERSION_ID")" "$(_json_quote "$REPORT_CODENAME")"
+  printf '  "apt": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "current_mirror": %s},\\n' "$(_json_quote "$REPORT_SOURCES_LIST")" "$(_json_quote "$REPORT_DEB822")" "$(_json_quote "$REPORT_MANAGED_CONFIG")" "$(_json_quote "$REPORT_CURRENT_MIRROR")"
+  printf '  "backups": {"accessible": %s, "count": %s, "latest": %s},\\n' "$REPORT_BACKUP_ACCESSIBLE" "$REPORT_BACKUP_COUNT" "$(_json_quote "$REPORT_LATEST_BACKUP")"
+  printf '  "operation": {"mirror": %s, "response_time_seconds": %s, "dry_run": %s, "skip_update": %s},\\n' "$(_json_quote "$SELECTED_MIRROR")" "$(_json_quote "$SELECTED_TIME")" "$DRY_RUN" "$SKIP_UPDATE"
+  printf '  "paths": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "backup_root": %s},\\n' "$(_json_quote "$APT_SOURCES_FILE")" "$(_json_quote "$APT_DEB822_FILE")" "$(_json_quote "$APT_CONF_FILE")" "$(_json_quote "$BACKUP_BASE")"
+  printf '  "checks": %s\\n' "$checks_json"
+  printf '}\\n'
 }
 
 _status_report() {
@@ -1336,30 +1325,6 @@ _doctor_report() {
     done
     printf '\nOverall status: %s\n\n' "$REPORT_STATUS"
   fi
-}
-
-_print_json() {
-  local status="success" action="mirror_selected"
-  if [[ "$DRY_RUN" == true ]]; then action="dry_run"; fi
-  if [[ "$RESTORE" == true ]]; then action="backup_restored"; fi
-
-  cat <<JSON
-{
-  "version": "${APP_VERSION}",
-  "action": "${action}",
-  "status": "${status}",
-  "codename": "${CODENAME:-unknown}",
-  "mirror": "${SELECTED_MIRROR:-}",
-  "response_time": "${SELECTED_TIME:-}",
-  "dry_run": ${DRY_RUN},
-  "skip_update": ${SKIP_UPDATE},
-  "timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
-  "files": {
-    "deb822": "${APT_DEB822_FILE}",
-    "config": "${APT_CONF_FILE}"
-  }
-}
-JSON
 }
 
 _print_summary() {

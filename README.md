@@ -13,16 +13,18 @@
 [![CI](https://github.com/power0matin/power-apt-boost/actions/workflows/ci.yml/badge.svg)](https://github.com/power0matin/power-apt-boost/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![ShellCheck](https://img.shields.io/badge/ShellCheck-passing-brightgreen.svg)](https://www.shellcheck.net/)
-[![Version](https://img.shields.io/badge/version-2.1.0-orange.svg)](https://github.com/power0matin/power-apt-boost/releases)
+[![Latest release](https://img.shields.io/github/v/release/power0matin/power-apt-boost?style=flat-square&label=latest%20release&labelColor=18181B&color=F97316)](https://github.com/power0matin/power-apt-boost/releases)
 
 Fast Ubuntu APT mirror selector and network optimizer.
 
-Power APT Boost tests multiple Ubuntu mirrors, selects the fastest working mirror for your server, rewrites APT sources safely, applies network optimizations, and runs `apt-get update`.
+Power APT Boost tests Ubuntu mirrors, selects a reachable candidate, writes APT sources, applies network settings, and runs `apt-get update`. The current implementation is still undergoing safety hardening; see the [roadmap](ROADMAP.md) before using it on production systems.
+
+> **Version status:** The `main` source currently declares `3.0.0`, while the latest published GitHub release is `v2.1.0`. There is no published `v3.0.0` tag/release yet. The recommended install command below is pinned to `v2.1.0`; use `main` only when you intentionally want unreleased source.
 
 ## Quick Start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v2.1.0/power-apt-boost.sh | sudo bash
 ```
 
 Or test first without changes:
@@ -36,23 +38,23 @@ sudo bash power-apt-boost.sh --dry-run
 - Auto-detects Ubuntu codename
 - Tests 20+ global Ubuntu mirrors
 - Selects the fastest working mirror
-- Automatic rollback on failure
+- Rollback attempt if `apt-get update` fails (full restoration is being hardened; see [ROADMAP](ROADMAP.md))
 - Backs up APT configuration before changes
 - Writes modern deb822-format APT sources
 - Configures APT network optimizations
 - Machine-readable JSON output for CI/CD
-- Country-based mirror filtering
-- IPv6 mirror testing support
+- Country filtering (current country matching has known limitations; see [ROADMAP](ROADMAP.md))
+- IPv6 probe option (the generated APT configuration currently still forces IPv4)
 - Persistent logging to file
 - Safe `Ctrl+C` interruption
-- Comprehensive test suite
+- Shell-based CLI test runner; backup/restore and mirror-selection integration coverage is being expanded
 
 ## Installation
 
 ### One-liner (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v2.1.0/power-apt-boost.sh | sudo bash
 ```
 
 ### Manual
@@ -60,15 +62,16 @@ curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/po
 ```bash
 git clone https://github.com/power0matin/power-apt-boost.git
 cd power-apt-boost
+git checkout v2.1.0
 sudo bash power-apt-boost.sh
 ```
 
 ### Verify before running
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | less
+curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v2.1.0/power-apt-boost.sh | less
 # Review the script, then:
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v2.1.0/power-apt-boost.sh | sudo bash
 ```
 
 ## Usage
@@ -160,7 +163,9 @@ sudo bash power-apt-boost.sh --verbose
 | `/etc/apt/sources.list.d/ubuntu.sources` | Created/overwritten |
 | `/etc/apt/apt.conf.d/99-power-apt-boost` | Created/overwritten |
 | `/etc/apt/sources.list` | Removed (if no third-party repos) |
-| `/var/lib/apt/lists/*` | Cleaned |
+| `/var/lib/apt/lists/*` | Removed before the update step (currently also when `--skip-update` is used) |
+| `/var/cache/apt/archives/*` | Cleaned by `apt-get clean` |
+| `/var/backups/power-apt-boost/` | Backup directory and snapshots created |
 
 ## Backup & Restore
 
@@ -192,24 +197,17 @@ sudo bash power-apt-boost.sh --restore-path /var/backups/power-apt-boost/2025-01
 
 ### Manual restore
 
-```bash
-# List available backups
-ls -la /var/backups/power-apt-boost/
-
-# Restore manually
-sudo cp -a /var/backups/power-apt-boost/BACKUP/sources.list.d /etc/apt/
-sudo cp -a /var/backups/power-apt-boost/BACKUP/apt.conf.d /etc/apt/
-sudo rm -f /etc/apt/sources.list.d/ubuntu.sources
-sudo apt-get update
-```
+Prefer the script's `--restore` / `--restore-path` command and inspect the selected snapshot before restoring it. The current restore implementation does not yet guarantee an exact reconstruction of every pre-existing or newly created file; complete snapshot/restore semantics are a Phase 1 requirement. Do not use a broad manual directory copy as a substitute for a verified restore on a production host.
 
 ## What It Does NOT Change
 
-- Package installation behavior
-- System security settings
-- Network configuration
-- Firewall rules
-- Any files outside `/etc/apt/`
+The current tool is an APT source/configuration utility. It does not:
+
+- Install, upgrade or remove application packages.
+- Change firewall rules, routes, DNS resolver configuration, VPN settings or SSH configuration.
+- Manage Python, Node.js, Docker registry, Go, Rust or other non-APT package-manager configuration.
+
+**Important filesystem effects outside `/etc/apt`:** the current apply path removes APT list data under `/var/lib/apt/lists/`, runs `apt-get clean` (which clears the APT archive cache), and creates snapshots under `/var/backups/power-apt-boost/`. In the current implementation, list cleanup also happens when `--skip-update` is selected. These behaviors are recorded for correction in Phase 1 of the [roadmap](ROADMAP.md).
 
 ## Mirror Testing
 
@@ -221,7 +219,7 @@ Power APT Boost tests each mirror against three endpoints:
 /dists/<codename>-security/InRelease
 ```
 
-Only mirrors that return HTTP 200 for all three are considered. The fastest mirror (lowest combined response time) is selected.
+Only mirrors that return HTTP 200 for all three are considered. The current selector compares the wall-clock duration of the three parallel HTTP probes; this is a basic reachability/response-time proxy, not a sustained bandwidth benchmark or a mirror-freshness check.
 
 ### Default mirrors
 
@@ -274,14 +272,10 @@ sudo bash power-apt-boost.sh --mirror https://mirror.arvancloud.ir/ubuntu
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | General error |
-| 2 | Usage error (invalid arguments) |
-| 3 | Network error |
-| 4 | Not running as root |
-| 5 | Not Ubuntu |
-| 6 | No working mirror found |
-| 7 | Backup failed |
-| 8 | Restore failed |
+| 1 | General error (including root/OS/network/apply/restore failures in the current implementation) |
+| 2 | Usage error (invalid or unknown arguments) |
+
+The implementation currently uses only exit codes 0, 1 and 2. More specific stable error codes are a planned CLI improvement, not a current guarantee.
 
 ## Troubleshooting
 
@@ -317,20 +311,20 @@ If you have third-party APT sources in `/etc/apt/sources.list`, Power APT Boost 
 
 ## Compatibility
 
-| Ubuntu Version | Status |
-|---------------|--------|
-| 24.04 LTS Noble | Tested |
-| 22.04 LTS Jammy | Tested |
-| 20.04 LTS Focal | Tested |
+| Ubuntu Version | Current CI coverage |
+|---------------|---------------------|
+| 24.04 LTS Noble | CLI smoke checks |
+| 22.04 LTS Jammy | CLI smoke checks |
+| 20.04 LTS Focal | CLI smoke checks |
 
-Requires Bash 4.0+ and one of: curl, wget.
+These are limited container-based CLI checks, not full integration validation of APT source mutation, backup, restore or rollback. Requires Bash 4.0+ and one of: curl, wget.
 
 ## Security
 
 - See [SECURITY.md](SECURITY.md) for reporting vulnerabilities
 - Review the script before running from a URL
 - Use `--dry-run` to preview changes
-- All changes are backed up automatically
+- A backup is attempted before changes, but complete backup validation and exact rollback are not yet guaranteed; see Phase 1 in [ROADMAP.md](ROADMAP.md)
 
 ## Contributing
 

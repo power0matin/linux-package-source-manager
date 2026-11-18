@@ -942,7 +942,7 @@ _restore_backup() {
       format) format="$value" ;;
       created_at) ;;
       sources_list) sources_list_state="$value" ;;
-      sources.list.d) sources_dir_state="$value" ;;
+      sources_list.d) sources_dir_state="$value" ;;
       apt.conf.d) conf_dir_state="$value" ;;
       *) error "Unknown manifest key: $key"; return "$EXIT_RESTORE" ;;
     esac

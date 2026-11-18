@@ -292,21 +292,23 @@ ATOMIC
   printf 'write-rollback-sources-list\n' >"$APT_SOURCES_FILE"
   printf 'write-rollback-source-config\n' >"$APT_DEB822_FILE"
   printf 'write-rollback-apt-config\n' >"$APT_CONF_FILE"
-  local write_mv_calls=0 write_rollback_code=0
-  mv() {
-    write_mv_calls=$((write_mv_calls + 1))
-    if [[ "$write_mv_calls" -eq 2 ]]; then
-      return 1
-    fi
-    command mv "$@"
-  }
-  DRY_RUN=false
-  SKIP_UPDATE=true
-  CODENAME=noble
-  SELECTED_MIRROR="https://broken.example/ubuntu"
-  SELECTED_TIME="0.001"
-  _apply_changes >/dev/null 2>&1 || write_rollback_code=$?
-  unset -f mv
+  local write_rollback_code=0
+  (
+    local write_mv_calls=0
+    mv() {
+      write_mv_calls=$((write_mv_calls + 1))
+      if [[ "$write_mv_calls" -eq 2 ]]; then
+        return 1
+      fi
+      command mv "$@"
+    }
+    DRY_RUN=false
+    SKIP_UPDATE=true
+    CODENAME=noble
+    SELECTED_MIRROR="https://broken.example/ubuntu"
+    SELECTED_TIME="0.001"
+    _apply_changes >/dev/null 2>&1
+  ) || write_rollback_code=$?
   assert_exit_code 1 "$write_rollback_code" "APT config write failure returns general error"
   assert_file_contains "$APT_SOURCES_FILE" "write-rollback-sources-list" "APT write failure restores legacy sources.list"
   assert_file_contains "$APT_DEB822_FILE" "write-rollback-source-config" "APT write failure restores deb822 source"

@@ -271,7 +271,7 @@ sudo bash power-apt-boost.sh --mirror https://mirror.arvancloud.ir/ubuntu
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | General error (including root/OS/network/apply/restore failures in the current implementation) |
+| 1 | General error (unexpected execution or lock failure) |
 | 2 | Usage error (invalid or unknown arguments) |
 
 | 3 | Network or `apt-get update` failure |

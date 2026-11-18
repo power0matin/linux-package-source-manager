@@ -6,9 +6,15 @@
 
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-readonly SCRIPT="${PROJECT_DIR}/power-apt-boost.sh"
+# This test intentionally sources the script and mutates its globals/functions.
+# shellcheck disable=SC2034,SC2329
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+readonly PROJECT_DIR
+SCRIPT="${PROJECT_DIR}/power-apt-boost.sh"
+readonly SCRIPT
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

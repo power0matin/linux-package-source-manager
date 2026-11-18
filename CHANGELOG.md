@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- Added an interactive terminal menu with numbered Bash navigation and optional `whiptail` dialogs.
+- Added Overview, APT management, mirror benchmark, Backup/Restore, Diagnostics and session Settings screens.
+- Added read-only `--status` and `--doctor` commands with a versioned JSON report schema.
+- Added explicit `--yes` confirmation for non-interactive apply and restore operations.
+- Made no-argument execution open the menu only on a TTY; non-interactive default execution exits without changing APT configuration.
+
+### Testing
+
+- Added coverage for menu selection, TTY safety, explicit approval, cancellation, status/doctor reports and JSON escaping.
+
 ### Fixed
 
 - Made APT snapshots fail closed, checksum-validated and aware of prior path-existence state.

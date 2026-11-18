@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Documentation
+
+- Added an Ubuntu-first product and engineering roadmap covering APT, Python, Node.js, Docker/OCI and additional package ecosystems.
+- Clarified the difference between the `3.0.0` source version on `main` and the latest published `v2.1.0` release.
+- Corrected documentation for current filesystem side effects, exit codes, benchmark scope and backup/restore limitations.
+
 ## [3.0.0] — 2026-07-19
 
 ### Added

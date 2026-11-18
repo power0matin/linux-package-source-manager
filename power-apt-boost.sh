@@ -1982,6 +1982,33 @@ _menu_settings() {
 }
 
 _menu_main() {
+  if ! _is_interactive; then
+    error "The interactive menu requires a TTY. Use --help for non-interactive commands."
+    return "$EXIT_USAGE"
+  fi
+  while true; do
+    local choice
+    choice="$(_menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \\
+      "overview" "Overview" \\
+      "apt" "APT management" \\
+      "benchmark" "Mirror benchmark" \\
+      "backups" "Backup and Restore" \\
+      "diagnostics" "Diagnostics" \\
+      "settings" "Settings" \\
+      "exit" "Exit")" || return 0
+    case "$choice" in
+      overview) _menu_overview ;;
+      apt) _menu_apt ;;
+      benchmark) _menu_benchmark ;;
+      backups) _menu_backups ;;
+      diagnostics) _menu_diagnostics ;;
+      settings) _menu_settings ;;
+      exit) return 0 ;;
+    esac
+  done
+}
+
+main() {
   _setup_colors
   _parse_args "$@"
 

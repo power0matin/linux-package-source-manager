@@ -25,21 +25,41 @@ readonly APP_AUTHOR="Matin Shahabadi"
 readonly APP_GITHUB="https://github.com/power0matin/power-apt-boost"
 readonly APP_LICENSE="MIT"
 
-readonly APT_SOURCES_DIR="/etc/apt/sources.list.d"
-readonly APT_CONF_DIR="/etc/apt/apt.conf.d"
-readonly APT_SOURCES_FILE="/etc/apt/sources.list"
+_TEST_MODE="${POWER_APT_BOOST_TEST_MODE:-0}"
+if [[ "$_TEST_MODE" == "1" ]]; then
+  _TEST_ROOT="${POWER_APT_BOOST_TEST_ROOT:-}"
+  [[ "$_TEST_ROOT" == /* && "$_TEST_ROOT" != "/" ]] || {
+    printf '%s\n' "POWER_APT_BOOST_TEST_ROOT must be a non-root absolute path." >&2
+    exit 2
+  }
+  _SYSTEM_ROOT="${_TEST_ROOT%/}"
+else
+  _SYSTEM_ROOT=""
+fi
+
+readonly APT_ETC_DIR="${_SYSTEM_ROOT}/etc/apt"
+readonly APT_SOURCES_DIR="${APT_ETC_DIR}/sources.list.d"
+readonly APT_CONF_DIR="${APT_ETC_DIR}/apt.conf.d"
+readonly APT_SOURCES_FILE="${APT_ETC_DIR}/sources.list"
 readonly APT_DEB822_FILE="${APT_SOURCES_DIR}/ubuntu.sources"
 readonly APT_CONF_FILE="${APT_CONF_DIR}/99-${APP_SLUG}"
-readonly BACKUP_BASE="/var/backups/${APP_SLUG}"
-readonly KEYRING_PATH="/usr/share/keyrings/ubuntu-archive-keyring.gpg"
+readonly BACKUP_BASE="${_SYSTEM_ROOT}/var/backups/${APP_SLUG}"
+readonly KEYRING_PATH="${_SYSTEM_ROOT}/usr/share/keyrings/ubuntu-archive-keyring.gpg"
+readonly OS_RELEASE_FILE="${_SYSTEM_ROOT}/etc/os-release"
+readonly APT_LOCK_FILE="${_SYSTEM_ROOT}/run/lock/${APP_SLUG}.lock"
 
 readonly PROBE_TIMEOUT_CONNECT=5
-readonly PROBE_TIMEOUT_TOTAL=15
 readonly MAX_WORKERS=8
 
 readonly EXIT_OK=0
 readonly EXIT_GENERAL=1
 readonly EXIT_USAGE=2
+readonly EXIT_NETWORK=3
+readonly EXIT_NOT_ROOT=4
+readonly EXIT_NOT_UBUNTU=5
+readonly EXIT_NO_MIRROR=6
+readonly EXIT_BACKUP=7
+readonly EXIT_RESTORE=8
 
 # ─── Global State ─────────────────────────────────────────────────────────────
 
@@ -155,7 +175,7 @@ die() {
 _spinner_pid=""
 
 _start_spinner() {
-  if [[ "$QUIET" == true ]]; then return; fi
+  if [[ "$QUIET" == true || "$NO_SPINNER" == true ]]; then return; fi
   if ! [[ -t 2 ]]; then return; fi
   local msg="${1:-Working}"
   local frames=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
@@ -249,15 +269,26 @@ _cleanup() {
   exit "$exit_code"
 }
 
-_handle_interrupt() {
+_handle_signal() {
+  local signal_name="$1"
+  local exit_code=130
+  case "$signal_name" in
+  INT) exit_code=130 ;;
+  TERM) exit_code=143 ;;
+  HUP) exit_code=129 ;;
+  esac
   _stop_spinner
   msg ""
-  msg_color "$COLOR_YELLOW" "  Interrupted by user. Cleaning up..."
-  exit 130
+  msg_color "$COLOR_YELLOW" "  Interrupted by $signal_name. Cleaning up..."
+  exit "$exit_code"
 }
 
-trap _cleanup EXIT
-trap _handle_interrupt INT TERM HUP
+if [[ "${POWER_APT_BOOST_SOURCE_ONLY:-0}" != "1" ]]; then
+  trap _cleanup EXIT
+  trap '_handle_signal INT' INT
+  trap '_handle_signal TERM' TERM
+  trap '_handle_signal HUP' HUP
+fi
 
 # ─── Root Check ───────────────────────────────────────────────────────────────
 
@@ -266,7 +297,7 @@ need_root() {
     echo "" >&2
     printf '%b\n' "  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}This script must be run as root.${COLOR_RESET}\n" >&2
     printf '%b\n' "  ${COLOR_DIM}Fix:${COLOR_RESET} sudo bash ${_SCRIPT_NAME}\n" >&2
-    exit "$EXIT_GENERAL"
+    exit "$EXIT_NOT_ROOT"
   fi
 
   local _hostname_output
@@ -284,7 +315,7 @@ need_root() {
 
 _check_commands() {
   local missing=() cmd
-  for cmd in apt-get awk date grep mkdir cp id mktemp; do
+  for cmd in apt-get awk date grep mkdir cp id mktemp tar sha256sum flock chmod stat; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
   if [[ ${#missing[@]} -gt 0 ]]; then
@@ -307,21 +338,21 @@ _check_probe_tool() {
 # ─── Ubuntu Detection ────────────────────────────────────────────────────────
 
 detect_ubuntu() {
-  [[ -f /etc/os-release ]] || {
-    printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}/etc/os-release not found.${COLOR_RESET}\n" >&2
+  [[ -f "$OS_RELEASE_FILE" ]] || {
+    printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}$OS_RELEASE_FILE not found.${COLOR_RESET}\n" >&2
     printf '%b\n' "  ${COLOR_DIM}This script requires Ubuntu Linux.${COLOR_RESET}\n" >&2
-    exit "$EXIT_GENERAL"
+    exit "$EXIT_NOT_UBUNTU"
   }
 
-  # shellcheck disable=SC1091
-  source /etc/os-release
+  # shellcheck disable=SC1090,SC1091
+  source "$OS_RELEASE_FILE"
 
   [[ "${ID:-}" == "ubuntu" ]] || {
     printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}This script supports Ubuntu only.${COLOR_RESET}\n" >&2
     printf '%b\n' "  ${COLOR_DIM}Detected:${COLOR_RESET} ${PRETTY_NAME:-${ID:-unknown}} (${ID:-unknown})\n" >&2
-    exit "$EXIT_GENERAL"
+    exit "$EXIT_NOT_UBUNTU"
   }
-  [[ -n "${VERSION_CODENAME:-}" ]] || die "Could not detect Ubuntu version codename from /etc/os-release."
+  [[ -n "${VERSION_CODENAME:-}" ]] || die "Could not detect Ubuntu version codename from $OS_RELEASE_FILE." "$EXIT_NOT_UBUNTU"
 
   CODENAME="$VERSION_CODENAME"
   msg_verbose "Detected Ubuntu ${VERSION_ID:-} (${CODENAME})"
@@ -329,102 +360,92 @@ detect_ubuntu() {
 
 # ─── Mirror List ──────────────────────────────────────────────────────────────
 
-_DEFAULT_MIRRORS=(
-  # ── Iran (tested, low-latency for Iranian users) ─────────
-  "https://ir.archive.ubuntu.com/ubuntu"
-  "https://mirror.arvancloud.ir/ubuntu"
-  "https://mirror.iranserver.com/ubuntu"
-  "https://ubuntu.hostiran.ir/ubuntu"
-  "https://mirror.hostbaran.com/ubuntu"
-  "https://mirror.aminidc.com/ubuntu"
-  "https://archive.ito.gov.ir/ubuntu"
-  "https://archive.ubuntu.petiak.ir/ubuntu"
-  "https://mirror.mobinhost.com/ubuntu"
-  "https://linuxmirrors.ir/ubuntu"
-  "https://mirror.kubarcloud.com/ubuntu"
-
-  # ── Global ─────────────────────────────────────────────
-  "https://archive.ubuntu.com/ubuntu"
-  "https://mirrors.kernel.org/ubuntu"
-
-  # ── US ─────────────────────────────────────────────────
-  "https://us.archive.ubuntu.com/ubuntu"
-  "https://mirror.math.princeton.edu/pub/ubuntu"
-  "https://mirror.cs.uchicago.edu/ubuntu"
-  "https://mirror.csclub.uwaterloo.ca/ubuntu"
-  "https://mirror.rit.edu/ubuntu"
-  "https://mirror.arizona.edu/ubuntu"
-
-  # ── UK ─────────────────────────────────────────────────
-  "https://uk.archive.ubuntu.com/ubuntu"
-
-  # ── Europe ─────────────────────────────────────────────
-  "https://de.archive.ubuntu.com/ubuntu"
-  "https://fr.archive.ubuntu.com/ubuntu"
-  "https://it.archive.ubuntu.com/ubuntu"
-  "https://nl.archive.ubuntu.com/ubuntu"
-
-  # ── Asia-Pacific ───────────────────────────────────────
-  "https://au.archive.ubuntu.com/ubuntu"
-  "https://jp.archive.ubuntu.com/ubuntu"
-  "https://kr.archive.ubuntu.com/ubuntu"
-  "https://in.archive.ubuntu.com/ubuntu"
-
-  # ── Americas ───────────────────────────────────────────
-  "https://br.archive.ubuntu.com/ubuntu"
+_MIRROR_CATALOG=(
+  "ir|Iran|https://ir.archive.ubuntu.com/ubuntu"
+  "ir|Iran|https://mirror.arvancloud.ir/ubuntu"
+  "ir|Iran|https://mirror.iranserver.com/ubuntu"
+  "ir|Iran|https://ubuntu.hostiran.ir/ubuntu"
+  "ir|Iran|https://mirror.hostbaran.com/ubuntu"
+  "ir|Iran|https://mirror.aminidc.com/ubuntu"
+  "ir|Iran|https://archive.ito.gov.ir/ubuntu"
+  "ir|Iran|https://archive.ubuntu.petiak.ir/ubuntu"
+  "ir|Iran|https://mirror.mobinhost.com/ubuntu"
+  "ir|Iran|https://linuxmirrors.ir/ubuntu"
+  "ir|Iran|https://mirror.kubarcloud.com/ubuntu"
+  "global|Global|https://archive.ubuntu.com/ubuntu"
+  "global|Global|https://mirrors.kernel.org/ubuntu"
+  "us|United States|https://us.archive.ubuntu.com/ubuntu"
+  "us|United States|https://mirror.math.princeton.edu/pub/ubuntu"
+  "us|United States|https://mirror.cs.uchicago.edu/ubuntu"
+  "ca|Canada|https://mirror.csclub.uwaterloo.ca/ubuntu"
+  "us|United States|https://mirror.rit.edu/ubuntu"
+  "us|United States|https://mirror.arizona.edu/ubuntu"
+  "gb|United Kingdom|https://uk.archive.ubuntu.com/ubuntu"
+  "de|Germany|https://de.archive.ubuntu.com/ubuntu"
+  "fr|France|https://fr.archive.ubuntu.com/ubuntu"
+  "it|Italy|https://it.archive.ubuntu.com/ubuntu"
+  "nl|Netherlands|https://nl.archive.ubuntu.com/ubuntu"
+  "au|Australia|https://au.archive.ubuntu.com/ubuntu"
+  "jp|Japan|https://jp.archive.ubuntu.com/ubuntu"
+  "kr|South Korea|https://kr.archive.ubuntu.com/ubuntu"
+  "in|India|https://in.archive.ubuntu.com/ubuntu"
+  "br|Brazil|https://br.archive.ubuntu.com/ubuntu"
 )
 
 _get_mirrors() {
   local mirrors=()
+  local entry country mirror_url
+  local country_lower
+  country_lower="$(printf '%s' "$COUNTRY_FILTER" | tr '[:upper:]' '[:lower:]')"
 
-  if [[ -n "$COUNTRY_FILTER" ]]; then
-    local country_lower mirror_url
-    country_lower="$(echo "$COUNTRY_FILTER" | tr '[:upper:]' '[:lower:]')"
-    for mirror_url in "${_DEFAULT_MIRRORS[@]}"; do
-      [[ "$mirror_url" == *"//${country_lower}."* ]] && mirrors+=("$mirror_url")
+  if [[ -n "$country_lower" ]]; then
+    local found_country=false
+    for entry in "${_MIRROR_CATALOG[@]}"; do
+      IFS='|' read -r country _ mirror_url <<<"$entry"
+      if [[ "$country" == "$country_lower" ]]; then
+        found_country=true
+        mirrors+=("$mirror_url")
+      fi
     done
-    [[ ${#mirrors[@]} -eq 0 ]] && mirrors=("${_DEFAULT_MIRRORS[@]}")
+    [[ "$found_country" == true ]] || die "Unsupported country code: $COUNTRY_FILTER" "$EXIT_USAGE"
   else
-    mirrors=("${_DEFAULT_MIRRORS[@]}")
+    for entry in "${_MIRROR_CATALOG[@]}"; do
+      IFS='|' read -r country _ mirror_url <<<"$entry"
+      mirrors+=("$mirror_url")
+    done
   fi
 
   if [[ -n "$FORCE_MIRROR" ]]; then
     mirrors=("$FORCE_MIRROR" "${mirrors[@]}")
   fi
-
   printf '%s\n' "${mirrors[@]}"
 }
 
 list_mirrors() {
   detect_ubuntu
-
   _print_section_header "AVAILABLE MIRRORS"
-
-  printf "  ${COLOR_DIM}%-46s  %-8s  %s${COLOR_RESET}\n" "MIRROR" "STATUS" "DETAIL"
-  printf "  ${COLOR_DIM}%-46s  %-8s  %s${COLOR_RESET}\n" \
-    "$(printf '%0.s─' {1..46})" "────────" "$(printf '%0.s─' {1..30})"
-
-  local mirror_url probe_result http_code reason
+  local mirror_url result_file result_line rtime rstatus
   while IFS= read -r mirror_url; do
-    probe_result=$(_probe_url_code "${mirror_url}/dists/${CODENAME}/InRelease")
-    http_code="${probe_result%% *}"
-    reason="${probe_result#* }"
-    [[ "$reason" == "$http_code" ]] && reason=""
-    if [[ "$http_code" == "200" ]]; then
-      printf "  ${COLOR_GREEN}✓${COLOR_RESET} %-44s  ${COLOR_GREEN}OK${COLOR_RESET}     %s\n" "$mirror_url" "" >&2
+    result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.list.XXXXXX")"
+    _tmp_dirs+=("$result_file")
+    _test_mirror "$mirror_url" "$result_file" "$CODENAME"
+    result_line="$(cat "$result_file" 2>/dev/null || true)"
+    rm -f "$result_file" 2>/dev/null || true
+    rtime="${result_line%% *}"
+    rstatus="${result_line#* }"
+    if [[ "$rstatus" == "pass" ]]; then
+      printf '  %b%-8s%b %s (%ss)\n' "$COLOR_GREEN" "OK" "$COLOR_RESET" "$mirror_url" "$rtime" >&2
     else
-      printf "  ${COLOR_RED}✗${COLOR_RESET} %-44s  ${COLOR_RED}FAIL${COLOR_RESET}   ${COLOR_DIM}HTTP %s%s${COLOR_RESET}\n" \
-        "$mirror_url" "$http_code" "${reason:+ — $reason}" >&2
+      printf '  %b%-8s%b %s\n' "$COLOR_RED" "FAIL" "$COLOR_RESET" "$mirror_url" >&2
     fi
   done < <(_get_mirrors)
 }
 
 # ─── HTTP Probing ─────────────────────────────────────────────────────────────
 
-# Curl-specific error classification
 _classify_curl_error() {
   local content
-  content=$(cat "$1" 2>/dev/null || true)
+  content="$(cat "$1" 2>/dev/null || true)"
   case "$content" in
   *"Could not resolve host"* | *"resolve"*) echo "DNS resolution failed" ;;
   *"Connection refused"*) echo "Connection refused" ;;
@@ -437,7 +458,6 @@ _classify_curl_error() {
   esac
 }
 
-# Wget-specific error classification
 _classify_wget_error() {
   local output="$1"
   case "$output" in
@@ -450,51 +470,60 @@ _classify_wget_error() {
   esac
 }
 
-# Probe a single URL. Writes "http_code reason" to stdout.
+# Writes tab-separated HTTP status, elapsed seconds and failure reason.
 _probe_url_code() {
   local url="$1"
   local ip_flag="-4"
-  local reason="" http_code
+  local reason=""
+  local http_code="000"
+  local elapsed="0.000000"
+  local connect_timeout="$PROBE_TIMEOUT_CONNECT"
 
-  if [[ "$USE_IPV6" == true ]]; then ip_flag="-6"; fi
+  [[ "$USE_IPV6" == true ]] && ip_flag="-6"
+  ((TIMEOUT_TOTAL < connect_timeout)) && connect_timeout="$TIMEOUT_TOTAL"
 
   if command -v curl >/dev/null 2>&1; then
-    local curl_stderr
-    curl_stderr=$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.curlerr.XXXXXX")
+    local curl_stderr curl_output
+    curl_stderr="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.curlerr.XXXXXX")"
+    curl_output="$(curl "$ip_flag" -L -sS \
+      --connect-timeout "$connect_timeout" \
+      --max-time "$TIMEOUT_TOTAL" \
+      -o /dev/null -w '%{http_code}\t%{time_total}' "$url" 2>"$curl_stderr")" || true
 
-    http_code=$(curl "$ip_flag" -L -sS \
-      --connect-timeout "$PROBE_TIMEOUT_CONNECT" \
-      --max-time "$PROBE_TIMEOUT_TOTAL" \
-      -o /dev/null -w '%{http_code}' "$url" 2>"$curl_stderr") || true
-
-    if [[ "$http_code" == "000" ]] || [[ -z "$http_code" ]]; then
-      reason=$(_classify_curl_error "$curl_stderr")
+    if [[ "$curl_output" == *$'\t'* ]]; then
+      http_code="${curl_output%%$'\t'*}"
+      elapsed="${curl_output#*$'\t'}"
+    elif [[ -n "$curl_output" ]]; then
+      http_code="$curl_output"
+    fi
+    if [[ "$http_code" == "000" || -z "$http_code" ]]; then
+      reason="$(_classify_curl_error "$curl_stderr")"
       http_code="000"
     fi
     rm -f "$curl_stderr" 2>/dev/null || true
-    echo "${http_code} ${reason}"
-    return
+    printf '%s\t%s\t%s\n' "$http_code" "$elapsed" "$reason"
+    return 0
   fi
 
   if command -v wget >/dev/null 2>&1; then
-    local wget_output
-    wget_output=$(wget "$ip_flag" --server-response --spider \
-      --timeout="$TIMEOUT_TOTAL" --tries=1 -q "$url" 2>&1) || true
-    http_code=$(echo "$wget_output" | awk '/HTTP\// {print $2}')
-    http_code="${http_code:-000}"
-    [[ "$http_code" == "000" ]] && reason=$(_classify_wget_error "$wget_output")
-    echo "${http_code} ${reason}"
-    return
+    local wget_output start end
+    start="$(date +%s.%N)"
+    wget_output="$(wget "$ip_flag" --server-response --spider \
+      --timeout="$TIMEOUT_TOTAL" --tries=1 -q "$url" 2>&1)" || true
+    end="$(date +%s.%N)"
+    elapsed="$(awk -v s="$start" -v e="$end" 'BEGIN { printf "%.6f", e-s }')"
+    http_code="$(printf '%s\n' "$wget_output" | awk '/HTTP\// {code=$2} END {print code+0}')"
+    [[ "$http_code" != "0" ]] || http_code="000"
+    if [[ "$http_code" == "000" ]]; then
+      reason="$(_classify_wget_error "$wget_output")"
+    fi
+    printf '%s\t%s\t%s\n' "$http_code" "$elapsed" "$reason"
+    return 0
   fi
 
-  echo "000 no_http_client"
+  printf '000\t%s\t%s\n' "$elapsed" "no_http_client"
 }
 
-# ─── Mirror Testing ──────────────────────────────────────────────────────────
-
-# Test a single mirror: probes main/updates/security in parallel.
-# Writes "total_time pass|fail" to result_file (arg $2).
-# Prints per-component status lines to stderr.
 _test_mirror() {
   local base_url="${1%/}"
   local result_file="$2"
@@ -502,110 +531,71 @@ _test_mirror() {
   local main_url="${base_url}/dists/${codename}/InRelease"
   local updates_url="${base_url}/dists/${codename}-updates/InRelease"
   local security_url="${base_url}/dists/${codename}-security/InRelease"
-
-  # Create temp dir for probe stderr files
   local tmpdir
-  tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/${APP_SLUG}.mirror.XXXXXX")
+  tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/${APP_SLUG}.mirror.XXXXXX")"
+  _tmp_dirs+=("$tmpdir")
 
-  # ── Launch three probes in parallel ──────────────────────────
   local start end elapsed
-  start=$(date +%s%N 2>/dev/null || date +%s)
-
-  _probe_url_code "$main_url" >"${tmpdir}/main" 2>"${tmpdir}/main.err" &
+  start="$(date +%s.%N)"
+  _probe_url_code "$main_url" >"$tmpdir/main" 2>"$tmpdir/main.err" &
   local pid_main=$!
-  _probe_url_code "$updates_url" >"${tmpdir}/upd" 2>"${tmpdir}/upd.err" &
+  _probe_url_code "$updates_url" >"$tmpdir/updates" 2>"$tmpdir/updates.err" &
   local pid_updates=$!
-  _probe_url_code "$security_url" >"${tmpdir}/sec" 2>"${tmpdir}/sec.err" &
+  _probe_url_code "$security_url" >"$tmpdir/security" 2>"$tmpdir/security.err" &
   local pid_security=$!
 
-  # ── Wait for all three probes ────────────────────────────────
   wait "$pid_main" 2>/dev/null || true
   wait "$pid_updates" 2>/dev/null || true
   wait "$pid_security" 2>/dev/null || true
+  end="$(date +%s.%N)"
+  elapsed="$(awk -v s="$start" -v e="$end" 'BEGIN { printf "%.6f", e-s }')"
 
-  end=$(date +%s%N 2>/dev/null || date +%s)
-
-  # Elapsed time (wall-clock of the parallel batch)
-  if [[ ${#start} -gt 10 ]]; then
-    elapsed=$(awk "BEGIN {printf \"%.6f\", ($end - $start) / 1000000000}")
-  else
-    elapsed="$((end - start)).000000"
-  fi
-
-  # ── Parse results ────────────────────────────────────────────
-  local main_result updates_result security_result
-  main_result=$(cat "${tmpdir}/main" 2>/dev/null)
-  updates_result=$(cat "${tmpdir}/upd" 2>/dev/null)
-  security_result=$(cat "${tmpdir}/sec" 2>/dev/null)
-
+  local main_code main_time main_reason
+  local updates_code updates_time updates_reason
+  local security_code security_time security_reason
+  IFS=$'\t' read -r main_code main_time main_reason <"$tmpdir/main" || true
+  IFS=$'\t' read -r updates_code updates_time updates_reason <"$tmpdir/updates" || true
+  IFS=$'\t' read -r security_code security_time security_reason <"$tmpdir/security" || true
+  main_code="${main_code:-000}"
+  main_time="${main_time:-0.000000}"
+  updates_code="${updates_code:-000}"
+  updates_time="${updates_time:-0.000000}"
+  security_code="${security_code:-000}"
+  security_time="${security_time:-0.000000}"
   rm -rf "$tmpdir" 2>/dev/null || true
 
-  local main_code="${main_result%% *}"
-  local main_time="${main_result#* }"
-  main_time="${main_time%% *}"
-  local main_reason="${main_result#* }"
-  main_reason="${main_reason#* }"
-  [[ "$main_reason" == "$main_time" ]] && main_reason=""
-
-  local updates_code="${updates_result%% *}"
-  local updates_time="${updates_result#* }"
-  updates_time="${updates_time%% *}"
-  local updates_reason="${updates_result#* }"
-  updates_reason="${updates_reason#* }"
-  [[ "$updates_reason" == "$updates_time" ]] && updates_reason=""
-
-  local security_code="${security_result%% *}"
-  local security_time="${security_result#* }"
-  security_time="${security_time%% *}"
-  local security_reason="${security_result#* }"
-  security_reason="${security_reason#* }"
-  [[ "$security_reason" == "$security_time" ]] && security_reason=""
-
-  # ── Print results to stderr (preserves original format) ──────
   msg_color "$COLOR_BOLD" "  ┌─ $base_url"
-
   local fail_msg icon
   if [[ "$main_code" == "200" ]]; then
     icon="${COLOR_GREEN}✓${COLOR_RESET}"
-    printf "  │  ${icon} main:     HTTP %s in %ss\n" "$main_code" "$main_time" >&2
+    printf '  │  %b main:     HTTP %s in %ss\n' "$icon" "$main_code" "$main_time" >&2
   else
-    icon="${COLOR_RED}✗${COLOR_RESET}"
     fail_msg="main: HTTP $main_code in ${main_time}s"
-    [[ -n "$main_reason" ]] && fail_msg="${fail_msg} — ${main_reason}"
-    printf "  │  ${icon} ${COLOR_RED}%s${COLOR_RESET}\n" "$fail_msg" >&2
+    [[ -n "$main_reason" ]] && fail_msg+=" — $main_reason"
+    printf '  │  %b %s\n' "${COLOR_RED}✗${COLOR_RESET}" "$fail_msg" >&2
   fi
-
   if [[ "$updates_code" == "200" ]]; then
     icon="${COLOR_GREEN}✓${COLOR_RESET}"
-    printf "  │  ${icon} updates:  HTTP %s in %ss\n" "$updates_code" "$updates_time" >&2
+    printf '  │  %b updates:  HTTP %s in %ss\n' "$icon" "$updates_code" "$updates_time" >&2
   else
-    icon="${COLOR_RED}✗${COLOR_RESET}"
     fail_msg="updates: HTTP $updates_code in ${updates_time}s"
-    [[ -n "$updates_reason" ]] && fail_msg="${fail_msg} — ${updates_reason}"
-    printf "  │  ${icon} ${COLOR_RED}%s${COLOR_RESET}\n" "$fail_msg" >&2
+    [[ -n "$updates_reason" ]] && fail_msg+=" — $updates_reason"
+    printf '  │  %b %s\n' "${COLOR_RED}✗${COLOR_RESET}" "$fail_msg" >&2
   fi
-
   if [[ "$security_code" == "200" ]]; then
     icon="${COLOR_GREEN}✓${COLOR_RESET}"
-    printf "  │  ${icon} security: HTTP %s in %ss\n" "$security_code" "$security_time" >&2
+    printf '  │  %b security: HTTP %s in %ss\n' "$icon" "$security_code" "$security_time" >&2
   else
-    icon="${COLOR_RED}✗${COLOR_RESET}"
     fail_msg="security: HTTP $security_code in ${security_time}s"
-    [[ -n "$security_reason" ]] && fail_msg="${fail_msg} — ${security_reason}"
-    printf "  │  ${icon} ${COLOR_RED}%s${COLOR_RESET}\n" "$fail_msg" >&2
+    [[ -n "$security_reason" ]] && fail_msg+=" — $security_reason"
+    printf '  │  %b %s\n' "${COLOR_RED}✗${COLOR_RESET}" "$fail_msg" >&2
   fi
-
-  if [[ "$main_code" == "200" ]] && [[ "$updates_code" == "200" ]] && [[ "$security_code" == "200" ]]; then
-    printf "  └─ ${COLOR_GREEN}PASS${COLOR_RESET} total: ${COLOR_BOLD}%ss${COLOR_RESET}\n" "$elapsed" >&2
+  if [[ "$main_code" == "200" && "$updates_code" == "200" && "$security_code" == "200" ]]; then
+    printf '  └─ %b PASS%b total: %ss\n' "$COLOR_GREEN" "$COLOR_RESET" "$elapsed" >&2
+    printf '%s pass\n' "$elapsed" >"$result_file"
   else
-    printf "  └─ ${COLOR_RED}FAIL${COLOR_RESET} total: ${COLOR_BOLD}%ss${COLOR_RESET}\n" "$elapsed" >&2
-  fi
-
-  # ── Write result to file ─────────────────────────────────────
-  if [[ "$main_code" == "200" ]] && [[ "$updates_code" == "200" ]] && [[ "$security_code" == "200" ]]; then
-    echo "${elapsed} pass" >"$result_file"
-  else
-    echo "${elapsed} fail" >"$result_file"
+    printf '  └─ %b FAIL%b total: %ss\n' "$COLOR_RED" "$COLOR_RESET" "$elapsed" >&2
+    printf '%s fail\n' "$elapsed" >"$result_file"
   fi
 }
 
@@ -724,7 +714,7 @@ _select_mirror() {
     printf '%b\n' "    - Network connectivity issue\n" >&2
     printf '%b\n' "  ${COLOR_DIM}Fix:${COLOR_RESET} Check your network connection and try again.\n" >&2
     printf '%b\n' "  Or specify a mirror directly: ${COLOR_CYAN}sudo bash ${_SCRIPT_NAME} --mirror URL${COLOR_RESET}\n" >&2
-    exit "$EXIT_GENERAL"
+    exit "$EXIT_NO_MIRROR"
   fi
 
   SELECTED_MIRROR="$best"
@@ -734,47 +724,113 @@ _select_mirror() {
 # ─── Backup ───────────────────────────────────────────────────────────────────
 
 _create_backup() {
-  local backup_dir
-  backup_dir="${BACKUP_BASE}/$(date '+%Y-%m-%d_%H-%M-%S')"
-  mkdir -p "$backup_dir"
+  local backup_dir old_umask tar_root
+  old_umask="$(umask)"
+  umask 077
 
-  local backed_up=0
+  if ! mkdir -p "$BACKUP_BASE" || ! chmod 0700 "$BACKUP_BASE"; then
+    umask "$old_umask"
+    error "Cannot create or secure backup directory: $BACKUP_BASE"
+    return "$EXIT_BACKUP"
+  fi
+  backup_dir="$(mktemp -d "$BACKUP_BASE/$(date '+%Y-%m-%d_%H-%M-%S').XXXXXX")" || {
+    umask "$old_umask"
+    error "Cannot create a unique backup snapshot directory."
+    return "$EXIT_BACKUP"
+  }
 
-  if [[ -f "$APT_DEB822_FILE" ]]; then
-    cp -a "$APT_DEB822_FILE" "$backup_dir/ubuntu.sources" 2>/dev/null || true
-    ((backed_up++)) || true
+  local sources_list_state=absent sources_dir_state=absent conf_dir_state=absent
+  local -a archive_paths=()
+  if [[ -e "$APT_SOURCES_FILE" || -L "$APT_SOURCES_FILE" ]]; then
+    sources_list_state=present
+    archive_paths+=("etc/apt/sources.list")
   fi
-  if [[ -f "$APT_SOURCES_FILE" ]]; then
-    cp -a "$APT_SOURCES_FILE" "$backup_dir/sources.list" 2>/dev/null || true
-    ((backed_up++)) || true
+  if [[ -e "$APT_SOURCES_DIR" || -L "$APT_SOURCES_DIR" ]]; then
+    sources_dir_state=present
+    archive_paths+=("etc/apt/sources.list.d")
   fi
-  if [[ -d "$APT_SOURCES_DIR" ]]; then
-    cp -a "$APT_SOURCES_DIR" "$backup_dir/sources.list.d" 2>/dev/null || true
-    ((backed_up++)) || true
-  fi
-  if [[ -d "$APT_CONF_DIR" ]]; then
-    cp -a "$APT_CONF_DIR" "$backup_dir/apt.conf.d" 2>/dev/null || true
-    ((backed_up++)) || true
+  if [[ -e "$APT_CONF_DIR" || -L "$APT_CONF_DIR" ]]; then
+    conf_dir_state=present
+    archive_paths+=("etc/apt/apt.conf.d")
   fi
 
-  if [[ $backed_up -eq 0 ]]; then
-    warn "No APT configuration files found to back up"
-    warn "  This may be a fresh installation or a non-standard setup"
-  else
-    info "Backup created: ${COLOR_BOLD}${backup_dir}${COLOR_RESET}"
+  tar_root="${_SYSTEM_ROOT:-/}"
+  if (("${#archive_paths[@]}" > 0)); then
+    if ! tar -cpf "$backup_dir/apt-config.tar" -C "$tar_root" "${archive_paths[@]}"; then
+      rm -rf "$backup_dir"
+      umask "$old_umask"
+      error "Failed to archive the existing APT configuration."
+      return "$EXIT_BACKUP"
+    fi
+  elif ! tar -cpf "$backup_dir/apt-config.tar" --files-from /dev/null; then
+    rm -rf "$backup_dir"
+    umask "$old_umask"
+    error "Failed to create an empty APT snapshot."
+    return "$EXIT_BACKUP"
   fi
 
-  echo "$backup_dir"
+  if ! (cd "$backup_dir" && sha256sum apt-config.tar >archive.sha256); then
+    rm -rf "$backup_dir"
+    umask "$old_umask"
+    error "Failed to checksum the APT snapshot."
+    return "$EXIT_BACKUP"
+  fi
+  {
+    printf 'format=1\n'
+    printf 'created_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    printf 'sources_list=%s\n' "$sources_list_state"
+    printf 'sources_list.d=%s\n' "$sources_dir_state"
+    printf 'apt.conf.d=%s\n' "$conf_dir_state"
+  } >"$backup_dir/manifest"
+
+  if ! chmod 0600 "$backup_dir/apt-config.tar" "$backup_dir/archive.sha256" "$backup_dir/manifest"; then
+    rm -rf "$backup_dir"
+    umask "$old_umask"
+    error "Failed to secure backup files."
+    return "$EXIT_BACKUP"
+  fi
+  umask "$old_umask"
+  info "Validated backup created: $backup_dir"
+  printf '%s\n' "$backup_dir"
 }
 
-# ─── APT Configuration ───────────────────────────────────────────────────────
+_atomic_write() {
+  local target="$1" mode="${2:-0644}" parent tmp
+  parent="$(dirname -- "$target")"
+  mkdir -p "$parent" || {
+    error "Cannot create directory: $parent"
+    return 1
+  }
+  tmp="$(mktemp "$target.tmp.XXXXXX")" || {
+    error "Cannot create temporary file for $target"
+    return 1
+  }
+  if ! cat >"$tmp"; then
+    rm -f "$tmp"
+    error "Cannot write temporary file for $target"
+    return 1
+  fi
+  if [[ -e "$target" || -L "$target" ]]; then
+    if ! chown --reference="$target" "$tmp" || ! chmod --reference="$target" "$tmp"; then
+      rm -f "$tmp"
+      error "Cannot preserve file ownership and mode for $target"
+      return 1
+    fi
+  elif ! chmod "$mode" "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! mv -f -- "$tmp" "$target"; then
+    rm -f "$tmp"
+    error "Atomic replacement failed for $target"
+    return 1
+  fi
+}
 
 _write_apt_sources() {
   local mirror_url="$1"
-
   if [[ ! -f "$KEYRING_PATH" ]]; then
-    warn "Keyring not found at ${COLOR_BOLD}${KEYRING_PATH}${COLOR_RESET}"
-    warn "  apt may fail signature verification. This is usually a system config issue."
+    warn "Keyring not found at $KEYRING_PATH; APT signature validation may fail."
   fi
 
   local has_third_party=false
@@ -788,175 +844,293 @@ _write_apt_sources() {
     fi
   fi
 
-  cat >"$APT_DEB822_FILE" <<SOURCES
+  if ! _atomic_write "$APT_DEB822_FILE" 0644 <<SOURCES; then
 # Power APT Boost — Ubuntu mirror configuration
 # Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
-# Mirror: ${mirror_url}
+# Mirror: $mirror_url
 
 Types: deb
-URIs: ${mirror_url}
-Suites: ${CODENAME} ${CODENAME}-updates ${CODENAME}-backports ${CODENAME}-security
+URIs: $mirror_url
+Suites: $CODENAME $CODENAME-updates $CODENAME-backports $CODENAME-security
 Components: main restricted universe multiverse
-Signed-By: ${KEYRING_PATH}
+Signed-By: $KEYRING_PATH
 SOURCES
+    return 1
+  fi
 
   if [[ -f "$APT_SOURCES_FILE" ]]; then
     if [[ "$has_third_party" == true ]]; then
-      warn "Third-party repositories detected in sources.list"
-      warn "  Preserving sources.list to avoid breaking third-party repos"
-      warn "  Note: Third-party sources may conflict with deb822 config"
-    else
-      rm -f "$APT_SOURCES_FILE"
-      msg_verbose "Removed legacy sources.list (no third-party repos detected)"
+      warn "Third-party repositories detected in sources.list; preserving the file."
+    elif ! rm -f -- "$APT_SOURCES_FILE"; then
+      error "Could not remove legacy Ubuntu-only sources.list."
+      return 1
     fi
   fi
 }
 
 _write_apt_config() {
-  cat >"$APT_CONF_FILE" <<APTCONF
+  local force_ip_config
+  if [[ "$USE_IPV6" == true ]]; then
+    force_ip_config='Acquire::ForceIPv6 "true";'
+  else
+    force_ip_config='Acquire::ForceIPv4 "true";'
+  fi
+  _atomic_write "$APT_CONF_FILE" 0644 <<APTCONF
 # Power APT Boost — APT network optimization
 # Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
-// Force IPv4 for better compatibility
-Acquire::ForceIPv4 "true";
-
-// Retry failed downloads
+$force_ip_config
 Acquire::Retries "3";
-
-// Connection timeouts (seconds)
-Acquire::http::Timeout "${TIMEOUT_TOTAL}";
-Acquire::https::Timeout "${TIMEOUT_TOTAL}";
-
-// Skip translation downloads for speed
+Acquire::http::Timeout "$TIMEOUT_TOTAL";
+Acquire::https::Timeout "$TIMEOUT_TOTAL";
 Acquire::Languages "none";
 APTCONF
-
-  msg_verbose "Wrote APT config to $APT_CONF_FILE"
 }
 
-# ─── Backup Restore ───────────────────────────────────────────────────────────
+_apt_target_path() {
+  case "$1" in
+  sources.list) printf '%s\n' "$APT_SOURCES_FILE" ;;
+  sources.list.d) printf '%s\n' "$APT_SOURCES_DIR" ;;
+  apt.conf.d) printf '%s\n' "$APT_CONF_DIR" ;;
+  *) return 1 ;;
+  esac
+}
+
+_restore_legacy_backup() {
+  local backup_path="$1"
+  warn "Restoring a legacy backup. Its original file-existence state cannot be verified."
+  mkdir -p "$APT_ETC_DIR" "$APT_SOURCES_DIR" "$APT_CONF_DIR" || return "$EXIT_RESTORE"
+  [[ ! -f "$backup_path/ubuntu.sources" ]] || cp -a "$backup_path/ubuntu.sources" "$APT_DEB822_FILE" || return "$EXIT_RESTORE"
+  [[ ! -d "$backup_path/sources.list.d" ]] || cp -a "$backup_path/sources.list.d/." "$APT_SOURCES_DIR/" || return "$EXIT_RESTORE"
+  [[ ! -f "$backup_path/sources.list" ]] || cp -a "$backup_path/sources.list" "$APT_SOURCES_FILE" || return "$EXIT_RESTORE"
+  [[ ! -d "$backup_path/apt.conf.d" ]] || cp -a "$backup_path/apt.conf.d/." "$APT_CONF_DIR/" || return "$EXIT_RESTORE"
+}
 
 _restore_backup() {
   local backup_path="$1"
-
-  if [[ -z "$backup_path" ]]; then
-    if [[ -d "$BACKUP_BASE" ]]; then
-      backup_path=$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null |
-        sort -rn | head -1 | cut -f2)
+  if [[ -z "$backup_path" && -d "$BACKUP_BASE" ]]; then
+    backup_path="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn | head -1 | cut -f2)"
+  fi
+  if [[ -z "$backup_path" || ! -d "$backup_path" ]]; then
+    local legacy_root="${_SYSTEM_ROOT}/root"
+    if [[ -d "$legacy_root" ]]; then
+      backup_path="$(find "$legacy_root" -maxdepth 1 -name 'apt-backup-*' -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn | head -1 | cut -f2)"
     fi
   fi
-
-  if [[ -z "$backup_path" ]] || [[ ! -d "$backup_path" ]]; then
-    if [[ -d "/root" ]]; then
-      backup_path=$(find /root -maxdepth 1 -name 'apt-backup-*' -type d -printf '%T@\t%p\n' 2>/dev/null |
-        sort -rn | head -1 | cut -f2)
-    fi
-  fi
-
-  if [[ -z "$backup_path" ]] || [[ ! -d "$backup_path" ]]; then
-    printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}No backup found to restore.${COLOR_RESET}\n" >&2
-    printf '%b\n' "  ${COLOR_DIM}Searched:${COLOR_RESET}\n" >&2
-    printf '%b\n' "    ${BACKUP_BASE}/\n" >&2
-    printf '%b\n' "    /root/apt-backup-*/\n" >&2
-    printf '%b\n' "  ${COLOR_DIM}Tip:${COLOR_RESET} Run ${COLOR_CYAN}sudo bash ${_SCRIPT_NAME}${COLOR_RESET} first to create a backup.\n" >&2
-    exit "$EXIT_GENERAL"
+  if [[ -z "$backup_path" || ! -d "$backup_path" ]]; then
+    error "No backup found to restore."
+    return "$EXIT_RESTORE"
   fi
 
   _print_section_header "RESTORING BACKUP"
-
-  printf "  ${COLOR_GREEN}▸ Source:${COLOR_RESET} %s\n" "$backup_path"
-  echo ""
-
-  if [[ -f "${backup_path}/ubuntu.sources" ]]; then
-    cp -a "${backup_path}/ubuntu.sources" "$APT_DEB822_FILE"
-    info "Restored ubuntu.sources"
-  elif [[ -d "${backup_path}/sources.list.d" ]]; then
-    cp -a "${backup_path}/sources.list.d/." "$APT_SOURCES_DIR/"
-    info "Restored sources.list.d"
+  printf '  Source: %s\n' "$backup_path"
+  if [[ ! -f "$backup_path/manifest" ]]; then
+    _restore_legacy_backup "$backup_path"
+    return $?
+  fi
+  [[ -f "$backup_path/apt-config.tar" && -f "$backup_path/archive.sha256" ]] || {
+    error "Backup snapshot is incomplete."
+    return "$EXIT_RESTORE"
+  }
+  if ! (cd "$backup_path" && sha256sum -c archive.sha256 >/dev/null); then
+    error "Backup checksum validation failed."
+    return "$EXIT_RESTORE"
   fi
 
-  if [[ -f "${backup_path}/sources.list" ]]; then
-    cp -a "${backup_path}/sources.list" "$APT_SOURCES_FILE"
-    info "Restored sources.list"
+  local format="" sources_list_state="" sources_dir_state="" conf_dir_state key value
+  while IFS='=' read -r key value; do
+    case "$key" in
+    format) format="$value" ;;
+    created_at) ;;
+    sources_list) sources_list_state="$value" ;;
+    sources_list.d) sources_dir_state="$value" ;;
+    apt.conf.d) conf_dir_state="$value" ;;
+    *)
+      error "Unknown manifest key: $key"
+      return "$EXIT_RESTORE"
+      ;;
+    esac
+  done <"$backup_path/manifest"
+
+  [[ "$format" == "1" ]] || {
+    error "Unsupported backup manifest version."
+    return "$EXIT_RESTORE"
+  }
+  [[ "$sources_list_state" == present || "$sources_list_state" == absent ]] || return "$EXIT_RESTORE"
+  [[ "$sources_dir_state" == present || "$sources_dir_state" == absent ]] || return "$EXIT_RESTORE"
+  [[ "$conf_dir_state" == present || "$conf_dir_state" == absent ]] || return "$EXIT_RESTORE"
+
+  local tar_entries tar_entry
+  tar_entries="$(tar -tf "$backup_path/apt-config.tar")" || {
+    error "Could not inspect backup archive."
+    return "$EXIT_RESTORE"
+  }
+  if [[ -n "$tar_entries" ]]; then
+    while IFS= read -r tar_entry; do
+      case "$tar_entry" in
+      etc | etc/ | etc/apt | etc/apt/ | etc/apt/sources.list | etc/apt/sources.list.d | etc/apt/sources.list.d/* | etc/apt/apt.conf.d | etc/apt/apt.conf.d/*) ;;
+      *)
+        error "Unsafe path in snapshot archive: $tar_entry"
+        return "$EXIT_RESTORE"
+        ;;
+      esac
+      [[ "$tar_entry" != *"/../"* && "$tar_entry" != ../* && "$tar_entry" != */.. ]] || return "$EXIT_RESTORE"
+    done <<<"$tar_entries"
   fi
 
-  if [[ -d "${backup_path}/apt.conf.d" ]]; then
-    cp -a "${backup_path}/apt.conf.d/." "$APT_CONF_DIR/"
-    info "Restored apt.conf.d"
+  mkdir -p "$APT_ETC_DIR" || return "$EXIT_RESTORE"
+  local stage_dir extracted_root previous_root archive_root
+  stage_dir="$(mktemp -d "$APT_ETC_DIR/.power-apt-boost-restore.XXXXXX")" || return "$EXIT_RESTORE"
+  extracted_root="$stage_dir/extracted"
+  previous_root="$stage_dir/previous"
+  mkdir -p "$extracted_root" "$previous_root" || {
+    rm -rf "$stage_dir"
+    return "$EXIT_RESTORE"
+  }
+  if ! tar -xpf "$backup_path/apt-config.tar" -C "$extracted_root"; then
+    rm -rf "$stage_dir"
+    error "Could not extract the snapshot archive."
+    return "$EXIT_RESTORE"
+  fi
+  archive_root="$extracted_root/etc/apt"
+
+  [[ "$sources_list_state" != present || -e "$archive_root/sources.list" || -L "$archive_root/sources.list" ]] || {
+    rm -rf "$stage_dir"
+    return "$EXIT_RESTORE"
+  }
+  [[ "$sources_dir_state" != present || -e "$archive_root/sources.list.d" || -L "$archive_root/sources.list.d" ]] || {
+    rm -rf "$stage_dir"
+    return "$EXIT_RESTORE"
+  }
+  [[ "$conf_dir_state" != present || -e "$archive_root/apt.conf.d" || -L "$archive_root/apt.conf.d" ]] || {
+    rm -rf "$stage_dir"
+    return "$EXIT_RESTORE"
+  }
+
+  local -a target_names=(sources.list sources.list.d apt.conf.d)
+  local -a moved_targets=()
+  local dest
+  for key in "${target_names[@]}"; do
+    dest="$(_apt_target_path "$key")"
+    if [[ -e "$dest" || -L "$dest" ]]; then
+      if ! mv -- "$dest" "$previous_root/$key"; then
+        local stage_restore_failed=false
+        for value in "${moved_targets[@]}"; do
+          if ! mv -- "$previous_root/$value" "$(_apt_target_path "$value")"; then stage_restore_failed=true; fi
+        done
+        [[ "$stage_restore_failed" == false ]] && rm -rf "$stage_dir"
+        error "Could not stage the current APT configuration."
+        [[ "$stage_restore_failed" == true ]] && error "Recovery data remains in $stage_dir"
+        return "$EXIT_RESTORE"
+      fi
+      moved_targets+=("$key")
+    fi
+  done
+
+  local install_failed=false
+  for key in "${target_names[@]}"; do
+    case "$key" in
+    sources.list) value="$sources_list_state" ;;
+    sources.list.d) value="$sources_dir_state" ;;
+    apt.conf.d) value="$conf_dir_state" ;;
+    esac
+    if [[ "$value" == present ]]; then
+      if ! mv -- "$archive_root/$key" "$(_apt_target_path "$key")"; then
+        install_failed=true
+        break
+      fi
+    fi
+  done
+
+  if [[ "$install_failed" == true ]]; then
+    local rollback_failed=false
+    for key in "${target_names[@]}"; do
+      dest="$(_apt_target_path "$key")"
+      if [[ -e "$dest" || -L "$dest" ]]; then rm -rf -- "$dest" || rollback_failed=true; fi
+    done
+    for key in "${moved_targets[@]}"; do
+      dest="$(_apt_target_path "$key")"
+      mv -- "$previous_root/$key" "$dest" || rollback_failed=true
+    done
+    error "Snapshot installation failed."
+    if [[ "$rollback_failed" == true ]]; then
+      error "Rollback also failed. Preserve recovery data at: $stage_dir"
+      return "$EXIT_RESTORE"
+    fi
+    rm -rf "$stage_dir"
+    return "$EXIT_RESTORE"
   fi
 
-  echo ""
-  msg_color "$COLOR_BOLD" "Running apt-get update..."
-  if apt-get update 2>&1 | tee -a "${LOG_FILE:-/dev/null}"; then
-    echo ""
-    info "APT sources restored and updated successfully"
-  else
-    printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}apt-get update failed after restore.${COLOR_RESET}\n" >&2
-    printf '%b\n' "  ${COLOR_DIM}Check your APT sources manually:${COLOR_RESET}\n" >&2
-    printf '%b\n' "    ${COLOR_CYAN}cat /etc/apt/sources.list.d/ubuntu.sources${COLOR_RESET}\n" >&2
-    exit "$EXIT_GENERAL"
-  fi
+  rm -rf "$stage_dir" || warn "Restore succeeded; temporary recovery data remains at $stage_dir"
+  info "APT configuration restored from validated snapshot."
+}
+
+_acquire_mutation_lock() {
+  command -v flock >/dev/null 2>&1 || die "flock is required for safe APT mutations." "$EXIT_GENERAL"
+  mkdir -p "$(dirname "$APT_LOCK_FILE")" || die "Cannot create APT lock directory." "$EXIT_GENERAL"
+  local old_umask
+  old_umask="$(umask)"
+  umask 077
+  exec 9>"$APT_LOCK_FILE" || die "Cannot open APT mutation lock." "$EXIT_GENERAL"
+  umask "$old_umask"
+  flock -n 9 || die "Another Power APT Boost operation is already modifying APT." "$EXIT_GENERAL"
+  chmod 0600 "$APT_LOCK_FILE" 2>/dev/null || true
 }
 
 # ─── Apply Changes ───────────────────────────────────────────────────────────
 
 _apply_changes() {
   _print_section_header "APPLYING CHANGES"
-
-  printf "  ${COLOR_GREEN}▸ Mirror:${COLOR_RESET}   ${COLOR_BOLD}%s${COLOR_RESET}\n" "$SELECTED_MIRROR"
-  printf "  ${COLOR_GREEN}▸ Speed:${COLOR_RESET}    ${COLOR_BOLD}%ss${COLOR_RESET}\n" "$SELECTED_TIME"
-  echo ""
+  printf '  Mirror: %s\n' "$SELECTED_MIRROR"
+  printf '  Probe time: %ss\n\n' "$SELECTED_TIME"
 
   if [[ "$DRY_RUN" == true ]]; then
     cat <<DRYRUN
-  ${COLOR_YELLOW}${COLOR_BOLD}DRY RUN MODE${COLOR_RESET} — no changes applied
+  ${COLOR_YELLOW}${COLOR_BOLD}DRY RUN MODE${COLOR_RESET} — no APT configuration changes applied
 
-  ${COLOR_DIM}Files that would be written:${COLOR_RESET}
-    ${COLOR_CYAN}${APT_DEB822_FILE}${COLOR_RESET}
-    ${COLOR_CYAN}${APT_CONF_FILE}${COLOR_RESET}
+  Files that would be written:
+    ${APT_DEB822_FILE}
+    ${APT_CONF_FILE}
 
-  ${COLOR_DIM}Selected mirror:${COLOR_RESET}
+  Selected mirror:
     ${SELECTED_MIRROR}
-
 DRYRUN
     return 0
   fi
 
-  _print_step 1 3 "Creating backup"
+  _print_step 1 3 "Creating and validating backup"
   local backup_dir
-  backup_dir="$(_create_backup)"
+  if ! backup_dir="$(_create_backup)"; then
+    die "Could not create a validated backup. No APT changes were applied." "$EXIT_BACKUP"
+  fi
 
-  _print_step 2 3 "Writing APT configuration"
-  _write_apt_sources "$SELECTED_MIRROR"
-  _write_apt_config
-
-  msg_verbose "  Cleaning APT cache..."
-  rm -rf /var/lib/apt/lists/*
-  apt-get clean 2>/dev/null || true
+  _print_step 2 3 "Writing APT configuration atomically"
+  if ! _write_apt_sources "$SELECTED_MIRROR" || ! _write_apt_config; then
+    warn "APT configuration write failed. Restoring the validated snapshot."
+    if ! _restore_backup "$backup_dir"; then
+      die "Configuration write failed and rollback failed. Recovery snapshot: $backup_dir" "$EXIT_RESTORE"
+    fi
+    die "Configuration write failed. The original APT configuration was restored." "$EXIT_GENERAL"
+  fi
 
   if [[ "$SKIP_UPDATE" == true ]]; then
-    echo ""
-    msg_color "$COLOR_YELLOW" "  Skipped apt-get update (--skip-update)"
+    msg_color "$COLOR_YELLOW" "  Skipped apt-get update. Existing package lists and archive cache were left untouched."
     return 0
   fi
 
   _print_step 3 3 "Running apt-get update"
-  echo ""
-
-  if apt-get update 2>&1; then
-    echo ""
+  if apt-get update; then
     info "APT update completed successfully"
   else
-    echo ""
-    warn "apt-get update failed — reverting to previous configuration"
-    _restore_backup "$backup_dir"
-    printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Mirror configuration was reverted.${COLOR_RESET}\n" >&2
-    printf '%b\n' "  ${COLOR_DIM}The selected mirror did not work. Your system has been restored.${COLOR_RESET}\n" >&2
-    exit "$EXIT_GENERAL"
+    warn "apt-get update failed. Restoring previous APT configuration."
+    if ! _restore_backup "$backup_dir"; then
+      die "apt-get update failed and rollback failed. Recovery snapshot: $backup_dir" "$EXIT_RESTORE"
+    fi
+    die "apt-get update failed. Previous APT configuration restored; run apt-get update after resolving connectivity." "$EXIT_NETWORK"
   fi
 }
 
-# ─── Output ───────────────────────────────────────────────────────────────────
+# ─── Output ──────────────────────────────────────────────────────────────────# ─── Output ───────────────────────────────────────────────────────────────────
 
 _print_json() {
   local status="success" action="mirror_selected"
@@ -1107,6 +1281,7 @@ ${COLOR_BOLD}${COLOR_BLUE}EXIT CODES${COLOR_RESET}
   1  General error      5  Not Ubuntu
   2  Usage error        6  No working mirror found
   3  Network error      7  Backup failed
+  4  Root required      8  Restore/rollback failed
 
 ${COLOR_BOLD}${COLOR_BLUE}AUTHOR${COLOR_RESET}
   ${APP_AUTHOR} · ${APP_GITHUB}
@@ -1178,12 +1353,14 @@ _parse_args() {
     --timeout)
       [[ ! "${2:-}" ]] && die "Option $1 requires a number.\n  Example: $1 30" "$EXIT_USAGE"
       [[ ! "$2" =~ ^[0-9]+$ ]] && die "Option $1 requires a positive integer.\n  Got: $2" "$EXIT_USAGE"
+      (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
       TIMEOUT_TOTAL="$2"
       shift 2
       ;;
     --country)
       [[ ! "${2:-}" ]] && die "Option $1 requires a country code.\n  Example: $1 us" "$EXIT_USAGE"
-      COUNTRY_FILTER="$2"
+      [[ "$2" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
+      COUNTRY_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
       shift 2
       ;;
     --ipv6)
@@ -1224,7 +1401,14 @@ main() {
 
   if [[ "$RESTORE" == true ]]; then
     need_root
-    _restore_backup "$RESTORE_PATH"
+    _check_commands
+    _acquire_mutation_lock
+    if ! _restore_backup "$RESTORE_PATH"; then
+      die "APT configuration restore failed. Inspect recovery data before retrying." "$EXIT_RESTORE"
+    fi
+    if ! apt-get update; then
+      die "APT configuration was restored, but apt-get update failed. Check repository connectivity." "$EXIT_NETWORK"
+    fi
     if [[ "$JSON_OUTPUT" == true ]]; then
       SELECTED_MIRROR="restored"
       SELECTED_TIME=""
@@ -1238,6 +1422,9 @@ main() {
   _check_commands
   _check_probe_tool
   detect_ubuntu
+  if [[ "$DRY_RUN" != true ]]; then
+    _acquire_mutation_lock
+  fi
 
   if [[ -n "$FORCE_MIRROR" ]]; then
     _print_section_header "TESTING SPECIFIED MIRROR"
@@ -1259,7 +1446,7 @@ main() {
       printf '%b\n' "    - URL is incorrect\n" >&2
       printf '%b\n' "    - Mirror server is down\n" >&2
       printf '%b\n' "    - Network connectivity issue\n" >&2
-      exit "$EXIT_GENERAL"
+      exit "$EXIT_NO_MIRROR"
     fi
   else
     _select_mirror
@@ -1273,4 +1460,6 @@ main() {
   fi
 }
 
-main "$@"
+if [[ "${POWER_APT_BOOST_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi

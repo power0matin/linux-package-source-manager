@@ -13,24 +13,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Install ShellCheck
         run: sudo apt-get install -y shellcheck
-
       - name: Install shfmt
         run: |
           sudo curl -fsSL -o /usr/local/bin/shfmt \
             "https://github.com/mvdan/sh/releases/download/v3.7.0/shfmt_v3.7.0_linux_amd64"
           sudo chmod +x /usr/local/bin/shfmt
-
       - name: Run ShellCheck
-        run: shellcheck -x power-apt-boost.sh
-
+        run: |
+          shellcheck -x power-apt-boost.sh
+          # The test suite intentionally sources the application and mutates its globals/functions.
+          shellcheck -x -e SC2034,SC2329 tests/run_tests.sh
       - name: Check shfmt formatting
-        run: shfmt -d power-apt-boost.sh
+        run: |
+          shfmt -d power-apt-boost.sh
+          shfmt -d tests/run_tests.sh
 
   test:
-    name: Test (Ubuntu ${{ matrix.ubuntu-version }})
+    name: Offline tests (Ubuntu ${{ matrix.ubuntu-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -39,40 +40,11 @@ jobs:
     container:
       image: ubuntu:${{ matrix.ubuntu-version }}
     steps:
-      - name: Install dependencies
+      - name: Install test dependencies
         run: |
           apt-get update
-          apt-get install -y curl bash
-
+          apt-get install -y bash coreutils tar
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Make executable
-        run: chmod +x power-apt-boost.sh
-
-      - name: Test help flag
-        run: bash power-apt-boost.sh --help
-
-      - name: Test version flag
-        run: bash power-apt-boost.sh --version
-
-      - name: Test unknown flag
-        run: |
-          set +e
-          bash power-apt-boost.sh --nonexistent 2>/dev/null
-          exit_code=$?
-          if [ "$exit_code" -ne 2 ]; then
-            echo "Expected exit code 2, got $exit_code"
-            exit 1
-          fi
-
-  test-dry-run:
-    name: Dry Run Test
-    runs-on: ubuntu-latest
-    needs: [lint, test]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Test dry run
-        run: sudo bash power-apt-boost.sh --dry-run --no-spinner
+      - name: Run offline regression suite
+        run: bash tests/run_tests.sh

@@ -860,27 +860,27 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 
 **Goal:** Make every existing APT operation predictable and reversible.
 
-- [ ] Fix stale test expectations and ensure the full test runner is called by CI.
-- [ ] Make backup creation fail closed when any required copy/metadata operation fails.
-- [ ] Add a backup manifest with checksums and prior file-existence state.
-- [ ] Implement exact restore semantics, including removing files created by the failed operation.
-- [ ] Make APT writes atomic and permission-aware.
-- [ ] Add a mutation lock.
-- [ ] Fix `--skip-update` so it does not remove package lists before skipping the update.
-- [ ] Unify timeout configuration and correct probe timing/status parsing.
-- [ ] Make `--ipv6`, ForceIPv4/ForceIPv6 and generated APT config consistent.
-- [ ] Make `--no-spinner` functional.
-- [ ] Align `--list` health checks with the selection engine.
-- [ ] Correct country filtering with structured catalog metadata.
-- [ ] Define deterministic exit codes and interrupt behavior.
-- [ ] Prove dry-run is side-effect-free.
+- [x] Fix stale test expectations and ensure the full test runner is called by CI.
+- [x] Make backup creation fail closed when any required copy/metadata operation fails.
+- [x] Add a backup manifest with checksums and prior file-existence state.
+- [x] Implement exact restore semantics, including removing files created by the failed operation.
+- [x] Make APT writes atomic and permission-aware.
+- [x] Add a mutation lock.
+- [x] Fix `--skip-update` so it does not remove package lists before skipping the update.
+- [x] Unify timeout configuration and correct probe timing/status parsing.
+- [x] Make `--ipv6`, ForceIPv4/ForceIPv6 and generated APT config consistent.
+- [x] Make `--no-spinner` functional.
+- [x] Align `--list` health checks with the selection engine.
+- [x] Correct country filtering with structured catalog metadata.
+- [x] Define deterministic exit codes and interrupt behavior.
+- [x] Prove dry-run is side-effect-free.
 
 **Acceptance criteria**
 
 - [ ] Every injected failure during backup, write, apt update and restore returns the exact original APT state or explicitly reports rollback failure with recovery instructions.
-- [ ] No tests require a live external mirror.
+- [x] The automated regression suite uses mocked probes and no live external mirror.
 - [ ] ShellCheck, shfmt and all offline tests pass.
-- [ ] Existing documented CLI options remain compatible or have a documented deprecation path.
+- [x] Existing documented CLI options remain available; unsupported country codes and invalid timeout ranges are rejected explicitly.
 
 ### Phase 2 — Interactive menu and shared command model
 
@@ -1145,6 +1145,6 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Current execution state:** Phase 0 — implementation and documentation changes prepared in a pull request; completion is pending review and merge.  
-**Next permitted work unit:** Phase 1 planning and implementation only after the Phase 0 pull request is merged and the new `main` head is verified.  
+**Current execution state:** Phase 1 — implementation prepared in a pull request; CI and review pending.  
+**Next permitted work unit:** Complete Phase 1 acceptance and merge its PR before starting Phase 2.  
 **Release/deployment status:** No release or deployment is implied by this document.

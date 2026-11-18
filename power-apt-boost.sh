@@ -395,7 +395,7 @@ _MIRROR_CATALOG=(
 
 _get_mirrors() {
   local mirrors=()
-  local entry country region mirror_url
+  local entry country mirror_url
   local country_lower
   country_lower="$(printf '%s' "$COUNTRY_FILTER" | tr '[:upper:]' '[:lower:]')"
 

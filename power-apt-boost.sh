@@ -1265,21 +1265,20 @@ _atomic_write() {
   fi
 }
 
+_apt_legacy_managed_source_is_owned() {
+  local path="$1"
+  [[ -f "$path" ]] || return 1
+  grep -Fq '# Power APT Boost — Ubuntu mirror configuration' "$path" || return 1
+  [[ "$(grep -c '^Types:' "$path" 2>/dev/null || true)" == 1 ]] || return 1
+  [[ "$(grep -c '^URIs:' "$path" 2>/dev/null || true)" == 1 ]] || return 1
+  [[ "$(grep -c '^Suites:' "$path" 2>/dev/null || true)" == 1 ]] || return 1
+  return 0
+}
+
 _write_apt_sources() {
   local mirror_url="$1"
   if [[ ! -f "$KEYRING_PATH" ]]; then
     warn "Keyring not found at $KEYRING_PATH; APT signature validation may fail."
-  fi
-
-  local has_third_party=false
-  if [[ -f "$APT_SOURCES_FILE" ]]; then
-    if grep -v '^\s*$' "$APT_SOURCES_FILE" 2>/dev/null |
-      grep -v '^\s*#' |
-      grep -v 'archive.ubuntu.com' |
-      grep -v 'security.ubuntu.com' |
-      grep -q . 2>/dev/null; then
-      has_third_party=true
-    fi
   fi
 
   if ! _atomic_write "$APT_DEB822_FILE" 0644 <<SOURCES; then
@@ -1289,20 +1288,24 @@ _write_apt_sources() {
 
 Types: deb
 URIs: $mirror_url
-Suites: $CODENAME $CODENAME-updates $CODENAME-backports $CODENAME-security
+Suites: $CODENAME $CODENAME-updates $CODENAME-security
 Components: main restricted universe multiverse
 Signed-By: $KEYRING_PATH
 SOURCES
     return 1
   fi
 
-  if [[ -f "$APT_SOURCES_FILE" ]]; then
-    if [[ "$has_third_party" == true ]]; then
-      warn "Third-party repositories detected in sources.list; preserving the file."
-    elif ! rm -f -- "$APT_SOURCES_FILE"; then
-      error "Could not remove legacy Ubuntu-only sources.list."
+  if _apt_legacy_managed_source_is_owned "$APT_LEGACY_DEB822_FILE"; then
+    if ! rm -f -- "$APT_LEGACY_DEB822_FILE"; then
+      error "Could not remove the previous Power APT Boost-managed ubuntu.sources file."
       return 1
     fi
+  elif [[ -e "$APT_LEGACY_DEB822_FILE" ]]; then
+    warn "Preserving existing ubuntu.sources because it is not a single Power APT Boost-managed stanza."
+  fi
+
+  if [[ -f "$APT_SOURCES_FILE" ]]; then
+    warn "Preserving existing sources.list. Its Ubuntu entries remain active and are shown in the source inventory."
   fi
 }
 

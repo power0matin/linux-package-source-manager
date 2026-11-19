@@ -2560,11 +2560,11 @@ _menu_apt() {
   while true; do
     choice="$(
       _menu_choose "APT Management" "Choose an action" \
-      "apply_best" "Find and apply the fastest mirror" \
-      "apply_custom" "Test and apply a custom mirror" \
-      "list" "List and test available mirrors" \
-      "manage" "Manage custom mirrors" \
-      "back" "Back to main menu"
+        "apply_best" "Find and apply the fastest mirror" \
+        "apply_custom" "Test and apply a custom mirror" \
+        "list" "List and test available mirrors" \
+        "manage" "Manage custom mirrors" \
+        "back" "Back to main menu"
     )" || return 0
     case "$choice" in
     apply_best)
@@ -2632,8 +2632,8 @@ _menu_diagnostics() {
   choice="$(
     _menu_choose "Diagnostics" "Choose a report" \
       "status" "System status" \
-    "doctor" "Run local health checks" \
-    "back" "Back to main menu"
+      "doctor" "Run local health checks" \
+      "back" "Back to main menu"
   )" || return 0
   case "$choice" in
   status)
@@ -2734,13 +2734,13 @@ _menu_main() {
     local choice
     choice="$(
       _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \
-      "overview" "Overview" \
-      "apt" "APT management" \
-      "benchmark" "Mirror benchmark" \
-      "backups" "Backup and Restore" \
-      "diagnostics" "Diagnostics" \
-      "settings" "Settings" \
-      "quit" "Exit"
+        "overview" "Overview" \
+        "apt" "APT management" \
+        "benchmark" "Mirror benchmark" \
+        "backups" "Backup and Restore" \
+        "diagnostics" "Diagnostics" \
+        "settings" "Settings" \
+        "quit" "Exit"
     )" || return 0
     case "$choice" in
     overview) _menu_overview ;;

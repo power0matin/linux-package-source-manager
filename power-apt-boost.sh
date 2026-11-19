@@ -1558,7 +1558,7 @@ _write_apt_config() {
       'Acquire::ForceIPv4 "'*'";' | 'Acquire::ForceIPv6 "'*'";' | \
         'Acquire::Retries "'*'";' | 'Acquire::http::Timeout "'*'";' | \
         'Acquire::https::Timeout "'*'";' | 'Acquire::Languages "'*'";' | \
-        'Acquire::http::Proxy "'*'";' | 'Acquire::https::Proxy "'*'";' ) ;;
+        'Acquire::http::Proxy "'*'";' | 'Acquire::https::Proxy "'*'";') ;;
       *)
         error "Refusing to overwrite an unexpected directive in managed APT config: $APT_CONF_FILE."
         error "Move the custom directive to a separate apt.conf.d file, then retry."

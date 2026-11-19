@@ -423,6 +423,7 @@ ATOMIC
   unset -f dpkg
 
   dpkg() { printf 'arm64\n'; }
+  export -f dpkg
   local ports_mode=1 ports_mirrors
   _uses_ports_archive && ports_mode=0
   assert_exit_code 0 "$ports_mode" "non-x86 architecture uses the Ubuntu ports archive"

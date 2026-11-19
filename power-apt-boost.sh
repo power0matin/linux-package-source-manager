@@ -1380,7 +1380,7 @@ _apt_source_records() {
 }
 
 _collect_source_inventory() {
-  local file record uri suite key
+  local file uri suite key
   local -A seen=()
   APT_SOURCE_TOTAL=0
   APT_SOURCE_UBUNTU=0

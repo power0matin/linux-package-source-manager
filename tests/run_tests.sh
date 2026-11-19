@@ -424,7 +424,7 @@ ATOMIC
 
   dpkg() { printf 'arm64\n'; }
   local ports_mode=1 ports_mirrors
-  _uses_ports_archive || ports_mode=0
+  _uses_ports_archive && ports_mode=0
   assert_exit_code 0 "$ports_mode" "non-x86 architecture uses the Ubuntu ports archive"
   ports_mirrors="$(_get_mirrors)"
   assert_contains "https://ports.ubuntu.com/ubuntu-ports" "$ports_mirrors" "ports catalog is available for non-x86 architecture"

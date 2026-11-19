@@ -41,7 +41,8 @@ readonly APT_ETC_DIR="${_SYSTEM_ROOT}/etc/apt"
 readonly APT_SOURCES_DIR="${APT_ETC_DIR}/sources.list.d"
 readonly APT_CONF_DIR="${APT_ETC_DIR}/apt.conf.d"
 readonly APT_SOURCES_FILE="${APT_ETC_DIR}/sources.list"
-readonly APT_DEB822_FILE="${APT_SOURCES_DIR}/ubuntu.sources"
+readonly APT_DEB822_FILE="${APT_SOURCES_DIR}/99-power-apt-boost.sources"
+readonly APT_LEGACY_DEB822_FILE="${APT_SOURCES_DIR}/ubuntu.sources"
 readonly APT_CONF_FILE="${APT_CONF_DIR}/99-${APP_SLUG}"
 readonly BACKUP_BASE="${_SYSTEM_ROOT}/var/backups/${APP_SLUG}"
 readonly KEYRING_PATH="${_SYSTEM_ROOT}/usr/share/keyrings/ubuntu-archive-keyring.gpg"
@@ -141,6 +142,28 @@ REPORT_LATEST_BACKUP=""
 REPORT_CHECK_NAMES=()
 REPORT_CHECK_STATUSES=()
 REPORT_CHECK_DETAILS=()
+REPORT_APT_ARCH="unknown"
+REPORT_APT_FOREIGN_ARCHES=""
+REPORT_APT_SOURCE_COUNT=0
+REPORT_APT_SOURCE_DUPLICATES=0
+REPORT_APT_SOURCE_FILE_COUNT=0
+REPORT_APT_SOURCE_FILES=()
+REPORT_APT_SOURCE_FILE=()
+REPORT_APT_SOURCE_TYPE=()
+REPORT_APT_SOURCE_URIS=()
+REPORT_APT_SOURCE_SUITES=()
+REPORT_APT_SOURCE_COMPONENTS=()
+REPORT_APT_SOURCE_ENABLED=()
+REPORT_APT_SOURCE_SIGNED_BY=()
+REPORT_APT_SOURCE_KIND=()
+REPORT_APT_SOURCE_KEYS=()
+REPORT_APT_SOURCE_WARNINGS=()
+REPORT_APT_NETWORK_HTTP_PROXY="not set"
+REPORT_APT_NETWORK_HTTPS_PROXY="not set"
+REPORT_APT_NETWORK_RETRIES="not set"
+REPORT_APT_NETWORK_HTTP_TIMEOUT="not set"
+REPORT_APT_NETWORK_HTTPS_TIMEOUT="not set"
+REPORT_APT_NETWORK_IP_FAMILY="default"
 
 _tmp_dirs=()
 _bg_pids=()
@@ -1572,6 +1595,206 @@ _json_quote() {
   printf '"%s"' "$output"
 }
 
+_apt_mask_credentials() {
+  local value="$1"
+  printf '%s' "$value" | sed -E 's#(https?://)[^/@[:space:]]+@#\1[REDACTED]@#g'
+}
+
+_apt_add_source_record() {
+  local source_file="$1" source_type="$2" uris="$3" suites="$4"
+  local components="$5" enabled="$6" signed_by="$7"
+  local kind=third-party uri suite key existing duplicate type
+  [[ -n "$uris" && -n "$suites" ]] || return 0
+  for uri in ${uris}; do
+    local host="${uri#*://}"
+    host="${host%%/*}"
+    host="${host##*@}"
+    case "$host" in
+      archive.ubuntu.com | security.ubuntu.com | ports.ubuntu.com | mirrors.ubuntu.com | *.archive.ubuntu.com | *.ubuntu.com)
+        kind=ubuntu
+        ;;
+      *)
+        for existing in "${_CATALOG_URLS[@]}"; do
+          [[ "$uri" == "$existing" || "$uri" == "$existing/"* ]] && kind=ubuntu
+        done
+        ;;
+    esac
+  done
+  [[ "$signed_by" != *"-----BEGIN PGP PUBLIC KEY BLOCK-----"* ]] || signed_by="[inline key]"
+  REPORT_APT_SOURCE_COUNT=$((REPORT_APT_SOURCE_COUNT + 1))
+  REPORT_APT_SOURCE_FILE+=("$source_file")
+  REPORT_APT_SOURCE_TYPE+=("$source_type")
+  REPORT_APT_SOURCE_URIS+=("$(_apt_mask_credentials "$uris")")
+  REPORT_APT_SOURCE_SUITES+=("$suites")
+  REPORT_APT_SOURCE_COMPONENTS+=("$components")
+  REPORT_APT_SOURCE_ENABLED+=("$enabled")
+  REPORT_APT_SOURCE_SIGNED_BY+=("$signed_by")
+  REPORT_APT_SOURCE_KIND+=("$kind")
+  if [[ "$enabled" == true ]]; then
+    for uri in ${uris}; do
+      for suite in ${suites}; do
+        for type in ${source_type}; do
+          key="${uri}|${suite}|${type}"
+          duplicate=false
+          for existing in "${REPORT_APT_SOURCE_KEYS[@]}"; do
+            [[ "$existing" != "$key" ]] || duplicate=true
+          done
+          REPORT_APT_SOURCE_KEYS+=("$key")
+          if [[ "$duplicate" == true ]]; then
+            REPORT_APT_SOURCE_DUPLICATES=$((REPORT_APT_SOURCE_DUPLICATES + 1))
+            REPORT_APT_SOURCE_WARNINGS+=("Duplicate enabled source: ${uri} ${suite} (${type})")
+          fi
+        done
+        if [[ "$kind" == ubuntu ]]; then
+          case "$suite" in
+            "$REPORT_CODENAME" | "$REPORT_CODENAME-updates" | "$REPORT_CODENAME-security" | "$REPORT_CODENAME-backports") ;;
+            *) REPORT_APT_SOURCE_WARNINGS+=("Ubuntu suite '$suite' does not match codename '$REPORT_CODENAME' ($source_file)") ;;
+          esac
+        fi
+      done
+    done
+  fi
+  if [[ "$enabled" == true && -n "$signed_by" && "$signed_by" != "[inline key]" ]]; then
+    for existing in ${signed_by}; do
+      existing="${existing%,}"
+      if [[ "$existing" == /* && ! -r "${_SYSTEM_ROOT}${existing}" && ! -r "$existing" ]]; then
+        REPORT_APT_SOURCE_WARNINGS+=("Missing or unreadable Signed-By keyring: $existing ($source_file)")
+      fi
+    done
+  fi
+}
+
+_apt_collect_one_source_file() {
+  local source_file="$1" format="$2" line trimmed source_type rest options uri suite components signed_by enabled
+  local key value last_key types uris suites deb822_components deb822_signed_by deb822_enabled
+  local -a fields=()
+  if [[ "$format" == list ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      trimmed="${line#"${line%%[![:space:]]*}"}"
+      [[ -n "$trimmed" && "$trimmed" != \#* ]] || continue
+      read -r source_type rest <<<"$trimmed"
+      [[ "$source_type" == deb || "$source_type" == deb-src ]] || continue
+      options=""
+      if [[ "$rest" == \[* ]]; then
+        options="${rest%%]*}]"
+        rest="${rest#*]}"
+      fi
+      read -r uri suite components <<<"$rest"
+      [[ -n "$uri" && -n "$suite" ]] || continue
+      signed_by="$(sed -nE 's/.*signed-by=([^,[:space:]]+).*/\1/p' <<<"$options")"
+      enabled=true
+      _apt_add_source_record "$source_file" "$source_type" "$uri" "$suite" "$components" "$enabled" "$signed_by"
+    done <"$source_file"
+    return 0
+  fi
+
+  types=""
+  uris=""
+  suites=""
+  deb822_components=""
+  deb822_signed_by=""
+  deb822_enabled=true
+  last_key=""
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ -z "${line//[[:space:]]/}" ]]; then
+      [[ -z "$uris" || -z "$suites" || -z "$types" ]] || _apt_add_source_record "$source_file" "$types" "$uris" "$suites" "$deb822_components" "$deb822_enabled" "$deb822_signed_by"
+      types="" uris="" suites="" deb822_components="" deb822_signed_by="" deb822_enabled=true last_key=""
+      continue
+    fi
+    [[ "$line" != \#* ]] || continue
+    if [[ "$line" =~ ^[[:space:]]+ ]] && [[ -n "$last_key" ]]; then
+      value="${line#"${line%%[![:space:]]*}"}"
+    else
+      key="${line%%:*}"
+      [[ "$line" == *:* ]] || continue
+      value="${line#*:}"
+      value="${value#"${value%%[![:space:]]*}"}"
+      last_key="${key,,}"
+    fi
+    case "$last_key" in
+      types) types+=" $value" ;;
+      uris) uris+=" $value" ;;
+      suites) suites+=" $value" ;;
+      components) deb822_components+=" $value" ;;
+      signed-by) deb822_signed_by+=" $value " ;;
+      enabled) [[ "${value,,}" != no ]] || deb822_enabled=false ;;
+    esac
+  done <"$source_file"
+  [[ -z "$uris" || -z "$suites" || -z "$types" ]] || _apt_add_source_record "$source_file" "$types" "$uris" "$suites" "$deb822_components" "$deb822_enabled" "$deb822_signed_by"
+}
+
+_apt_collect_inventory() {
+  REPORT_APT_SOURCE_COUNT=0
+  REPORT_APT_SOURCE_DUPLICATES=0
+  REPORT_APT_SOURCE_FILE_COUNT=0
+  REPORT_APT_SOURCE_FILES=()
+  REPORT_APT_SOURCE_FILE=()
+  REPORT_APT_SOURCE_TYPE=()
+  REPORT_APT_SOURCE_URIS=()
+  REPORT_APT_SOURCE_SUITES=()
+  REPORT_APT_SOURCE_COMPONENTS=()
+  REPORT_APT_SOURCE_ENABLED=()
+  REPORT_APT_SOURCE_SIGNED_BY=()
+  REPORT_APT_SOURCE_KIND=()
+  REPORT_APT_SOURCE_KEYS=()
+  REPORT_APT_SOURCE_WARNINGS=()
+  REPORT_APT_ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m 2>/dev/null || echo unknown)"
+  REPORT_APT_FOREIGN_ARCHES="$(dpkg --print-foreign-architectures 2>/dev/null | tr '\n' ' ' | sed -E 's/[[:space:]]+$//' || true)"
+  local -a source_files=()
+  local source_file
+  [[ ! -f "$APT_SOURCES_FILE" ]] || source_files+=("$APT_SOURCES_FILE")
+  for source_file in "$APT_SOURCES_DIR"/*.list; do
+    [[ ! -f "$source_file" ]] || source_files+=("$source_file")
+  done
+  for source_file in "$APT_SOURCES_DIR"/*.sources; do
+    [[ ! -f "$source_file" ]] || source_files+=("$source_file")
+  done
+  for source_file in "${source_files[@]}"; do
+    REPORT_APT_SOURCE_FILES+=("$source_file")
+    if [[ "$source_file" == *.sources ]]; then
+      _apt_collect_one_source_file "$source_file" sources
+    else
+      _apt_collect_one_source_file "$source_file" list
+    fi
+  done
+  REPORT_APT_SOURCE_FILE_COUNT="${#REPORT_APT_SOURCE_FILES[@]}"
+
+  REPORT_APT_NETWORK_HTTP_PROXY="not set"
+  REPORT_APT_NETWORK_HTTPS_PROXY="not set"
+  REPORT_APT_NETWORK_RETRIES="not set"
+  REPORT_APT_NETWORK_HTTP_TIMEOUT="not set"
+  REPORT_APT_NETWORK_HTTPS_TIMEOUT="not set"
+  REPORT_APT_NETWORK_IP_FAMILY="default"
+  local -a config_files=()
+  local config_file value line
+  [[ ! -f "$APT_ETC_DIR/apt.conf" ]] || config_files+=("$APT_ETC_DIR/apt.conf")
+  for config_file in "$APT_CONF_DIR"/*; do
+    [[ ! -f "$config_file" ]] || config_files+=("$config_file")
+  done
+  for config_file in "${config_files[@]}"; do
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      value="$(sed -nE 's/^[[:space:]]*Acquire::http::Proxy[[:space:]]+"([^"]*)";.*/\1/p' <<<"$line")"
+      [[ -z "$value" ]] || REPORT_APT_NETWORK_HTTP_PROXY="$(_apt_mask_credentials "$value")"
+      value="$(sed -nE 's/^[[:space:]]*Acquire::https::Proxy[[:space:]]+"([^"]*)";.*/\1/p' <<<"$line")"
+      [[ -z "$value" ]] || REPORT_APT_NETWORK_HTTPS_PROXY="$(_apt_mask_credentials "$value")"
+      value="$(sed -nE 's/^[[:space:]]*Acquire::Retries[[:space:]]+"?([0-9]+)"?;.*/\1/p' <<<"$line")"
+      [[ -z "$value" ]] || REPORT_APT_NETWORK_RETRIES="$value"
+      value="$(sed -nE 's/^[[:space:]]*Acquire::http::Timeout[[:space:]]+"?([0-9]+)"?;.*/\1/p' <<<"$line")"
+      [[ -z "$value" ]] || REPORT_APT_NETWORK_HTTP_TIMEOUT="$value"
+      value="$(sed -nE 's/^[[:space:]]*Acquire::https::Timeout[[:space:]]+"?([0-9]+)"?;.*/\1/p' <<<"$line")"
+      [[ -z "$value" ]] || REPORT_APT_NETWORK_HTTPS_TIMEOUT="$value"
+      value="$(sed -nE 's/^[[:space:]]*Acquire::ForceIPv4[[:space:]]+"?(true|false)"?;.*/\1/p' <<<"$line")"
+      [[ "$value" != true ]] || REPORT_APT_NETWORK_IP_FAMILY="IPv4"
+      value="$(sed -nE 's/^[[:space:]]*Acquire::ForceIPv6[[:space:]]+"?(true|false)"?;.*/\1/p' <<<"$line")"
+      if [[ "$value" == true ]]; then
+        [[ "$REPORT_APT_NETWORK_IP_FAMILY" != IPv4 ]] && REPORT_APT_NETWORK_IP_FAMILY="IPv6" || REPORT_APT_NETWORK_IP_FAMILY="conflict"
+      fi
+    done <"$config_file"
+  done
+  [[ "$REPORT_APT_NETWORK_HTTP_PROXY" != "not set" || -z "${http_proxy:-}" ]] || REPORT_APT_NETWORK_HTTP_PROXY="$(_apt_mask_credentials "$http_proxy")"
+  [[ "$REPORT_APT_NETWORK_HTTPS_PROXY" != "not set" || -z "${https_proxy:-}" ]] || REPORT_APT_NETWORK_HTTPS_PROXY="$(_apt_mask_credentials "$https_proxy")"
+}
+
 _collect_status() {
   REPORT_OS_ID="unknown"
   REPORT_OS_PRETTY="unknown"
@@ -1589,14 +1812,18 @@ _collect_status() {
   REPORT_DEB822="absent"
   REPORT_MANAGED_CONFIG="absent"
   [[ ! -e "$APT_SOURCES_FILE" ]] || REPORT_SOURCES_LIST="present"
-  [[ ! -e "$APT_DEB822_FILE" ]] || REPORT_DEB822="present"
+  [[ ! -e "$APT_DEB822_FILE" && ! -e "$APT_LEGACY_DEB822_FILE" ]] || REPORT_DEB822="present"
   [[ ! -e "$APT_CONF_FILE" ]] || REPORT_MANAGED_CONFIG="present"
 
+  _apt_collect_inventory
   REPORT_CURRENT_MIRROR=""
-  if [[ -r "$APT_DEB822_FILE" ]]; then
-    REPORT_CURRENT_MIRROR="$(awk -F': ' '$1 == "URIs" {print $2; exit}' "$APT_DEB822_FILE" 2>/dev/null || true)"
-    REPORT_CURRENT_MIRROR="$(printf '%s' "$REPORT_CURRENT_MIRROR" | sed -E 's#(https?://)[^/@]+@#\1[REDACTED]@#g')"
-  fi
+  local source_index
+  for ((source_index = 0; source_index < ${#REPORT_APT_SOURCE_FILE[@]}; source_index++)); do
+    if [[ "${REPORT_APT_SOURCE_KIND[$source_index]}" == ubuntu && "${REPORT_APT_SOURCE_ENABLED[$source_index]}" == true ]]; then
+      REPORT_CURRENT_MIRROR="${REPORT_APT_SOURCE_URIS[$source_index]}"
+      break
+    fi
+  done
   REPORT_BACKUP_ACCESSIBLE=false
   REPORT_BACKUP_COUNT=0
   REPORT_LATEST_BACKUP=""

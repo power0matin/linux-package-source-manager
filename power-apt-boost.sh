@@ -1157,12 +1157,27 @@ DRYRUN
 # ─── Output ──────────────────────────────────────────────────────────────────# ─── Output ───────────────────────────────────────────────────────────────────
 
 _json_quote() {
-  local value="${1-}"
-  value="${value//\\/\\\\}"
-  value="${value//\"/\\\"}"
-  value="${value//$'\n'/\\n}"
-  value="${value//$'\r'/\\r}"
-  value="${value//
+  local input="${1-}" output="" char escaped_char byte_code i
+  local LC_ALL=C
+
+  for ((i = 0; i < ${#input}; i++)); do
+    char="${input:i:1}"
+    printf -v byte_code '%d' "'$char"
+    case "$byte_code" in
+      34) output+='\"' ;;
+      92) output+='\\' ;;
+      *)
+        if ((byte_code < 32)); then
+          printf -v escaped_char '\\u%04x' "$byte_code"
+          output+="$escaped_char"
+        else
+          output+="$char"
+        fi
+        ;;
+    esac
+  done
+
+  printf '"%s"' "$output"
 }
 
 _collect_status() {

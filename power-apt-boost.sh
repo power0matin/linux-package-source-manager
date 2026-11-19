@@ -913,10 +913,10 @@ APTCONF
 
 _apt_target_path() {
   case "$1" in
-  sources.list) printf '%s\n' "$APT_SOURCES_FILE" ;;
-  sources.list.d) printf '%s\n' "$APT_SOURCES_DIR" ;;
-  apt.conf.d) printf '%s\n' "$APT_CONF_DIR" ;;
-  *) return 1 ;;
+sources.list) printf '%s\n' "$APT_SOURCES_FILE" ;;
+sources.list.d) printf '%s\n' "$APT_SOURCES_DIR" ;;
+apt.conf.d) printf '%s\n' "$APT_CONF_DIR" ;;
+*) return 1 ;;
   esac
 }
 
@@ -1165,16 +1165,16 @@ _json_quote() {
     # shellcheck disable=SC1003
     printf -v byte_code '%d' "'$char"
     case "$byte_code" in
-      34) output+="\\\"" ;;
-      92) output+="\\\\" ;;
-      *)
-        if ((byte_code < 32)); then
-          printf -v escaped_char '\\u%04x' "$byte_code"
-          output+="$escaped_char"
-        else
-          output+="$char"
-        fi
-        ;;
+    34) output+="\\\"" ;;
+    92) output+="\\\\" ;;
+    *)
+      if ((byte_code < 32)); then
+        printf -v escaped_char '\\u%04x' "$byte_code"
+        output+="$escaped_char"
+      else
+        output+="$char"
+      fi
+      ;;
     esac
   done
 
@@ -1239,10 +1239,10 @@ _doctor_add_check() {
   REPORT_CHECK_STATUSES+=("$2")
   REPORT_CHECK_DETAILS+=("$3")
   case "$2" in
-    error) REPORT_STATUS="error" ;;
-    warning)
-      [[ "$REPORT_STATUS" == "error" ]] || REPORT_STATUS="warning"
-      ;;
+  error) REPORT_STATUS="error" ;;
+  warning)
+    [[ "$REPORT_STATUS" == "error" ]] || REPORT_STATUS="warning"
+    ;;
   esac
 }
 
@@ -1634,8 +1634,8 @@ _confirm_action() {
   printf '%s [y/N]: ' "$prompt" >&2
   IFS= read -r answer || answer=""
   case "${answer,,}" in
-    y | yes) return 0 ;;
-    *) info "Cancelled. No system changes were made."; return 10 ;;
+  y | yes) return 0 ;;
+  *) info "Cancelled. No system changes were made."; return 10 ;;
   esac
 }
 
@@ -1877,36 +1877,38 @@ _menu_overview() {
 _menu_apt() {
   local choice rc
   while true; do
-    choice="$(_menu_choose "APT Management" "Choose an action" \\
-      "apply_best" "Find and apply the fastest mirror" \\
-      "apply_custom" "Test and apply a custom mirror" \\
-      "list" "List and test available mirrors" \\
-      "back" "Back to main menu")" || return 0
+    choice="$(
+      _menu_choose "APT Management" "Choose an action" \\
+        "apply_best" "Find and apply the fastest mirror" \\
+        "apply_custom" "Test and apply a custom mirror" \\
+        "list" "List and test available mirrors" \\
+        "back" "Back to main menu"
+    )" || return 0
     case "$choice" in
-      apply_best)
-        FORCE_MIRROR=""
-        DRY_RUN=false
-        rc=0
-        _run_apply_flow || rc=$?
-        [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
-        ;;
-      apply_custom)
-        FORCE_MIRROR="$(_menu_input "Custom mirror" "Enter an Ubuntu mirror base URL" "")" || continue
-        [[ "$FORCE_MIRROR" =~ ^https?://[^[:space:]]+$ ]] || {
-          _menu_message "Invalid mirror URL" "Enter an http:// or https:// URL without spaces."
-          continue
-        }
-        FORCE_MIRROR="${FORCE_MIRROR%/}"
-        DRY_RUN=false
-        rc=0
-        _run_apply_flow || rc=$?
-        [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
-        ;;
-      list)
-        _run_list_flow
-        _menu_message "APT mirrors" "Mirror testing completed."
-        ;;
-      back) return 0 ;;
+    apply_best)
+      FORCE_MIRROR=""
+      DRY_RUN=false
+      rc=0
+      _run_apply_flow || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      ;;
+    apply_custom)
+      FORCE_MIRROR="$(_menu_input "Custom mirror" "Enter an Ubuntu mirror base URL" "")" || continue
+      [[ "$FORCE_MIRROR" =~ ^https?://[^[:space:]]+$ ]] || {
+        _menu_message "Invalid mirror URL" "Enter an http:// or https:// URL without spaces."
+        continue
+      }
+      FORCE_MIRROR="${FORCE_MIRROR%/}"
+      DRY_RUN=false
+      rc=0
+      _run_apply_flow || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      ;;
+    list)
+      _run_list_flow
+      _menu_message "APT mirrors" "Mirror testing completed."
+      ;;
+    back) return 0 ;;
     esac
   done
 }
@@ -1944,20 +1946,22 @@ _menu_backups() {
 
 _menu_diagnostics() {
   local choice
-  choice="$(_menu_choose "Diagnostics" "Choose a report" \\
-    "status" "System status" \\
-    "doctor" "Run local health checks" \\
-    "back" "Back to main menu")" || return 0
+  choice="$(
+    _menu_choose "Diagnostics" "Choose a report" \\
+      "status" "System status" \\
+      "doctor" "Run local health checks" \\
+      "back" "Back to main menu"
+  )" || return 0
   case "$choice" in
-    status)
-      _status_report
-      [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Status report completed."
-      ;;
-    doctor)
-      _doctor_report
-      [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Health checks completed."
-      ;;
-    back) return 0 ;;
+  status)
+    _status_report
+    [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Status report completed."
+    ;;
+  doctor)
+    _doctor_report
+    [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Health checks completed."
+    ;;
+  back) return 0 ;;
   esac
 }
 
@@ -1973,39 +1977,41 @@ _country_code_supported() {
 _menu_settings() {
   local choice value
   while true; do
-    choice="$(_menu_choose "Settings" "Settings apply to this session only" \\
-      "timeout" "Probe timeout: ${TIMEOUT_TOTAL}s" \\
-      "country" "Country filter: ${COUNTRY_FILTER:-all}" \\
-      "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \\
-      "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \\
-      "back" "Back to main menu")" || return 0
+    choice="$(
+      _menu_choose "Settings" "Settings apply to this session only" \\
+        "timeout" "Probe timeout: ${TIMEOUT_TOTAL}s" \\
+        "country" "Country filter: ${COUNTRY_FILTER:-all}" \\
+        "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \\
+        "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \\
+        "back" "Back to main menu"
+    )" || return 0
     case "$choice" in
-      timeout)
-        value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
-        if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 300)); then
-          TIMEOUT_TOTAL="$value"
-        else
-          _menu_message "Invalid timeout" "Enter a whole number from 1 to 300."
-        fi
-        ;;
-      country)
-        value="$(_menu_input "Country filter" "Enter a supported two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
-        value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
-        if [[ -z "$value" ]]; then
-          COUNTRY_FILTER=""
-        elif [[ "$value" =~ ^[a-z]{2}$ ]] && _country_code_supported "$value"; then
-          COUNTRY_FILTER="$value"
-        else
-          _menu_message "Unsupported country" "Choose a country code present in the built-in mirror catalog."
-        fi
-        ;;
-      ipv6)
-        [[ "$USE_IPV6" == true ]] && USE_IPV6=false || USE_IPV6=true
-        ;;
-      spinner)
-        [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
-        ;;
-      back) return 0 ;;
+    timeout)
+      value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
+      if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 300)); then
+        TIMEOUT_TOTAL="$value"
+      else
+        _menu_message "Invalid timeout" "Enter a whole number from 1 to 300."
+      fi
+      ;;
+    country)
+      value="$(_menu_input "Country filter" "Enter a supported two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
+      value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+      if [[ -z "$value" ]]; then
+        COUNTRY_FILTER=""
+      elif [[ "$value" =~ ^[a-z]{2}$ ]] && _country_code_supported "$value"; then
+        COUNTRY_FILTER="$value"
+      else
+        _menu_message "Unsupported country" "Choose a country code present in the built-in mirror catalog."
+      fi
+      ;;
+    ipv6)
+      [[ "$USE_IPV6" == true ]] && USE_IPV6=false || USE_IPV6=true
+      ;;
+    spinner)
+      [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
+      ;;
+    back) return 0 ;;
     esac
   done
 }
@@ -2017,22 +2023,24 @@ _menu_main() {
   fi
   while true; do
     local choice
-    choice="$(_menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \\
-      "overview" "Overview" \\
-      "apt" "APT management" \\
-      "benchmark" "Mirror benchmark" \\
-      "backups" "Backup and Restore" \\
-      "diagnostics" "Diagnostics" \\
-      "settings" "Settings" \\
-      "quit" "Exit")" || return 0
+    choice="$(
+      _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \\
+        "overview" "Overview" \\
+        "apt" "APT management" \\
+        "benchmark" "Mirror benchmark" \\
+        "backups" "Backup and Restore" \\
+        "diagnostics" "Diagnostics" \\
+        "settings" "Settings" \\
+        "quit" "Exit"
+    )" || return 0
     case "$choice" in
-      overview) _menu_overview ;;
-      apt) _menu_apt ;;
-      benchmark) _menu_benchmark ;;
-      backups) _menu_backups ;;
-      diagnostics) _menu_diagnostics ;;
-      settings) _menu_settings ;;
-      quit) return 0 ;;
+    overview) _menu_overview ;;
+    apt) _menu_apt ;;
+    benchmark) _menu_benchmark ;;
+    backups) _menu_backups ;;
+    diagnostics) _menu_diagnostics ;;
+    settings) _menu_settings ;;
+    quit) return 0 ;;
     esac
   done
 }

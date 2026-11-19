@@ -131,6 +131,25 @@ REPORT_OS_ID="unknown"
 REPORT_OS_PRETTY="unknown"
 REPORT_VERSION_ID="unknown"
 REPORT_CODENAME="unknown"
+APT_SOURCE_PATHS=()
+APT_SOURCE_FORMATS=()
+APT_SOURCE_TYPES=()
+APT_SOURCE_URIS=()
+APT_SOURCE_SUITES=()
+APT_SOURCE_COMPONENTS=()
+APT_SOURCE_ARCHITECTURES=()
+APT_SOURCE_STATES=()
+APT_SOURCE_SIGNED_BY=()
+APT_SOURCE_DUPLICATES=()
+APT_SOURCE_DUPLICATE_COUNT=0
+APT_SOURCE_UNSIGNED_COUNT=0
+APT_SOURCE_OTHER_COUNT=0
+REPORT_APT_SOURCE_COUNT=0
+REPORT_APT_ACTIVE_COUNT=0
+REPORT_APT_DISABLED_COUNT=0
+REPORT_APT_DUPLICATE_COUNT=0
+REPORT_APT_UNSIGNED_COUNT=0
+REPORT_APT_OTHER_COUNT=0
 REPORT_SOURCES_LIST="absent"
 REPORT_DEB822="absent"
 REPORT_MANAGED_CONFIG="absent"
@@ -1570,6 +1589,1450 @@ _json_quote() {
   done
 
   printf '"%s"' "$output"
+}
+
+_redact_apt_uri() {
+  printf '%s' "$1" | sed -E 's#(https?://)[^/@[:space:]]+@#\1[REDACTED]@#g'
+}
+
+_collect_apt_source_inventory() {
+  APT_SOURCE_PATHS=()
+  APT_SOURCE_FORMATS=()
+  APT_SOURCE_TYPES=()
+  APT_SOURCE_URIS=()
+  APT_SOURCE_SUITES=()
+  APT_SOURCE_COMPONENTS=()
+  APT_SOURCE_ARCHITECTURES=()
+  APT_SOURCE_STATES=()
+  APT_SOURCE_SIGNED_BY=()
+  APT_SOURCE_DUPLICATES=()
+  APT_SOURCE_DUPLICATE_COUNT=0
+  APT_SOURCE_UNSIGNED_COUNT=0
+  APT_SOURCE_OTHER_COUNT=0
+
+  local file format types uris suites components architectures state signed_by redacted_uris uri i j parser_output
+  for file in "$APT_SOURCES_FILE" "$APT_SOURCES_DIR"/*.list "$APT_SOURCES_DIR"/*.sources; do
+    [[ -f "$file" && -r "$file" ]] || continue
+    case "$file" in
+      *.sources) format="deb822" ;;
+      *) format="one-line" ;;
+    esac
+
+    if [[ "$format" == one-line ]]; then
+      parser_output="$(
+        awk '
+          /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+          {
+            line=$0
+            sub(/^[[:space:]]+/, "", line)
+            count=split(line, token, /[[:space:]]+/)
+            type=token[1]
+            if (type != "deb" && type != "deb-src") next
+            idx=2
+            options=""
+            if (token[idx] ~ /^\[/) {
+              while (idx <= count) {
+                options=options " " token[idx]
+                if (token[idx] ~ /\]$/) { idx++; break }
+                idx++
+              }
+            }
+            if (idx + 1 > count) next
+            uri=token[idx]
+            suite=token[idx+1]
+            components=""
+            for (i=idx+2; i<=count; i++) {
+              if (token[i] ~ /^#/) break
+              components=components (components == "" ? "" : " ") token[i]
+            }
+            gsub(/[\[\]]/, " ", options)
+            architecture="-"
+            signed="missing"
+            option_count=split(options, option, /[[:space:]]+/)
+            for (i=1; i<=option_count; i++) {
+              if (option[i] ~ /^arch=/) architecture=substr(option[i], 6)
+              if (option[i] ~ /^signed-by=/) signed="present"
+            }
+            if (components == "") components="-"
+            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", type, uri, suite, components, "active", signed, architecture
+          }
+        ' "$file" 2>/dev/null || true
+      )"
+    else
+      parser_output="$(
+        awk '
+          function reset() {
+            types=uris=suites=components=architectures=signedby=""
+            enabled="yes"
+            current=""
+          }
+          function emit() {
+            if (types != "" && uris != "" && suites != "") {
+              gsub(/[[:space:]]+/, " ", types)
+              gsub(/[[:space:]]+/, " ", uris)
+              gsub(/[[:space:]]+/, " ", suites)
+              gsub(/[[:space:]]+/, " ", components)
+              gsub(/[[:space:]]+/, " ", architectures)
+              if (components == "") components="-"
+              if (architectures == "") architectures="-"
+              if (signedby == "") signedby="missing"
+              if (tolower(enabled) != "no") enabled="active"; else enabled="disabled"
+              printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", types, uris, suites, components, enabled, signedby, architectures
+            }
+            reset()
+          }
+          BEGIN { reset() }
+          /^[[:space:]]*$/ { emit(); next }
+          /^[[:space:]]*#/ { next }
+          /^[[:space:]]/ {
+            line=$0
+            sub(/^[[:space:]]+/, "", line)
+            if (current == "types") types=types " " line
+            else if (current == "uris") uris=uris " " line
+            else if (current == "suites") suites=suites " " line
+            else if (current == "components") components=components " " line
+            else if (current == "architectures") architectures=architectures " " line
+            else if (current == "signed-by" && line ~ /-----BEGIN PGP PUBLIC KEY BLOCK-----/) signedby="embedded-key"
+            next
+          }
+          {
+            colon=index($0, ":")
+            if (colon < 2) next
+            key=tolower(substr($0, 1, colon-1))
+            value=substr($0, colon+1)
+            sub(/^[[:space:]]+/, "", value)
+            current=key
+            if (key == "types") types=value
+            else if (key == "uris") uris=value
+            else if (key == "suites") suites=value
+            else if (key == "components") components=value
+            else if (key == "architectures") architectures=value
+            else if (key == "enabled") enabled=value
+            else if (key == "signed-by") {
+              if (value ~ /-----BEGIN PGP PUBLIC KEY BLOCK-----/) signedby="embedded-key"
+              else if (value != "") signedby="present"
+            }
+          }
+          END { emit() }
+        ' "$file" 2>/dev/null || true
+      )"
+    fi
+
+    while IFS=
+  REPORT_OS_ID="unknown"
+  REPORT_OS_PRETTY="unknown"
+  REPORT_VERSION_ID="unknown"
+  REPORT_CODENAME="unknown"
+  if [[ -r "$OS_RELEASE_FILE" ]]; then
+    # shellcheck disable=SC1090,SC1091
+    source "$OS_RELEASE_FILE"
+    REPORT_OS_ID="${ID:-unknown}"
+    REPORT_OS_PRETTY="${PRETTY_NAME:-${ID:-unknown}}"
+    REPORT_VERSION_ID="${VERSION_ID:-unknown}"
+    REPORT_CODENAME="${VERSION_CODENAME:-unknown}"
+  fi
+  REPORT_SOURCES_LIST="absent"
+  REPORT_DEB822="absent"
+  REPORT_MANAGED_CONFIG="absent"
+  [[ ! -e "$APT_SOURCES_FILE" ]] || REPORT_SOURCES_LIST="present"
+  [[ ! -e "$APT_DEB822_FILE" ]] || REPORT_DEB822="present"
+  [[ ! -e "$APT_CONF_FILE" ]] || REPORT_MANAGED_CONFIG="present"
+
+  REPORT_CURRENT_MIRROR=""
+  if [[ -r "$APT_DEB822_FILE" ]]; then
+    REPORT_CURRENT_MIRROR="$(awk -F': ' '$1 == "URIs" {print $2; exit}' "$APT_DEB822_FILE" 2>/dev/null || true)"
+    REPORT_CURRENT_MIRROR="$(printf '%s' "$REPORT_CURRENT_MIRROR" | sed -E 's#(https?://)[^/@]+@#\1[REDACTED]@#g')"
+  fi
+  REPORT_BACKUP_ACCESSIBLE=false
+  REPORT_BACKUP_COUNT=0
+  REPORT_LATEST_BACKUP=""
+  if [[ -d "$BACKUP_BASE" && -r "$BACKUP_BASE" ]]; then
+    REPORT_BACKUP_ACCESSIBLE=true
+    REPORT_BACKUP_COUNT="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d '[:space:]')"
+    REPORT_LATEST_BACKUP="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn | head -1 | cut -f2-)"
+  fi
+}
+
+_print_status_report() {
+  _collect_status
+  printf '\n%s\n' "$APP_NAME — System Status"
+  printf '%-24s %s\n' "Operating system:" "$REPORT_OS_PRETTY"
+  printf '%-24s %s\n' "Ubuntu codename:" "$REPORT_CODENAME"
+  printf '%-24s %s\n' "Legacy sources.list:" "$REPORT_SOURCES_LIST"
+  printf '%-24s %s\n' "Deb822 ubuntu.sources:" "$REPORT_DEB822"
+  printf '%-24s %s\n' "Managed APT config:" "$REPORT_MANAGED_CONFIG"
+  printf '%-24s %s\n' "Current mirror:" "${REPORT_CURRENT_MIRROR:-not detected}"
+  if [[ "$REPORT_BACKUP_ACCESSIBLE" == true ]]; then
+    printf '%-24s %s\n' "Available backups:" "$REPORT_BACKUP_COUNT"
+    printf '%-24s %s\n' "Latest backup:" "${REPORT_LATEST_BACKUP:-none}"
+  else
+    printf '%-24s %s\n' "Backup directory:" "not accessible (root may be required)"
+  fi
+  printf '\n'
+}
+
+_doctor_add_check() {
+  REPORT_CHECK_NAMES+=("$1")
+  REPORT_CHECK_STATUSES+=("$2")
+  REPORT_CHECK_DETAILS+=("$3")
+  case "$2" in
+  error) REPORT_STATUS="error" ;;
+  warning)
+    [[ "$REPORT_STATUS" == "error" ]] || REPORT_STATUS="warning"
+    ;;
+  esac
+}
+
+_doctor_collect() {
+  _collect_status
+  REPORT_CHECK_NAMES=()
+  REPORT_CHECK_STATUSES=()
+  REPORT_CHECK_DETAILS=()
+  REPORT_STATUS="ok"
+  if [[ "$REPORT_OS_ID" == "ubuntu" ]]; then
+    _doctor_add_check "operating_system" "ok" "$REPORT_OS_PRETTY"
+  else
+    _doctor_add_check "operating_system" "error" "Ubuntu is required; detected $REPORT_OS_PRETTY"
+  fi
+
+  local cmd
+  for cmd in apt-get awk date grep mkdir cp id mktemp tar sha256sum flock chmod stat find sort head cut chown mv rm sed gpgv; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+      _doctor_add_check "command:$cmd" "ok" "available"
+    else
+      _doctor_add_check "command:$cmd" "error" "missing required command"
+    fi
+  done
+  if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+    _doctor_add_check "http_client" "ok" "curl or wget is available"
+  else
+    _doctor_add_check "http_client" "error" "curl or wget is required"
+  fi
+  if [[ -f "$KEYRING_PATH" ]]; then
+    _doctor_add_check "ubuntu_archive_keyring" "ok" "Ubuntu archive keyring exists"
+  else
+    _doctor_add_check "ubuntu_archive_keyring" "error" "Ubuntu archive keyring is required to verify mirror signatures: $KEYRING_PATH"
+  fi
+  if [[ "$(id -u)" -eq 0 ]]; then
+    _doctor_add_check "privileges" "ok" "running as root"
+  else
+    _doctor_add_check "privileges" "warning" "root is required for apply and restore operations"
+  fi
+  if [[ -r "$APT_ETC_DIR" ]]; then
+    _doctor_add_check "apt_configuration" "ok" "APT configuration directory is readable"
+  else
+    _doctor_add_check "apt_configuration" "warning" "APT configuration directory is not readable"
+  fi
+  if [[ -d "$(dirname "$USER_MIRRORS_FILE")" && -w "$(dirname "$USER_MIRRORS_FILE")" ]]; then
+    _doctor_add_check "custom_mirror_storage" "ok" "custom mirror catalog storage is writable"
+  elif [[ "$(id -u)" -eq 0 ]]; then
+    _doctor_add_check "custom_mirror_storage" "ok" "custom mirror catalog storage will be created on demand"
+  else
+    _doctor_add_check "custom_mirror_storage" "warning" "root is required to manage saved custom mirrors"
+  fi
+  if [[ "$REPORT_BACKUP_ACCESSIBLE" == true ]]; then
+    _doctor_add_check "backup_directory" "ok" "$REPORT_BACKUP_COUNT backup snapshot(s) visible"
+  else
+    _doctor_add_check "backup_directory" "warning" "backup directory is not currently accessible or has not been created"
+  fi
+}
+_report_checks_json() {
+  local i
+  printf '['
+  for ((i = 0; i < ${#REPORT_CHECK_NAMES[@]}; i++)); do
+    if ((i > 0)); then printf ','; fi
+    printf '{"name":%s,"status":%s,"detail":%s}' "$(_json_quote "${REPORT_CHECK_NAMES[$i]}")" "$(_json_quote "${REPORT_CHECK_STATUSES[$i]}")" "$(_json_quote "${REPORT_CHECK_DETAILS[$i]}")"
+  done
+  printf ']'
+}
+
+_print_json() {
+  _collect_status
+  local checks_json
+  checks_json="$(_report_checks_json)"
+  printf '{\n'
+  printf '  "schema_version": 1,\n'
+  printf '  "version": %s,\n' "$(_json_quote "$APP_VERSION")"
+  printf '  "command": %s,\n' "$(_json_quote "$REPORT_COMMAND")"
+  printf '  "status": %s,\n' "$(_json_quote "$REPORT_STATUS")"
+  printf '  "timestamp": %s,\n' "$(_json_quote "$(date -u '+%Y-%m-%dT%H:%M:%SZ')")"
+  printf '  "system": {"id": %s, "pretty_name": %s, "version_id": %s, "codename": %s},\n' "$(_json_quote "$REPORT_OS_ID")" "$(_json_quote "$REPORT_OS_PRETTY")" "$(_json_quote "$REPORT_VERSION_ID")" "$(_json_quote "$REPORT_CODENAME")"
+  printf '  "apt": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "current_mirror": %s},\n' "$(_json_quote "$REPORT_SOURCES_LIST")" "$(_json_quote "$REPORT_DEB822")" "$(_json_quote "$REPORT_MANAGED_CONFIG")" "$(_json_quote "$REPORT_CURRENT_MIRROR")"
+  printf '  "backups": {"accessible": %s, "count": %s, "latest": %s},\n' "$REPORT_BACKUP_ACCESSIBLE" "$REPORT_BACKUP_COUNT" "$(_json_quote "$REPORT_LATEST_BACKUP")"
+  printf '  "operation": {"mirror": %s, "response_time_seconds": %s, "dry_run": %s, "skip_update": %s},\n' "$(_json_quote "$SELECTED_MIRROR")" "$(_json_quote "$SELECTED_TIME")" "$DRY_RUN" "$SKIP_UPDATE"
+  printf '  "catalog": {"source": %s, "cache_state": %s, "last_refresh": %s, "invalid_entries": %s},\n' "$(_json_quote "$CATALOG_SOURCE")" "$(_json_quote "$CATALOG_CACHE_STATE")" "$(_json_quote "$CATALOG_LAST_REFRESH")" "$CATALOG_INVALID_ENTRIES"
+  printf '  "benchmark": {"workers": %s, "retries": %s, "official_only": %s, "country_filter": %s},\n' "$BENCH_WORKERS" "$PROBE_RETRIES" "$OFFICIAL_ONLY" "$(_json_quote "$COUNTRY_FILTER")"
+  printf '  "paths": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "backup_root": %s},\n' "$(_json_quote "$APT_SOURCES_FILE")" "$(_json_quote "$APT_DEB822_FILE")" "$(_json_quote "$APT_CONF_FILE")" "$(_json_quote "$BACKUP_BASE")"
+  printf '  "checks": %s\n' "$checks_json"
+  printf '}\n'
+}
+
+_status_report() {
+  _collect_status
+  REPORT_COMMAND="status"
+  REPORT_STATUS="ok"
+  [[ "$REPORT_OS_ID" == "ubuntu" ]] || REPORT_STATUS="warning"
+  if [[ "$JSON_OUTPUT" == true ]]; then _print_json; else _print_status_report; fi
+}
+
+_doctor_report() {
+  _doctor_collect
+  REPORT_COMMAND="doctor"
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _print_json
+  else
+    printf '\n%s\n' "$APP_NAME — Diagnostics"
+    local i
+    for ((i = 0; i < ${#REPORT_CHECK_NAMES[@]}; i++)); do
+      printf '  %-8s %-28s %s\n' "${REPORT_CHECK_STATUSES[$i]}" "${REPORT_CHECK_NAMES[$i]}" "${REPORT_CHECK_DETAILS[$i]}"
+    done
+    printf '\nOverall status: %s\n\n' "$REPORT_STATUS"
+  fi
+}
+
+_print_summary() {
+  if [[ "$DRY_RUN" == true ]]; then
+    cat <<EOF
+
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+  ${COLOR_YELLOW}${COLOR_BOLD}DRY RUN COMPLETED${COLOR_RESET}
+
+  Fastest mirror:  ${COLOR_BOLD}${SELECTED_MIRROR}${COLOR_RESET}
+  Response time:   ${COLOR_BOLD}${SELECTED_TIME}s${COLOR_RESET}
+
+  ${COLOR_DIM}No system changes were made.${COLOR_RESET}
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+
+EOF
+    return
+  fi
+
+  cat <<EOF
+
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+  ${COLOR_GREEN}${COLOR_BOLD}SUCCESS — APT mirror optimized${COLOR_RESET}
+
+  ${COLOR_BOLD}Mirror:${COLOR_RESET}  ${SELECTED_MIRROR}
+  ${COLOR_BOLD}Speed:${COLOR_RESET}   ${SELECTED_TIME}s
+
+  ${COLOR_DIM}Config files:${COLOR_RESET}
+    ${APT_DEB822_FILE}
+    ${APT_CONF_FILE}
+
+  ${COLOR_DIM}To undo:${COLOR_RESET}
+    ${COLOR_CYAN}sudo bash ${_SCRIPT_NAME} --restore${COLOR_RESET}
+
+${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+
+EOF
+}
+
+_print_banner() {
+  if [[ "$QUIET" == true || "$JSON_OUTPUT" == true ]]; then return; fi
+  cat <<'EOF'
+
+██████   ██████  ██     ██ ███████ ██████       █████  ██████  ████████     ██████   ██████   ██████  ███████ ████████ 
+██   ██ ██    ██ ██     ██ ██      ██   ██     ██   ██ ██   ██    ██        ██   ██ ██    ██ ██    ██ ██         ██    
+██████  ██    ██ ██  █  ██ █████   ██████      ███████ ██████     ██        ██████  ██    ██ ██    ██ ███████    ██    
+██      ██    ██ ██ ███ ██ ██      ██   ██     ██   ██ ██         ██        ██   ██ ██    ██ ██    ██      ██    ██    
+██       ██████   ███ ███  ███████ ██   ██     ██   ██ ██         ██        ██████   ██████   ██████  ███████    ██    
+                                                                                                                       
+                                                                                                                       
+EOF
+  echo "" >&2
+  printf '%b\n' "  ${COLOR_DIM}Fast Ubuntu APT mirror selector & network optimizer${COLOR_RESET}" >&2
+  printf '%b\n' "  ${COLOR_DIM}v${APP_VERSION} · ${APP_LICENSE} · ${APP_AUTHOR}${COLOR_RESET}" >&2
+  printf '%b\n' "  ${COLOR_DIM}${APP_GITHUB}${COLOR_RESET}" >&2
+  echo "" >&2
+}
+
+_print_help() {
+  cat <<EOF
+${COLOR_BOLD}${COLOR_CYAN}Power APT Boost${COLOR_RESET} v${APP_VERSION}
+Fast Ubuntu APT mirror selector and network optimizer
+
+${COLOR_BOLD}${COLOR_BLUE}USAGE${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME}                 # Open the interactive menu on a TTY
+  sudo bash ${_SCRIPT_NAME} [OPTIONS]
+  curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash -s -- --yes
+
+${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
+  ${COLOR_GREEN}-h, --help${COLOR_RESET}              Show this help message
+  ${COLOR_GREEN}-v, --version${COLOR_RESET}           Show version information
+  ${COLOR_GREEN}-m, --mirror URL${COLOR_RESET}        Use a specific Ubuntu mirror
+  ${COLOR_GREEN}-r, --restore${COLOR_RESET}           Restore APT config from backup
+  ${COLOR_GREEN}    --restore-path PATH${COLOR_RESET}   Restore from a specific backup
+  ${COLOR_GREEN}    --dry-run${COLOR_RESET}            Test mirrors without changing config
+  ${COLOR_GREEN}    --skip-update${COLOR_RESET}        Write config but skip apt-get update (preserve caches)
+  ${COLOR_GREEN}    --list${COLOR_RESET}               List available mirrors and test them
+  ${COLOR_GREEN}    --refresh-catalog${COLOR_RESET}     Refresh the Ubuntu mirror index, then list
+  ${COLOR_GREEN}    --official-only${COLOR_RESET}       Use only built-in official Ubuntu archive hosts
+  ${COLOR_GREEN}    --workers N${COLOR_RESET}           Benchmark concurrency (1-${MAX_WORKERS_LIMIT}, default: 8)
+  ${COLOR_GREEN}    --retries N${COLOR_RESET}           Retry transient probe failures (0-3, default: 1)
+  ${COLOR_GREEN}    --add-mirror URL${COLOR_RESET}      Verify and save a custom mirror
+  ${COLOR_GREEN}    --remove-mirror ID${COLOR_RESET}    Remove a saved custom mirror
+  ${COLOR_GREEN}    --disable-mirror ID${COLOR_RESET}   Disable a saved custom mirror
+  ${COLOR_GREEN}    --enable-mirror ID${COLOR_RESET}    Enable a saved custom mirror
+  ${COLOR_GREEN}    --menu${COLOR_RESET}               Open the interactive terminal menu
+  ${COLOR_GREEN}    --status${COLOR_RESET}             Show current system and APT status
+  ${COLOR_GREEN}    --doctor${COLOR_RESET}             Run local dependency and configuration checks
+  ${COLOR_GREEN}-y, --yes${COLOR_RESET}              Confirm changes in non-interactive mode
+  ${COLOR_GREEN}    --json${COLOR_RESET}               Output reports using the stable JSON schema
+  ${COLOR_GREEN}    --verbose${COLOR_RESET}             Show detailed output
+  ${COLOR_GREEN}    --quiet${COLOR_RESET}               Suppress non-essential output
+  ${COLOR_GREEN}    --no-spinner${COLOR_RESET}          Disable spinner (for CI/CD)
+  ${COLOR_GREEN}    --timeout SECS${COLOR_RESET}        Probe timeout (default: 20)
+  ${COLOR_GREEN}    --country CODE${COLOR_RESET}        Filter mirrors by country code
+  ${COLOR_GREEN}    --ipv6${COLOR_RESET}                Use IPv6 for mirror testing
+  ${COLOR_GREEN}    --log-file PATH${COLOR_RESET}       Write log to file
+
+${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
+  ${COLOR_DIM}# Open the interactive menu${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME}
+
+  ${COLOR_DIM}# Apply automatically from a pipe or CI job${COLOR_RESET}
+  curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash -s -- --yes
+
+  ${COLOR_DIM}# Read-only status and diagnostics${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --status
+  sudo bash ${_SCRIPT_NAME} --doctor
+
+  ${COLOR_DIM}# Test without changing system config${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --dry-run
+
+  ${COLOR_DIM}# Use a specific mirror${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --mirror https://mirror.example.com/ubuntu
+
+  ${COLOR_DIM}# Restore from latest backup${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --restore
+
+  ${COLOR_DIM}# Machine-readable output for CI/CD pipelines${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --json --quiet
+
+  ${COLOR_DIM}# List and test all available mirrors${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --list
+
+  ${COLOR_DIM}# Filter mirrors by country${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --refresh-catalog
+
+  ${COLOR_DIM}# Test only built-in official archive hosts${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --list --official-only
+
+  ${COLOR_DIM}# Tune bounded benchmark concurrency and retry policy${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --dry-run --workers 4 --retries 2
+
+  ${COLOR_DIM}# Add a custom mirror (each suite must pass signed metadata checks)${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --add-mirror https://mirror.example.com/ubuntu
+
+  ${COLOR_DIM}# Disable or remove a saved custom mirror by its ID${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --disable-mirror user-0123456789ab
+  sudo bash ${_SCRIPT_NAME} --remove-mirror user-0123456789ab
+
+  ${COLOR_DIM}# Filter mirrors by country code${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --list --country us
+
+${COLOR_BOLD}${COLOR_BLUE}WHAT IT DOES${COLOR_RESET}
+  1. Detects your Ubuntu version
+  2. Loads a versioned catalog from built-in, Ubuntu-index and user-defined sources
+  3. Verifies main, updates and security Release metadata and Ubuntu archive signatures
+  4. Rejects stale, incompatible, redirected or unsigned mirror endpoints
+  5. Ranks compatible mirrors by average latency plus a 50 ms penalty per redirect
+  6. Backs up current APT configuration before an approved apply
+  7. Writes optimized APT sources (deb822 format) and network configuration
+  8. Preserves existing package lists and downloaded package archives when --skip-update is selected
+  9. Runs apt-get update unless --skip-update is selected
+
+${COLOR_BOLD}${COLOR_BLUE}BACKUPS${COLOR_RESET}
+  Location:  ${BACKUP_BASE}/
+  Restore:   sudo bash ${_SCRIPT_NAME} --restore
+  Or:        sudo bash ${_SCRIPT_NAME} --restore-path /var/backups/${APP_SLUG}/<timestamp>
+
+${COLOR_BOLD}${COLOR_BLUE}EXIT CODES${COLOR_RESET}
+  ${COLOR_GREEN}0${COLOR_RESET}  Success         ${COLOR_GREEN}4${COLOR_RESET}  Not running as root
+  1  General error      5  Not Ubuntu
+  2  Usage error        6  No working mirror found
+  3  Network error      7  Backup failed
+  4  Root required      8  Restore/rollback failed
+
+${COLOR_BOLD}${COLOR_BLUE}AUTHOR${COLOR_RESET}
+  ${APP_AUTHOR} · ${APP_GITHUB}
+EOF
+}
+
+# ─── Argument Parsing ────────────────────────────────────────────────────────
+
+_parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    -h | --help)
+      _print_help
+      exit "$EXIT_OK"
+      ;;
+    -v | --version)
+      printf '%s v%s\n' "$APP_NAME" "$APP_VERSION"
+      exit "$EXIT_OK"
+      ;;
+    -m | --mirror)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a URL argument." "$EXIT_USAGE"
+      FORCE_MIRROR="${2%/}"
+      ACTION_REQUESTED=true
+      shift 2
+      ;;
+    -r | --restore)
+      RESTORE=true
+      shift
+      ;;
+    --restore-path)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a backup path." "$EXIT_USAGE"
+      RESTORE_PATH="$2"
+      RESTORE=true
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      ACTION_REQUESTED=true
+      shift
+      ;;
+    --skip-update)
+      SKIP_UPDATE=true
+      ACTION_REQUESTED=true
+      shift
+      ;;
+    --list)
+      LIST_REQUESTED=true
+      shift
+      ;;
+    --refresh-catalog)
+      REFRESH_CATALOG=true
+      LIST_REQUESTED=true
+      shift
+      ;;
+    --official-only)
+      OFFICIAL_ONLY=true
+      shift
+      ;;
+    --workers)
+      [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires an integer from 1 to $MAX_WORKERS_LIMIT." "$EXIT_USAGE"
+      (($2 >= 1 && $2 <= MAX_WORKERS_LIMIT)) || die "Option $1 must be between 1 and $MAX_WORKERS_LIMIT." "$EXIT_USAGE"
+      BENCH_WORKERS="$2"
+      shift 2
+      ;;
+    --retries)
+      [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires an integer from 0 to 3." "$EXIT_USAGE"
+      (($2 >= 0 && $2 <= 3)) || die "Option $1 must be between 0 and 3." "$EXIT_USAGE"
+      PROBE_RETRIES="$2"
+      shift 2
+      ;;
+    --add-mirror)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a mirror URL." "$EXIT_USAGE"
+      MIRROR_MANAGEMENT_ACTION="add"
+      MIRROR_MANAGEMENT_VALUE="$2"
+      MIRROR_MANAGEMENT_REQUESTED=true
+      shift 2
+      ;;
+    --remove-mirror)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a mirror ID." "$EXIT_USAGE"
+      MIRROR_MANAGEMENT_ACTION="remove"
+      MIRROR_MANAGEMENT_VALUE="$2"
+      MIRROR_MANAGEMENT_REQUESTED=true
+      shift 2
+      ;;
+    --disable-mirror)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a mirror ID." "$EXIT_USAGE"
+      MIRROR_MANAGEMENT_ACTION="disable"
+      MIRROR_MANAGEMENT_VALUE="$2"
+      MIRROR_MANAGEMENT_REQUESTED=true
+      shift 2
+      ;;
+    --enable-mirror)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a mirror ID." "$EXIT_USAGE"
+      MIRROR_MANAGEMENT_ACTION="enable"
+      MIRROR_MANAGEMENT_VALUE="$2"
+      MIRROR_MANAGEMENT_REQUESTED=true
+      shift 2
+      ;;
+    --menu)
+      MENU_REQUESTED=true
+      shift
+      ;;
+    --status)
+      STATUS_REQUESTED=true
+      shift
+      ;;
+    --doctor)
+      DOCTOR_REQUESTED=true
+      shift
+      ;;
+    -y | --yes)
+      YES=true
+      shift
+      ;;
+    --json)
+      JSON_OUTPUT=true
+      QUIET=true
+      NO_SPINNER=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --no-spinner)
+      NO_SPINNER=true
+      shift
+      ;;
+    --timeout)
+      [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires a positive integer." "$EXIT_USAGE"
+      (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
+      TIMEOUT_TOTAL="$2"
+      shift 2
+      ;;
+    --country)
+      [[ "${2:-}" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
+      COUNTRY_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+      shift 2
+      ;;
+    --ipv6)
+      USE_IPV6=true
+      shift
+      ;;
+    --log-file)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a file path." "$EXIT_USAGE"
+      LOG_FILE="$2"
+      LOG_ENABLED=true
+      shift 2
+      ;;
+    -*)
+      error "Unknown option: $1. Run --help for usage."
+      exit "$EXIT_USAGE"
+      ;;
+    *)
+      error "Unexpected argument: $1. Run --help for usage."
+      exit "$EXIT_USAGE"
+      ;;
+    esac
+  done
+
+  local mode_count=0
+  [[ "$MENU_REQUESTED" != true ]] || ((mode_count += 1))
+  [[ "$STATUS_REQUESTED" != true ]] || ((mode_count += 1))
+  [[ "$DOCTOR_REQUESTED" != true ]] || ((mode_count += 1))
+  [[ "$LIST_REQUESTED" != true ]] || ((mode_count += 1))
+  [[ "$RESTORE" != true ]] || ((mode_count += 1))
+  [[ "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || ((mode_count += 1))
+  ((mode_count <= 1)) || die "Choose only one command mode: menu, status, doctor, list, restore or mirror management." "$EXIT_USAGE"
+
+  if [[ "$MENU_REQUESTED" == true ]]; then
+    [[ "$YES" != true && "$JSON_OUTPUT" != true && "$ACTION_REQUESTED" != true && "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true ]] || die "--menu cannot be combined with CLI operation flags." "$EXIT_USAGE"
+  fi
+  if [[ "$STATUS_REQUESTED" == true || "$DOCTOR_REQUESTED" == true ]]; then
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true && "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || die "--status and --doctor are read-only commands and cannot be combined with operation flags." "$EXIT_USAGE"
+  fi
+  if [[ "$LIST_REQUESTED" == true ]]; then
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || die "--list cannot be combined with apply or mirror-management options." "$EXIT_USAGE"
+  fi
+  if [[ "$RESTORE" == true ]]; then
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || die "--restore cannot be combined with apply or mirror-management options." "$EXIT_USAGE"
+  fi
+  if [[ "$MIRROR_MANAGEMENT_REQUESTED" == true ]]; then
+    [[ "$JSON_OUTPUT" != true && "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true ]] || die "Mirror management cannot be combined with --json, --official-only or --refresh-catalog." "$EXIT_USAGE"
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && "$RESTORE" != true && "$LIST_REQUESTED" != true && -z "$FORCE_MIRROR" ]] || die "Mirror management cannot be combined with other operations." "$EXIT_USAGE"
+  fi
+}
+_is_interactive() {
+  [[ -t 0 && -t 1 ]]
+}
+
+_confirm_action() {
+  local prompt="$1"
+  local answer=""
+  if [[ "$YES" == true ]]; then return 0; fi
+  if ! _is_interactive; then
+    error "Non-interactive changes require --yes. Use --dry-run to preview without applying."
+    return "$EXIT_USAGE"
+  fi
+  printf '%s [y/N]: ' "$prompt" >&2
+  IFS= read -r answer || answer=""
+  case "${answer,,}" in
+  y | yes) return 0 ;;
+  *)
+    info "Cancelled. No system changes were made."
+    return 10
+    ;;
+  esac
+}
+
+_print_apply_preview() {
+  _print_section_header "CHANGE PREVIEW"
+  printf 'Selected mirror: %s\n' "$SELECTED_MIRROR"
+  printf 'APT source file: %s\n' "$APT_DEB822_FILE"
+  printf 'APT network config: %s\n' "$APT_CONF_FILE"
+  printf 'Backup root: %s\n' "$BACKUP_BASE"
+  if [[ -f "$APT_SOURCES_FILE" ]]; then
+    printf 'Legacy sources.list: may be removed if it contains only Ubuntu archive entries (%s)\n' "$APT_SOURCES_FILE"
+  fi
+  if [[ "$SKIP_UPDATE" == true ]]; then
+    printf 'APT update: skipped; existing package lists and archive cache are preserved\n'
+  else
+    printf 'APT update: apt-get update will run after configuration changes\n'
+  fi
+}
+
+_confirm_apply() {
+  [[ "$DRY_RUN" == true ]] && return 0
+  _print_apply_preview
+  _confirm_action "Apply this APT mirror configuration?"
+}
+
+_confirm_restore() {
+  local backup_path="$1"
+  _print_section_header "RESTORE PREVIEW"
+  printf 'Snapshot: %s\n' "$backup_path"
+  printf 'Managed targets restored exactly: %s, %s, %s\n' "$APT_SOURCES_FILE" "$APT_SOURCES_DIR" "$APT_CONF_DIR"
+  printf 'APT update: apt-get update will run after restoration\n'
+  _confirm_action "Restore this snapshot?"
+}
+
+_resolve_backup_path() {
+  local backup_path="$1"
+  if [[ -z "$backup_path" && -d "$BACKUP_BASE" ]]; then
+    backup_path="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn | head -1 | cut -f2-)"
+  fi
+  if [[ -z "$backup_path" || ! -d "$backup_path" ]]; then
+    local legacy_root="${_SYSTEM_ROOT}/root"
+    if [[ -d "$legacy_root" ]]; then
+      backup_path="$(find "$legacy_root" -maxdepth 1 -name 'apt-backup-*' -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn | head -1 | cut -f2-)"
+    fi
+  fi
+  [[ -n "$backup_path" && -d "$backup_path" ]] || return "$EXIT_RESTORE"
+  printf '%s\n' "$backup_path"
+}
+
+_menu_choose() {
+  local title="$1"
+  local prompt="$2"
+  shift 2
+  local -a tags=() labels=() whiptail_args=()
+  while (($# >= 2)); do
+    tags+=("$1")
+    labels+=("$2")
+    whiptail_args+=("$1" "$2")
+    shift 2
+  done
+
+  if command -v whiptail >/dev/null 2>&1; then
+    whiptail --title "$title" --menu "$prompt" 22 78 12 "${whiptail_args[@]}" 3>&1 1>&2 2>&3
+    return $?
+  fi
+
+  printf '\n%s\n%s\n' "$title" "$prompt" >&2
+  local i
+  for ((i = 0; i < ${#tags[@]}; i++)); do
+    printf '  %d) %s\n' "$((i + 1))" "${labels[$i]}" >&2
+  done
+  printf 'Select an option: ' >&2
+  local answer=""
+  IFS= read -r answer || return 1
+  if [[ "$answer" =~ ^[0-9]+$ ]] && ((answer >= 1 && answer <= ${#tags[@]})); then
+    printf '%s\n' "${tags[$((answer - 1))]}"
+    return 0
+  fi
+  for ((i = 0; i < ${#tags[@]}; i++)); do
+    if [[ "$answer" == "${tags[$i]}" ]]; then
+      printf '%s\n' "${tags[$i]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+_menu_input() {
+  local title="$1"
+  local prompt="$2"
+  local default_value="${3:-}"
+  local answer=""
+  if command -v whiptail >/dev/null 2>&1; then
+    whiptail --title "$title" --inputbox "$prompt" 10 78 "$default_value" 3>&1 1>&2 2>&3
+    return $?
+  fi
+  printf '%s [%s]: ' "$prompt" "$default_value" >&2
+  IFS= read -r answer || return 1
+  printf '%s\n' "${answer:-$default_value}"
+}
+
+_menu_message() {
+  local title="$1"
+  local message="$2"
+  if command -v whiptail >/dev/null 2>&1; then
+    whiptail --title "$title" --msgbox "$message" 16 78
+  else
+    printf '\n%s\n%s\n' "$title" "$message" >&2
+    printf 'Press Enter to continue: ' >&2
+    IFS= read -r _ || true
+  fi
+}
+
+_run_list_flow() {
+  _check_probe_tool
+  detect_ubuntu
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    list_mirrors >&2
+    REPORT_COMMAND="list"
+    REPORT_STATUS="complete"
+    _collect_status
+    REPORT_CHECK_NAMES=("mirror_catalog")
+    REPORT_CHECK_STATUSES=("complete")
+    REPORT_CHECK_DETAILS=("Mirror reachability checks completed; see stderr for detailed results")
+    _print_json
+  else
+    list_mirrors
+  fi
+}
+
+_run_benchmark_only() {
+  _check_probe_tool
+  detect_ubuntu
+  SELECTED_MIRROR=""
+  SELECTED_TIME=""
+  _select_mirror
+  printf '\nSelected mirror: %s\nProbe time: %ss\n\n' "$SELECTED_MIRROR" "$SELECTED_TIME"
+}
+
+_catalog_url_is_official() {
+  local requested_url="${1%/}" entry id country region url source official enabled
+  for entry in "${_MIRROR_CATALOG[@]}"; do
+    IFS='|' read -r id country region url source official enabled <<<"$entry"
+    if [[ "${url%/}" == "$requested_url" && "$official" == true && "$enabled" == true ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+_write_user_mirror_catalog() {
+  local i
+  mkdir -p "$(dirname "$USER_MIRRORS_FILE")" || return 1
+  chmod 0700 "$(dirname "$USER_MIRRORS_FILE")" 2>/dev/null || true
+  {
+    printf '# power-apt-boost custom mirror catalog v1\n'
+    for i in "${!_CATALOG_IDS[@]}"; do
+      [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
+      printf '%s|%s|%s|%s|user|false|%s\n' \
+        "${_CATALOG_IDS[$i]}" "${_CATALOG_COUNTRIES[$i]}" "${_CATALOG_REGIONS[$i]}" \
+        "${_CATALOG_URLS[$i]}" "${_CATALOG_ENABLED[$i]}"
+    done
+  } | _atomic_write "$USER_MIRRORS_FILE" 0600
+}
+
+_run_mirror_management() {
+  if [[ "$YES" != true ]] && ! _is_interactive; then
+    error "Non-interactive custom mirror changes require --yes."
+    return "$EXIT_USAGE"
+  fi
+  if [[ "$(id -u)" -ne 0 ]]; then
+    error "Custom mirror management must be run as root."
+    return "$EXIT_NOT_ROOT"
+  fi
+  _check_commands
+
+  local mirror_id requested_url result_file result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
+  local i target_index=-1 confirm_status=0 old_network_setting="$NO_CATALOG_NETWORK"
+  NO_CATALOG_NETWORK=true
+  _load_mirror_catalog
+  NO_CATALOG_NETWORK="$old_network_setting"
+
+  case "$MIRROR_MANAGEMENT_ACTION" in
+  add)
+    _check_probe_tool
+    detect_ubuntu
+    requested_url="$(_validate_mirror_url "$MIRROR_MANAGEMENT_VALUE")" || {
+      error "Invalid Ubuntu mirror URL: $MIRROR_MANAGEMENT_VALUE"
+      return "$EXIT_USAGE"
+    }
+    for i in "${!_CATALOG_URLS[@]}"; do
+      [[ "${_CATALOG_URLS[$i]}" != "$requested_url" ]] || {
+        error "This mirror URL already exists in the catalog as ${_CATALOG_IDS[$i]}."
+        return "$EXIT_USAGE"
+      }
+    done
+    result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.custom.XXXXXX")" || return "$EXIT_GENERAL"
+    _tmp_dirs+=("$result_file")
+    _print_section_header "VERIFYING CUSTOM MIRROR"
+    _test_mirror "$requested_url" "$result_file" "$CODENAME"
+    result_line="$(cat "$result_file" 2>/dev/null || true)"
+    rm -f "$result_file" 2>/dev/null || true
+    IFS='|' read -r eligible score avg_latency main_code updates_code security_code redirects freshness signature reason <<<"$result_line"
+    if [[ "$eligible" != true ]]; then
+      error "Custom mirror rejected: ${reason:-Ubuntu metadata or signature verification failed}."
+      return "$EXIT_NO_MIRROR"
+    fi
+    mirror_id="user-$(printf '%s' "$requested_url" | sha256sum | cut -c1-12)"
+    printf 'Mirror ID: %s\nURL: %s\nAverage latency: %ss\n' "$mirror_id" "$requested_url" "$avg_latency"
+    _confirm_action "Save this verified mirror to the custom catalog?" || confirm_status=$?
+    [[ "$confirm_status" -eq 0 ]] || return "$confirm_status"
+    _acquire_mutation_lock
+    _catalog_add_entry "$mirror_id" "auto" "Custom" "$requested_url" "user" false true || return "$EXIT_GENERAL"
+    _write_user_mirror_catalog || {
+      error "Could not save the custom mirror catalog."
+      return "$EXIT_GENERAL"
+    }
+    info "Saved custom mirror: $mirror_id"
+    ;;
+  remove | disable | enable)
+    mirror_id="$MIRROR_MANAGEMENT_VALUE"
+    for i in "${!_CATALOG_IDS[@]}"; do
+      if [[ "${_CATALOG_IDS[$i]}" == "$mirror_id" && "${_CATALOG_SOURCES[$i]}" == user ]]; then
+        target_index="$i"
+        break
+      fi
+    done
+    if ((target_index < 0)); then
+      error "Custom mirror ID not found: $mirror_id"
+      return "$EXIT_USAGE"
+    fi
+    if [[ "$MIRROR_MANAGEMENT_ACTION" == disable && "${_CATALOG_ENABLED[$target_index]}" == false ]]; then
+      info "Custom mirror is already disabled: $mirror_id"
+      return 0
+    fi
+    if [[ "$MIRROR_MANAGEMENT_ACTION" == enable && "${_CATALOG_ENABLED[$target_index]}" == true ]]; then
+      info "Custom mirror is already enabled: $mirror_id"
+      return 0
+    fi
+    printf 'Mirror ID: %s\nURL: %s\nAction: %s\n' "$mirror_id" "${_CATALOG_URLS[$target_index]}" "$MIRROR_MANAGEMENT_ACTION"
+    _confirm_action "Apply this custom catalog change?" || confirm_status=$?
+    [[ "$confirm_status" -eq 0 ]] || return "$confirm_status"
+    _acquire_mutation_lock
+
+    if [[ "$MIRROR_MANAGEMENT_ACTION" == remove ]]; then
+      local -a ids=() countries=() regions=() urls=() sources=() officials=() enabled=()
+      for i in "${!_CATALOG_IDS[@]}"; do
+        ((i == target_index)) && continue
+        ids+=("${_CATALOG_IDS[$i]}")
+        countries+=("${_CATALOG_COUNTRIES[$i]}")
+        regions+=("${_CATALOG_REGIONS[$i]}")
+        urls+=("${_CATALOG_URLS[$i]}")
+        sources+=("${_CATALOG_SOURCES[$i]}")
+        officials+=("${_CATALOG_OFFICIAL[$i]}")
+        enabled+=("${_CATALOG_ENABLED[$i]}")
+      done
+      _CATALOG_IDS=("${ids[@]}")
+      _CATALOG_COUNTRIES=("${countries[@]}")
+      _CATALOG_REGIONS=("${regions[@]}")
+      _CATALOG_URLS=("${urls[@]}")
+      _CATALOG_SOURCES=("${sources[@]}")
+      _CATALOG_OFFICIAL=("${officials[@]}")
+      _CATALOG_ENABLED=("${enabled[@]}")
+    elif [[ "$MIRROR_MANAGEMENT_ACTION" == disable ]]; then
+      _CATALOG_ENABLED[target_index]=false
+    else
+      _CATALOG_ENABLED[target_index]=true
+    fi
+
+    _write_user_mirror_catalog || {
+      error "Could not save the custom mirror catalog."
+      return "$EXIT_GENERAL"
+    }
+    info "Custom mirror catalog updated: $mirror_id"
+    ;;
+  *)
+    error "Unknown custom mirror management action."
+    return "$EXIT_USAGE"
+    ;;
+  esac
+}
+
+_run_apply_flow() {
+  if [[ "$DRY_RUN" != true && "$YES" != true ]] && ! _is_interactive; then
+    error "Applying APT changes from a non-interactive session requires --yes. Use --dry-run to preview."
+    return "$EXIT_USAGE"
+  fi
+  if [[ "$(id -u)" -ne 0 ]]; then
+    error "This operation must be run as root."
+    return "$EXIT_NOT_ROOT"
+  fi
+
+  _print_banner
+  _check_commands
+  _check_probe_tool
+  detect_ubuntu
+  if [[ "$DRY_RUN" != true ]]; then _acquire_mutation_lock; fi
+
+  if [[ -n "$FORCE_MIRROR" ]]; then
+    local forced_url result_file result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
+    forced_url="$(_validate_mirror_url "$FORCE_MIRROR")" || {
+      error "Invalid Ubuntu mirror URL: $FORCE_MIRROR"
+      return "$EXIT_USAGE"
+    }
+    if [[ "$OFFICIAL_ONLY" == true ]] && ! _catalog_url_is_official "$forced_url"; then
+      error "The specified mirror is not in the built-in official Ubuntu mirror profile."
+      return "$EXIT_USAGE"
+    fi
+
+    _print_section_header "VERIFYING SPECIFIED MIRROR"
+    msg "  Mirror: ${COLOR_BOLD}${forced_url}${COLOR_RESET}"
+    result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.force.XXXXXX")"
+    _tmp_dirs+=("$result_file")
+    _test_mirror "$forced_url" "$result_file" "$CODENAME"
+    result_line="$(cat "$result_file" 2>/dev/null || true)"
+    rm -f "$result_file" 2>/dev/null || true
+    IFS='|' read -r eligible score avg_latency main_code updates_code security_code redirects freshness signature reason <<<"$result_line"
+    if [[ "$eligible" == true ]]; then
+      SELECTED_MIRROR="$forced_url"
+      SELECTED_TIME="$avg_latency"
+    else
+      error "Specified mirror failed Ubuntu compatibility verification: ${reason:-unknown reason}"
+      return "$EXIT_NO_MIRROR"
+    fi
+  else
+    _select_mirror || return $?
+  fi
+
+  if [[ "$DRY_RUN" != true ]]; then
+    local confirm_status=0
+    _confirm_apply || confirm_status=$?
+    if [[ "$confirm_status" -ne 0 ]]; then return "$confirm_status"; fi
+  fi
+
+  REPORT_COMMAND="apply"
+  REPORT_STATUS="success"
+  [[ "$DRY_RUN" == true ]] && REPORT_STATUS="dry_run"
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _apply_changes >&2
+    _print_json
+  else
+    _apply_changes
+    _print_summary
+  fi
+}
+_run_restore_flow() {
+  if [[ "$YES" != true ]] && ! _is_interactive; then
+    error "Restoring APT configuration from a non-interactive session requires --yes."
+    return "$EXIT_USAGE"
+  fi
+  if [[ "$(id -u)" -ne 0 ]]; then
+    error "This operation must be run as root."
+    return "$EXIT_NOT_ROOT"
+  fi
+  _check_commands
+
+  local selected_backup confirm_status=0
+  if ! selected_backup="$(_resolve_backup_path "$RESTORE_PATH")"; then
+    error "No backup snapshot was found."
+    return "$EXIT_RESTORE"
+  fi
+  _confirm_restore "$selected_backup" || confirm_status=$?
+  if [[ "$confirm_status" -ne 0 ]]; then return "$confirm_status"; fi
+
+  _acquire_mutation_lock
+  REPORT_COMMAND="restore"
+  REPORT_STATUS="success"
+  SELECTED_MIRROR="restored"
+  SELECTED_TIME=""
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _restore_backup "$selected_backup" >&2 || return "$EXIT_RESTORE"
+    apt-get update >&2 || return "$EXIT_NETWORK"
+    _print_json
+  else
+    _restore_backup "$selected_backup" || return "$EXIT_RESTORE"
+    apt-get update || return "$EXIT_NETWORK"
+    info "APT sources restored and updated successfully."
+  fi
+}
+
+_menu_overview() {
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _status_report
+  else
+    _print_status_report
+    _menu_message "Overview" "System status refreshed."
+  fi
+}
+
+_menu_manage_mirrors() {
+  local choice value rc old_network_setting="$NO_CATALOG_NETWORK" i listing
+  NO_CATALOG_NETWORK=true
+  _load_mirror_catalog
+  NO_CATALOG_NETWORK="$old_network_setting"
+
+  while true; do
+    choice="$(
+      _menu_choose "Custom Ubuntu Mirrors" "Manage app-owned custom mirror entries" \
+        "list" "List saved custom mirrors" \
+        "add" "Add and verify a mirror URL" \
+        "disable" "Disable a saved custom mirror" \
+        "enable" "Enable a saved custom mirror" \
+        "remove" "Remove a saved custom mirror" \
+        "back" "Back"
+    )" || return 0
+
+    case "$choice" in
+    list)
+      listing=""
+      for i in "${!_CATALOG_IDS[@]}"; do
+        [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
+        listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"$'\n'
+      done
+      [[ -n "$listing" ]] || listing="No custom mirrors have been saved."
+      _menu_message "Custom mirrors" "$listing"
+      ;;
+    add)
+      value="$(_menu_input "Add custom mirror" "Ubuntu mirror base URL (must serve signed InRelease files)" "https://")" || continue
+      MIRROR_MANAGEMENT_ACTION="add"
+      MIRROR_MANAGEMENT_VALUE="$value"
+      rc=0
+      _run_mirror_management || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Add operation finished with exit code $rc."
+      ;;
+    disable | enable | remove)
+      listing=""
+      for i in "${!_CATALOG_IDS[@]}"; do
+        [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
+        listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"$'\n'
+      done
+      [[ -n "$listing" ]] || {
+        _menu_message "Custom mirrors" "There are no saved custom mirrors to change."
+        continue
+      }
+      _menu_message "Saved custom mirror IDs" "$listing"
+      value="$(_menu_input "Custom mirror ID" "Enter the exact ID shown above" "")" || continue
+      MIRROR_MANAGEMENT_ACTION="$choice"
+      MIRROR_MANAGEMENT_VALUE="$value"
+      rc=0
+      _run_mirror_management || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Operation finished with exit code $rc."
+      ;;
+    back) return 0 ;;
+    esac
+
+    old_network_setting="$NO_CATALOG_NETWORK"
+    NO_CATALOG_NETWORK=true
+    _load_mirror_catalog
+    NO_CATALOG_NETWORK="$old_network_setting"
+  done
+}
+
+_menu_apt() {
+  local choice rc
+  while true; do
+    choice="$(
+      _menu_choose "APT Management" "Choose an action" \
+        "apply_best" "Find and apply the fastest mirror" \
+        "apply_custom" "Test and apply a custom mirror" \
+        "list" "List and test available mirrors" \
+        "manage" "Manage custom mirrors" \
+        "back" "Back to main menu"
+    )" || return 0
+    case "$choice" in
+    apply_best)
+      FORCE_MIRROR=""
+      DRY_RUN=false
+      rc=0
+      _run_apply_flow || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      ;;
+    apply_custom)
+      FORCE_MIRROR="$(_menu_input "Custom mirror" "Enter an Ubuntu mirror base URL" "")" || continue
+      [[ "$FORCE_MIRROR" =~ ^https?://[^[:space:]]+$ ]] || {
+        _menu_message "Invalid mirror URL" "Enter an http:// or https:// URL without spaces."
+        continue
+      }
+      FORCE_MIRROR="${FORCE_MIRROR%/}"
+      DRY_RUN=false
+      rc=0
+      _run_apply_flow || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      ;;
+    list)
+      _run_list_flow
+      _menu_message "APT mirrors" "Mirror testing completed."
+      ;;
+    manage) _menu_manage_mirrors ;;
+    back) return 0 ;;
+    esac
+  done
+}
+
+_menu_benchmark() {
+  _run_benchmark_only
+  _menu_message "Benchmark" "Benchmark completed. No system configuration was changed."
+}
+
+_menu_backups() {
+  if [[ "$(id -u)" -ne 0 ]]; then
+    _menu_message "Backup and Restore" "Run the menu as root to inspect protected system backups."
+    return 0
+  fi
+  local listing
+  listing="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn || true)"
+  if [[ -z "$listing" ]]; then
+    _menu_message "Backup and Restore" "No Power APT Boost backup snapshots were found."
+    return 0
+  fi
+  local -a args=()
+  local line path
+  while IFS= read -r line; do
+    path="${line#*$'\t'}"
+    args+=("$path" "${path##*/}")
+  done <<<"$listing"
+  local selected rc
+  selected="$(_menu_choose "Backup and Restore" "Select a snapshot to restore" "${args[@]}" "back" "Back")" || return 0
+  [[ "$selected" == back ]] && return 0
+  RESTORE_PATH="$selected"
+  rc=0
+  _run_restore_flow || rc=$?
+  [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Restore result" "Restore finished with exit code $rc."
+}
+
+_menu_diagnostics() {
+  local choice
+  choice="$(
+    _menu_choose "Diagnostics" "Choose a report" \
+      "status" "System status" \
+      "doctor" "Run local health checks" \
+      "back" "Back to main menu"
+  )" || return 0
+  case "$choice" in
+  status)
+    _status_report
+    [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Status report completed."
+    ;;
+  doctor)
+    _doctor_report
+    [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Health checks completed."
+    ;;
+  back) return 0 ;;
+  esac
+}
+
+_country_code_supported() {
+  local requested="$1" entry country mirror_url
+  for entry in "${_MIRROR_CATALOG[@]}"; do
+    IFS='|' read -r country _ mirror_url <<<"$entry"
+    [[ "$country" != "$requested" ]] || return 0
+  done
+  return 1
+}
+
+_menu_settings() {
+  local choice value
+  while true; do
+    choice="$(
+      _menu_choose "Settings" "Settings apply to this session only" \
+        "timeout" "Probe timeout: ${TIMEOUT_TOTAL}s" \
+        "country" "Country filter: ${COUNTRY_FILTER:-all}" \
+        "workers" "Benchmark workers: ${BENCH_WORKERS}" \
+        "retries" "Probe retries: ${PROBE_RETRIES}" \
+        "official" "Official-only profile: $([[ "$OFFICIAL_ONLY" == true ]] && echo enabled || echo disabled)" \
+        "refresh" "Refresh Ubuntu mirror catalog on next run" \
+        "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \
+        "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \
+        "back" "Back to main menu"
+    )" || return 0
+    case "$choice" in
+    timeout)
+      value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
+      if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 300)); then
+        TIMEOUT_TOTAL="$value"
+      else
+        _menu_message "Invalid timeout" "Enter a whole number from 1 to 300."
+      fi
+      ;;
+    country)
+      value="$(_menu_input "Country filter" "Enter a supported two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
+      value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+      if [[ -z "$value" ]]; then
+        COUNTRY_FILTER=""
+      elif [[ "$value" =~ ^[a-z]{2}$ ]] && _country_code_supported "$value"; then
+        COUNTRY_FILTER="$value"
+      else
+        _menu_message "Unsupported country" "Choose a country code present in the built-in mirror catalog."
+      fi
+      ;;
+    workers)
+      value="$(_menu_input "Benchmark workers" "Enter a value from 1 to $MAX_WORKERS_LIMIT" "$BENCH_WORKERS")" || continue
+      if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= MAX_WORKERS_LIMIT)); then
+        BENCH_WORKERS="$value"
+      else
+        _menu_message "Invalid worker count" "Enter a whole number from 1 to $MAX_WORKERS_LIMIT."
+      fi
+      ;;
+    retries)
+      value="$(_menu_input "Probe retries" "Enter a value from 0 to 3" "$PROBE_RETRIES")" || continue
+      if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 0 && value <= 3)); then
+        PROBE_RETRIES="$value"
+      else
+        _menu_message "Invalid retry count" "Enter a whole number from 0 to 3."
+      fi
+      ;;
+    official)
+      [[ "$OFFICIAL_ONLY" == true ]] && OFFICIAL_ONLY=false || OFFICIAL_ONLY=true
+      ;;
+    refresh)
+      REFRESH_CATALOG=true
+      _menu_message "Catalog refresh" "The Ubuntu mirror catalog will be refreshed the next time you list or benchmark mirrors."
+      ;;
+    ipv6)
+      [[ "$USE_IPV6" == true ]] && USE_IPV6=false || USE_IPV6=true
+      ;;
+    spinner)
+      [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
+      ;;
+    back) return 0 ;;
+    esac
+  done
+}
+_menu_main() {
+  if ! _is_interactive; then
+    error "The interactive menu requires a TTY. Use --help for non-interactive commands."
+    return "$EXIT_USAGE"
+  fi
+  while true; do
+    local choice
+    choice="$(
+      _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \
+        "overview" "Overview" \
+        "apt" "APT management" \
+        "benchmark" "Mirror benchmark" \
+        "backups" "Backup and Restore" \
+        "diagnostics" "Diagnostics" \
+        "settings" "Settings" \
+        "quit" "Exit"
+    )" || return 0
+    case "$choice" in
+    overview) _menu_overview ;;
+    apt) _menu_apt ;;
+    benchmark) _menu_benchmark ;;
+    backups) _menu_backups ;;
+    diagnostics) _menu_diagnostics ;;
+    settings) _menu_settings ;;
+    quit) return 0 ;;
+    esac
+  done
+}
+
+main() {
+  _setup_colors
+  _parse_args "$@"
+
+  if [[ "$LOG_ENABLED" == true ]]; then
+    mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+    : >"$LOG_FILE"
+    _log_to_file "Session started: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  fi
+
+  if [[ "$STATUS_REQUESTED" == true ]]; then
+    _status_report
+    exit "$EXIT_OK"
+  fi
+
+  if [[ "$DOCTOR_REQUESTED" == true ]]; then
+    _doctor_report
+    [[ "$REPORT_STATUS" != "error" ]] || exit "$EXIT_GENERAL"
+    exit "$EXIT_OK"
+  fi
+
+  if [[ "$MIRROR_MANAGEMENT_REQUESTED" == true ]]; then
+    local mirror_management_status=0
+    _run_mirror_management || mirror_management_status=$?
+    [[ "$mirror_management_status" -eq "$EXIT_CANCELLED" ]] && mirror_management_status="$EXIT_OK"
+    exit "$mirror_management_status"
+  fi
+
+  if [[ "$LIST_REQUESTED" == true ]]; then
+    local list_status=0
+    _run_list_flow || list_status=$?
+    exit "$list_status"
+  fi
+
+  if [[ "$RESTORE" == true ]]; then
+    local restore_status=0
+    _run_restore_flow || restore_status=$?
+    [[ "$restore_status" -eq "$EXIT_CANCELLED" ]] && restore_status="$EXIT_OK"
+    exit "$restore_status"
+  fi
+
+  if [[ "$MENU_REQUESTED" == true ]]; then
+    local menu_status=0
+    _menu_main || menu_status=$?
+    exit "$menu_status"
+  fi
+
+  if [[ "$ACTION_REQUESTED" != true && "$YES" != true && "$DRY_RUN" != true ]]; then
+    if _is_interactive; then
+      _menu_main
+      exit $?
+    fi
+    error "No command was selected. A non-interactive apply requires --yes; use --status, --doctor or --dry-run for read-only checks."
+    exit "$EXIT_USAGE"
+  fi
+
+  local apply_status=0
+  _run_apply_flow || apply_status=$?
+  [[ "$apply_status" -eq "$EXIT_CANCELLED" ]] && apply_status="$EXIT_OK"
+  exit "$apply_status"
+}
+if [[ "${POWER_APT_BOOST_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi
+\t' read -r types uris suites components state signed_by architectures; do
+      [[ -n "$types" && -n "$uris" && -n "$suites" ]] || continue
+      redacted_uris=""
+      for uri in $uris; do
+        redacted_uris+="${redacted_uris:+ }$(_redact_apt_uri "$uri")"
+      done
+      APT_SOURCE_PATHS+=("$file")
+      APT_SOURCE_FORMATS+=("$format")
+      APT_SOURCE_TYPES+=("$types")
+      APT_SOURCE_URIS+=("$redacted_uris")
+      APT_SOURCE_SUITES+=("$suites")
+      APT_SOURCE_COMPONENTS+=("$components")
+      APT_SOURCE_ARCHITECTURES+=("$architectures")
+      APT_SOURCE_STATES+=("$state")
+      APT_SOURCE_SIGNED_BY+=("$signed_by")
+      APT_SOURCE_DUPLICATES+=(false)
+      [[ "$file" == "$APT_DEB822_FILE" ]] || ((APT_SOURCE_OTHER_COUNT += 1)) || true
+      if [[ "$state" == active && "$signed_by" == missing ]]; then
+        ((APT_SOURCE_UNSIGNED_COUNT += 1)) || true
+      fi
+    done <<<"$parser_output"
+  done
+
+  for ((i = 0; i < ${#APT_SOURCE_PATHS[@]}; i++)); do
+    [[ "${APT_SOURCE_STATES[$i]}" == active ]] || continue
+    for ((j = 0; j < i; j++)); do
+      [[ "${APT_SOURCE_STATES[$j]}" == active ]] || continue
+      if [[ "${APT_SOURCE_TYPES[$i]}|${APT_SOURCE_URIS[$i]}|${APT_SOURCE_SUITES[$i]}|${APT_SOURCE_COMPONENTS[$i]}" == \
+        "${APT_SOURCE_TYPES[$j]}|${APT_SOURCE_URIS[$j]}|${APT_SOURCE_SUITES[$j]}|${APT_SOURCE_COMPONENTS[$j]}" ]]; then
+        APT_SOURCE_DUPLICATES[i]=true
+        ((APT_SOURCE_DUPLICATE_COUNT += 1)) || true
+        break
+      fi
+    done
+  done
+}
+
+_apt_source_inventory_json() {
+  local i
+  printf '['
+  for ((i = 0; i < ${#APT_SOURCE_PATHS[@]}; i++)); do
+    ((i == 0)) || printf ','
+    printf '{"file":%s,"format":%s,"state":%s,"types":%s,"uris":%s,"suites":%s,"components":%s,"architectures":%s,"signed_by":%s,"duplicate":%s}' \
+      "$(_json_quote "${APT_SOURCE_PATHS[$i]}")" \
+      "$(_json_quote "${APT_SOURCE_FORMATS[$i]}")" \
+      "$(_json_quote "${APT_SOURCE_STATES[$i]}")" \
+      "$(_json_quote "${APT_SOURCE_TYPES[$i]}")" \
+      "$(_json_quote "${APT_SOURCE_URIS[$i]}")" \
+      "$(_json_quote "${APT_SOURCE_SUITES[$i]}")" \
+      "$(_json_quote "${APT_SOURCE_COMPONENTS[$i]}")" \
+      "$(_json_quote "${APT_SOURCE_ARCHITECTURES[$i]}")" \
+      "$(_json_quote "${APT_SOURCE_SIGNED_BY[$i]}")" \
+      "${APT_SOURCE_DUPLICATES[$i]}"
+  done
+  printf ']'
 }
 
 _collect_status() {

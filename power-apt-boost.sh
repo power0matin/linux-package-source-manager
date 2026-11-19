@@ -443,15 +443,15 @@ _MIRROR_CATALOG=(
 )
 
 _validate_mirror_url() {
-  local url="$${1%/}" authority path
+  local url="${1%/}" authority path
   [[ "$url" != *'|'* && "$url" != *$'\n'* && "$url" != *$'\r'* ]] || return 1
   [[ "$url" != *'@'* && "$url" != *'?'* && "$url" != *'#'* ]] || return 1
   [[ "$url" =~ ^https?://(\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]+)(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$ ]] || return 1
-  authority="$${url#*://}"
-  authority="$${authority%%/*}"
+  authority="${url#*://}"
+  authority="${authority%%/*}"
   [[ -n "$authority" && "$authority" != .* && "$authority" != *..* ]] || return 1
-  path="/$${url#*://}"
-  path="/$${path#*/}"
+  path="/${url#*://}"
+  path="/${path#*/}"
   [[ "$path" == */ubuntu ]] || return 1
   [[ "$path" != *"/../"* && "$path" != *"/./"* ]] || return 1
   printf '%s\n' "$url"
@@ -480,7 +480,7 @@ _catalog_add_entry() {
     ((CATALOG_INVALID_ENTRIES += 1)) || true
     return 1
   fi
-  for existing in "$${_CATALOG_URLS[@]}"; do
+  for existing in "${_CATALOG_URLS[@]}"; do
     [[ "$existing" != "$normalized" ]] || return 0
   done
   _CATALOG_IDS+=("$id")
@@ -956,12 +956,12 @@ _test_mirror() {
   wait "$pid_updates" 2>/dev/null || true
   wait "$pid_security" 2>/dev/null || true
 
-  local main_code main_time main_redirects main_effective main_metadata main_signature main_freshness main_reason
-  local updates_code updates_time updates_redirects updates_effective updates_metadata updates_signature updates_freshness updates_reason
-  local security_code security_time security_redirects security_effective security_metadata security_signature security_freshness security_reason
-  IFS=$'\t' read -r main_code main_time main_redirects main_effective main_metadata main_signature main_freshness main_reason <"$tmpdir/main" || true
-  IFS=$'\t' read -r updates_code updates_time updates_redirects updates_effective updates_metadata updates_signature updates_freshness updates_reason <"$tmpdir/updates" || true
-  IFS=$'\t' read -r security_code security_time security_redirects security_effective security_metadata security_signature security_freshness security_reason <"$tmpdir/security" || true
+  local main_code main_time main_redirects main_metadata main_signature main_freshness main_reason
+  local updates_code updates_time updates_redirects updates_metadata updates_signature updates_freshness updates_reason
+  local security_code security_time security_redirects security_metadata security_signature security_freshness security_reason
+  IFS=$'\t' read -r main_code main_time main_redirects _ main_metadata main_signature main_freshness main_reason <"$tmpdir/main" || true
+  IFS=$'\t' read -r updates_code updates_time updates_redirects _ updates_metadata updates_signature updates_freshness updates_reason <"$tmpdir/updates" || true
+  IFS=$'\t' read -r security_code security_time security_redirects _ security_metadata security_signature security_freshness security_reason <"$tmpdir/security" || true
 
   main_code="${main_code:-000}"
   main_time="${main_time:-0.000000}"
@@ -2365,9 +2365,9 @@ _run_mirror_management() {
         _CATALOG_OFFICIAL=("${officials[@]}")
         _CATALOG_ENABLED=("${enabled[@]}")
       elif [[ "$MIRROR_MANAGEMENT_ACTION" == disable ]]; then
-        _CATALOG_ENABLED[$target_index]=false
+        _CATALOG_ENABLED[target_index]=false
       else
-        _CATALOG_ENABLED[$target_index]=true
+        _CATALOG_ENABLED[target_index]=true
       fi
 
       _write_user_mirror_catalog || {

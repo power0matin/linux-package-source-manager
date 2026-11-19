@@ -1635,7 +1635,10 @@ _confirm_action() {
   IFS= read -r answer || answer=""
   case "${answer,,}" in
   y | yes) return 0 ;;
-  *) info "Cancelled. No system changes were made."; return 10 ;;
+  *)
+    info "Cancelled. No system changes were made."
+    return 10
+    ;;
   esac
 }
 
@@ -1883,7 +1886,7 @@ _menu_apt() {
       "apply_custom" "Test and apply a custom mirror" \\
       "list" "List and test available mirrors" \\
       "back" "Back to main menu"
-  )" || return 0
+    )" || return 0
     case "$choice" in
     apply_best)
       FORCE_MIRROR=""
@@ -1951,7 +1954,7 @@ _menu_diagnostics() {
     "status" "System status" \\
     "doctor" "Run local health checks" \\
     "back" "Back to main menu"
-)" || return 0
+  )" || return 0
   case "$choice" in
   status)
     _status_report
@@ -1984,7 +1987,7 @@ _menu_settings() {
       "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \\
       "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \\
       "back" "Back to main menu"
-  )" || return 0
+    )" || return 0
     case "$choice" in
     timeout)
       value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
@@ -2032,7 +2035,7 @@ _menu_main() {
       "diagnostics" "Diagnostics" \\
       "settings" "Settings" \\
       "quit" "Exit"
-  )" || return 0
+    )" || return 0
     case "$choice" in
     overview) _menu_overview ;;
     apt) _menu_apt ;;

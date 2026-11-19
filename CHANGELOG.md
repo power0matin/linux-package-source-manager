@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added read-only `--status` and `--doctor` commands with a versioned JSON report schema.
 - Added explicit `--yes` confirmation for non-interactive apply, restore and custom mirror management.
 - Added a versioned mirror catalog for built-in, Ubuntu-index and user-defined entries, with strict validation and provenance.
-- Added the Ubuntu mirror index as a discovery source with a 24-hour cache, root-only storage, schema validation and last-known-good fallback.
+- Added the Ubuntu mirror index as a discovery source with a 24-hour cache, root-only storage, schema validation and last-known-good fallback; HTTP index data is treated only as untrusted discovery input, with HTTPS-only redirects and mandatory signed-metadata verification of every selectable mirror.
 - Added signed Ubuntu Release metadata verification for main, updates and security suites, including suite/codename matching, freshness checks and same-host redirect policy.
 - Added bounded benchmark concurrency, configurable retry policy, structured endpoint metrics and deterministic scoring.
 - Added region filtering, an official-only profile and confirmed custom mirror add/enable/disable/remove actions.

@@ -886,21 +886,21 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 
 **Goal:** Add an approachable terminal interface without splitting business logic from the CLI.
 
-- [ ] Add TTY detection and non-interactive behavior.
-- [ ] Implement numbered Bash menu fallback.
-- [ ] Add optional `whiptail` UI when installed.
-- [ ] Add Overview, APT, Benchmark, Backup/Restore, Diagnostics and Settings screens.
-- [ ] Add reusable confirmation, preview, cancel and back navigation helpers.
-- [ ] Ensure every menu action calls the same functions as the CLI.
-- [ ] Add `--status` and `--doctor` CLI commands.
-- [ ] Add a consistent JSON output schema and tests.
+- [x] Add TTY detection and non-interactive behavior.
+- [x] Implement numbered Bash menu fallback.
+- [x] Add optional `whiptail` UI when installed.
+- [x] Add Overview, APT, Benchmark, Backup/Restore, Diagnostics and Settings screens.
+- [x] Add reusable confirmation, preview, cancel and back navigation helpers.
+- [x] Ensure every menu action calls the same functions as the CLI.
+- [x] Add `--status` and `--doctor` CLI commands.
+- [x] Add a consistent JSON output schema and tests.
 
 **Acceptance criteria**
 
-- [ ] Piped execution never blocks on menu input.
-- [ ] Every destructive operation shows the exact scope and files before apply.
-- [ ] Cancel leaves the system unchanged.
-- [ ] Menu and CLI produce equivalent operation results.
+- [x] Piped execution never blocks on menu input.
+- [x] Every destructive operation shows the exact scope and files before apply.
+- [x] Cancel leaves the system unchanged.
+- [x] Menu and CLI produce equivalent operation results.
 
 ### Phase 3 — Mirror catalog and benchmark engine
 
@@ -1145,6 +1145,6 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Current execution state:** Phase 1 — implementation prepared in a pull request; CI and review pending.  
-**Next permitted work unit:** Complete Phase 1 acceptance and merge its PR before starting Phase 2.  
+**Current execution state:** Phase 2 — PR #3 is open; ShellCheck, shfmt and all three Ubuntu test jobs pass (71/71 each). Merge approval is pending.  
+**Next permitted work unit:** Merge Phase 2 before starting Phase 3.  
 **Release/deployment status:** No release or deployment is implied by this document.

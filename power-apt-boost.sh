@@ -60,6 +60,7 @@ readonly EXIT_NOT_UBUNTU=5
 readonly EXIT_NO_MIRROR=6
 readonly EXIT_BACKUP=7
 readonly EXIT_RESTORE=8
+readonly EXIT_CANCELLED=10
 
 # ─── Global State ─────────────────────────────────────────────────────────────
 
@@ -91,6 +92,29 @@ COUNTRY_FILTER=""
 USE_IPV6=false
 LOG_FILE=""
 LOG_ENABLED=false
+YES=false
+MENU_REQUESTED=false
+STATUS_REQUESTED=false
+DOCTOR_REQUESTED=false
+LIST_REQUESTED=false
+ACTION_REQUESTED=false
+
+REPORT_COMMAND="apply"
+REPORT_STATUS="success"
+REPORT_OS_ID="unknown"
+REPORT_OS_PRETTY="unknown"
+REPORT_VERSION_ID="unknown"
+REPORT_CODENAME="unknown"
+REPORT_SOURCES_LIST="absent"
+REPORT_DEB822="absent"
+REPORT_MANAGED_CONFIG="absent"
+REPORT_CURRENT_MIRROR=""
+REPORT_BACKUP_ACCESSIBLE=false
+REPORT_BACKUP_COUNT=0
+REPORT_LATEST_BACKUP=""
+REPORT_CHECK_NAMES=()
+REPORT_CHECK_STATUSES=()
+REPORT_CHECK_DETAILS=()
 
 _tmp_dirs=()
 _bg_pids=()
@@ -1132,28 +1156,192 @@ DRYRUN
 
 # ─── Output ──────────────────────────────────────────────────────────────────# ─── Output ───────────────────────────────────────────────────────────────────
 
-_print_json() {
-  local status="success" action="mirror_selected"
-  if [[ "$DRY_RUN" == true ]]; then action="dry_run"; fi
-  if [[ "$RESTORE" == true ]]; then action="backup_restored"; fi
+_json_quote() {
+  local input="${1-}" output="" char escaped_char byte_code i
+  local LC_ALL=C
 
-  cat <<JSON
-{
-  "version": "${APP_VERSION}",
-  "action": "${action}",
-  "status": "${status}",
-  "codename": "${CODENAME:-unknown}",
-  "mirror": "${SELECTED_MIRROR:-}",
-  "response_time": "${SELECTED_TIME:-}",
-  "dry_run": ${DRY_RUN},
-  "skip_update": ${SKIP_UPDATE},
-  "timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
-  "files": {
-    "deb822": "${APT_DEB822_FILE}",
-    "config": "${APT_CONF_FILE}"
-  }
+  for ((i = 0; i < ${#input}; i++)); do
+    char="${input:i:1}"
+    # shellcheck disable=SC1003
+    printf -v byte_code '%d' "'$char"
+    case "$byte_code" in
+    34) output+="\\\"" ;;
+    92) output+="\\\\" ;;
+    *)
+      if ((byte_code < 32)); then
+        printf -v escaped_char '\\u%04x' "$byte_code"
+        output+="$escaped_char"
+      else
+        output+="$char"
+      fi
+      ;;
+    esac
+  done
+
+  printf '"%s"' "$output"
 }
-JSON
+
+_collect_status() {
+  REPORT_OS_ID="unknown"
+  REPORT_OS_PRETTY="unknown"
+  REPORT_VERSION_ID="unknown"
+  REPORT_CODENAME="unknown"
+  if [[ -r "$OS_RELEASE_FILE" ]]; then
+    # shellcheck disable=SC1090,SC1091
+    source "$OS_RELEASE_FILE"
+    REPORT_OS_ID="${ID:-unknown}"
+    REPORT_OS_PRETTY="${PRETTY_NAME:-${ID:-unknown}}"
+    REPORT_VERSION_ID="${VERSION_ID:-unknown}"
+    REPORT_CODENAME="${VERSION_CODENAME:-unknown}"
+  fi
+  REPORT_SOURCES_LIST="absent"
+  REPORT_DEB822="absent"
+  REPORT_MANAGED_CONFIG="absent"
+  [[ ! -e "$APT_SOURCES_FILE" ]] || REPORT_SOURCES_LIST="present"
+  [[ ! -e "$APT_DEB822_FILE" ]] || REPORT_DEB822="present"
+  [[ ! -e "$APT_CONF_FILE" ]] || REPORT_MANAGED_CONFIG="present"
+
+  REPORT_CURRENT_MIRROR=""
+  if [[ -r "$APT_DEB822_FILE" ]]; then
+    REPORT_CURRENT_MIRROR="$(awk -F': ' '$1 == "URIs" {print $2; exit}' "$APT_DEB822_FILE" 2>/dev/null || true)"
+    REPORT_CURRENT_MIRROR="$(printf '%s' "$REPORT_CURRENT_MIRROR" | sed -E 's#(https?://)[^/@]+@#\1[REDACTED]@#g')"
+  fi
+  REPORT_BACKUP_ACCESSIBLE=false
+  REPORT_BACKUP_COUNT=0
+  REPORT_LATEST_BACKUP=""
+  if [[ -d "$BACKUP_BASE" && -r "$BACKUP_BASE" ]]; then
+    REPORT_BACKUP_ACCESSIBLE=true
+    REPORT_BACKUP_COUNT="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d '[:space:]')"
+    REPORT_LATEST_BACKUP="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn | head -1 | cut -f2-)"
+  fi
+}
+
+_print_status_report() {
+  _collect_status
+  printf '\n%s\n' "$APP_NAME — System Status"
+  printf '%-24s %s\n' "Operating system:" "$REPORT_OS_PRETTY"
+  printf '%-24s %s\n' "Ubuntu codename:" "$REPORT_CODENAME"
+  printf '%-24s %s\n' "Legacy sources.list:" "$REPORT_SOURCES_LIST"
+  printf '%-24s %s\n' "Deb822 ubuntu.sources:" "$REPORT_DEB822"
+  printf '%-24s %s\n' "Managed APT config:" "$REPORT_MANAGED_CONFIG"
+  printf '%-24s %s\n' "Current mirror:" "${REPORT_CURRENT_MIRROR:-not detected}"
+  if [[ "$REPORT_BACKUP_ACCESSIBLE" == true ]]; then
+    printf '%-24s %s\n' "Available backups:" "$REPORT_BACKUP_COUNT"
+    printf '%-24s %s\n' "Latest backup:" "${REPORT_LATEST_BACKUP:-none}"
+  else
+    printf '%-24s %s\n' "Backup directory:" "not accessible (root may be required)"
+  fi
+  printf '\n'
+}
+
+_doctor_add_check() {
+  REPORT_CHECK_NAMES+=("$1")
+  REPORT_CHECK_STATUSES+=("$2")
+  REPORT_CHECK_DETAILS+=("$3")
+  case "$2" in
+  error) REPORT_STATUS="error" ;;
+  warning)
+    [[ "$REPORT_STATUS" == "error" ]] || REPORT_STATUS="warning"
+    ;;
+  esac
+}
+
+_doctor_collect() {
+  _collect_status
+  REPORT_CHECK_NAMES=()
+  REPORT_CHECK_STATUSES=()
+  REPORT_CHECK_DETAILS=()
+  REPORT_STATUS="ok"
+  if [[ "$REPORT_OS_ID" == "ubuntu" ]]; then
+    _doctor_add_check "operating_system" "ok" "$REPORT_OS_PRETTY"
+  else
+    _doctor_add_check "operating_system" "error" "Ubuntu is required; detected $REPORT_OS_PRETTY"
+  fi
+  local cmd
+  for cmd in apt-get awk date grep mkdir cp id mktemp tar sha256sum flock chmod stat find sort head cut chown mv rm sed; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+      _doctor_add_check "command:$cmd" "ok" "available"
+    else
+      _doctor_add_check "command:$cmd" "error" "missing required command"
+    fi
+  done
+  if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+    _doctor_add_check "http_client" "ok" "curl or wget is available"
+  else
+    _doctor_add_check "http_client" "error" "curl or wget is required"
+  fi
+  if [[ -f "$KEYRING_PATH" ]]; then
+    _doctor_add_check "ubuntu_archive_keyring" "ok" "keyring exists"
+  else
+    _doctor_add_check "ubuntu_archive_keyring" "warning" "keyring not found at $KEYRING_PATH"
+  fi
+  if [[ "$(id -u)" -eq 0 ]]; then
+    _doctor_add_check "privileges" "ok" "running as root"
+  else
+    _doctor_add_check "privileges" "warning" "root is required for apply and restore operations"
+  fi
+  if [[ -r "$APT_ETC_DIR" ]]; then
+    _doctor_add_check "apt_configuration" "ok" "APT configuration directory is readable"
+  else
+    _doctor_add_check "apt_configuration" "warning" "APT configuration directory is not readable"
+  fi
+  if [[ "$REPORT_BACKUP_ACCESSIBLE" == true ]]; then
+    _doctor_add_check "backup_directory" "ok" "$REPORT_BACKUP_COUNT backup snapshot(s) visible"
+  else
+    _doctor_add_check "backup_directory" "warning" "backup directory is not currently accessible or has not been created"
+  fi
+}
+
+_report_checks_json() {
+  local i
+  printf '['
+  for ((i = 0; i < ${#REPORT_CHECK_NAMES[@]}; i++)); do
+    if ((i > 0)); then printf ','; fi
+    printf '{"name":%s,"status":%s,"detail":%s}' "$(_json_quote "${REPORT_CHECK_NAMES[$i]}")" "$(_json_quote "${REPORT_CHECK_STATUSES[$i]}")" "$(_json_quote "${REPORT_CHECK_DETAILS[$i]}")"
+  done
+  printf ']'
+}
+
+_print_json() {
+  _collect_status
+  local checks_json
+  checks_json="$(_report_checks_json)"
+  printf '{\n'
+  printf '  "schema_version": 1,\n'
+  printf '  "version": %s,\n' "$(_json_quote "$APP_VERSION")"
+  printf '  "command": %s,\n' "$(_json_quote "$REPORT_COMMAND")"
+  printf '  "status": %s,\n' "$(_json_quote "$REPORT_STATUS")"
+  printf '  "timestamp": %s,\n' "$(_json_quote "$(date -u '+%Y-%m-%dT%H:%M:%SZ')")"
+  printf '  "system": {"id": %s, "pretty_name": %s, "version_id": %s, "codename": %s},\n' "$(_json_quote "$REPORT_OS_ID")" "$(_json_quote "$REPORT_OS_PRETTY")" "$(_json_quote "$REPORT_VERSION_ID")" "$(_json_quote "$REPORT_CODENAME")"
+  printf '  "apt": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "current_mirror": %s},\n' "$(_json_quote "$REPORT_SOURCES_LIST")" "$(_json_quote "$REPORT_DEB822")" "$(_json_quote "$REPORT_MANAGED_CONFIG")" "$(_json_quote "$REPORT_CURRENT_MIRROR")"
+  printf '  "backups": {"accessible": %s, "count": %s, "latest": %s},\n' "$REPORT_BACKUP_ACCESSIBLE" "$REPORT_BACKUP_COUNT" "$(_json_quote "$REPORT_LATEST_BACKUP")"
+  printf '  "operation": {"mirror": %s, "response_time_seconds": %s, "dry_run": %s, "skip_update": %s},\n' "$(_json_quote "$SELECTED_MIRROR")" "$(_json_quote "$SELECTED_TIME")" "$DRY_RUN" "$SKIP_UPDATE"
+  printf '  "paths": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "backup_root": %s},\n' "$(_json_quote "$APT_SOURCES_FILE")" "$(_json_quote "$APT_DEB822_FILE")" "$(_json_quote "$APT_CONF_FILE")" "$(_json_quote "$BACKUP_BASE")"
+  printf '  "checks": %s\n' "$checks_json"
+  printf '}\n'
+}
+
+_status_report() {
+  _collect_status
+  REPORT_COMMAND="status"
+  REPORT_STATUS="ok"
+  [[ "$REPORT_OS_ID" == "ubuntu" ]] || REPORT_STATUS="warning"
+  if [[ "$JSON_OUTPUT" == true ]]; then _print_json; else _print_status_report; fi
+}
+
+_doctor_report() {
+  _doctor_collect
+  REPORT_COMMAND="doctor"
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _print_json
+  else
+    printf '\n%s\n' "$APP_NAME — Diagnostics"
+    local i
+    for ((i = 0; i < ${#REPORT_CHECK_NAMES[@]}; i++)); do
+      printf '  %-8s %-28s %s\n' "${REPORT_CHECK_STATUSES[$i]}" "${REPORT_CHECK_NAMES[$i]}" "${REPORT_CHECK_DETAILS[$i]}"
+    done
+    printf '\nOverall status: %s\n\n' "$REPORT_STATUS"
+  fi
 }
 
 _print_summary() {
@@ -1218,8 +1406,9 @@ ${COLOR_BOLD}${COLOR_CYAN}Power APT Boost${COLOR_RESET} v${APP_VERSION}
 Fast Ubuntu APT mirror selector and network optimizer
 
 ${COLOR_BOLD}${COLOR_BLUE}USAGE${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME}                 # Open the interactive menu on a TTY
   sudo bash ${_SCRIPT_NAME} [OPTIONS]
-  curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash
+  curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash -s -- --yes
 
 ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}-h, --help${COLOR_RESET}              Show this help message
@@ -1228,9 +1417,13 @@ ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}-r, --restore${COLOR_RESET}           Restore APT config from backup
   ${COLOR_GREEN}    --restore-path PATH${COLOR_RESET}   Restore from a specific backup
   ${COLOR_GREEN}    --dry-run${COLOR_RESET}            Test mirrors without changing config
-  ${COLOR_GREEN}    --skip-update${COLOR_RESET}        Write config but skip apt-get update
+  ${COLOR_GREEN}    --skip-update${COLOR_RESET}        Write config but skip apt-get update (preserve caches)
   ${COLOR_GREEN}    --list${COLOR_RESET}               List available mirrors and test them
-  ${COLOR_GREEN}    --json${COLOR_RESET}               Output results as JSON (for scripting)
+  ${COLOR_GREEN}    --menu${COLOR_RESET}               Open the interactive terminal menu
+  ${COLOR_GREEN}    --status${COLOR_RESET}             Show current system and APT status
+  ${COLOR_GREEN}    --doctor${COLOR_RESET}             Run local dependency and configuration checks
+  ${COLOR_GREEN}-y, --yes${COLOR_RESET}              Confirm changes in non-interactive mode
+  ${COLOR_GREEN}    --json${COLOR_RESET}               Output reports using the stable JSON schema
   ${COLOR_GREEN}    --verbose${COLOR_RESET}             Show detailed output
   ${COLOR_GREEN}    --quiet${COLOR_RESET}               Suppress non-essential output
   ${COLOR_GREEN}    --no-spinner${COLOR_RESET}          Disable spinner (for CI/CD)
@@ -1240,8 +1433,15 @@ ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}    --log-file PATH${COLOR_RESET}       Write log to file
 
 ${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
-  ${COLOR_DIM}# Auto-select fastest mirror${COLOR_RESET}
+  ${COLOR_DIM}# Open the interactive menu${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME}
+
+  ${COLOR_DIM}# Apply automatically from a pipe or CI job${COLOR_RESET}
+  curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash -s -- --yes
+
+  ${COLOR_DIM}# Read-only status and diagnostics${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --status
+  sudo bash ${_SCRIPT_NAME} --doctor
 
   ${COLOR_DIM}# Test without changing system config${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME} --dry-run
@@ -1268,8 +1468,8 @@ ${COLOR_BOLD}${COLOR_BLUE}WHAT IT DOES${COLOR_RESET}
   4. Backs up current APT configuration
   5. Writes optimized APT sources (deb822 format)
   6. Configures network optimizations (retries, timeouts)
-  7. Cleans stale package lists
-  8. Runs apt-get update
+  7. Preserves existing package lists and downloaded packages when --skip-update is selected
+  8. Runs apt-get update unless --skip-update is selected
 
 ${COLOR_BOLD}${COLOR_BLUE}BACKUPS${COLOR_RESET}
   Location:  ${BACKUP_BASE}/
@@ -1291,8 +1491,6 @@ EOF
 # ─── Argument Parsing ────────────────────────────────────────────────────────
 
 _parse_args() {
-  if [[ $# -eq 0 ]]; then return; fi
-
   while [[ $# -gt 0 ]]; do
     case "$1" in
     -h | --help)
@@ -1300,12 +1498,13 @@ _parse_args() {
       exit "$EXIT_OK"
       ;;
     -v | --version)
-      echo "$APP_NAME v$APP_VERSION"
+      printf '%s v%s\n' "$APP_NAME" "$APP_VERSION"
       exit "$EXIT_OK"
       ;;
     -m | --mirror)
-      [[ ! "${2:-}" ]] && die "Option $1 requires a URL argument.\n  Example: $1 https://mirror.example.com/ubuntu" "$EXIT_USAGE"
+      [[ -n "${2:-}" ]] || die "Option $1 requires a URL argument." "$EXIT_USAGE"
       FORCE_MIRROR="${2%/}"
+      ACTION_REQUESTED=true
       shift 2
       ;;
     -r | --restore)
@@ -1313,23 +1512,40 @@ _parse_args() {
       shift
       ;;
     --restore-path)
-      [[ ! "${2:-}" ]] && die "Option $1 requires a path argument.\n  Example: $1 /var/backups/${APP_SLUG}/2025-01-01_12-00-00" "$EXIT_USAGE"
-      RESTORE_PATH="${2}"
+      [[ -n "${2:-}" ]] || die "Option $1 requires a backup path." "$EXIT_USAGE"
+      RESTORE_PATH="$2"
       RESTORE=true
       shift 2
       ;;
     --dry-run)
       DRY_RUN=true
+      ACTION_REQUESTED=true
       shift
       ;;
     --skip-update)
       SKIP_UPDATE=true
+      ACTION_REQUESTED=true
       shift
       ;;
     --list)
-      _check_probe_tool
-      list_mirrors
-      exit "$EXIT_OK"
+      LIST_REQUESTED=true
+      shift
+      ;;
+    --menu)
+      MENU_REQUESTED=true
+      shift
+      ;;
+    --status)
+      STATUS_REQUESTED=true
+      shift
+      ;;
+    --doctor)
+      DOCTOR_REQUESTED=true
+      shift
+      ;;
+    -y | --yes)
+      YES=true
+      shift
       ;;
     --json)
       JSON_OUTPUT=true
@@ -1346,20 +1562,17 @@ _parse_args() {
       shift
       ;;
     --no-spinner)
-      # shellcheck disable=SC2034
       NO_SPINNER=true
       shift
       ;;
     --timeout)
-      [[ ! "${2:-}" ]] && die "Option $1 requires a number.\n  Example: $1 30" "$EXIT_USAGE"
-      [[ ! "$2" =~ ^[0-9]+$ ]] && die "Option $1 requires a positive integer.\n  Got: $2" "$EXIT_USAGE"
+      [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires a positive integer." "$EXIT_USAGE"
       (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
       TIMEOUT_TOTAL="$2"
       shift 2
       ;;
     --country)
-      [[ ! "${2:-}" ]] && die "Option $1 requires a country code.\n  Example: $1 us" "$EXIT_USAGE"
-      [[ "$2" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
+      [[ "${2:-}" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
       COUNTRY_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
       shift 2
       ;;
@@ -1368,26 +1581,472 @@ _parse_args() {
       shift
       ;;
     --log-file)
-      [[ ! "${2:-}" ]] && die "Option $1 requires a file path.\n  Example: $1 /var/log/apt-boost.log" "$EXIT_USAGE"
+      [[ -n "${2:-}" ]] || die "Option $1 requires a file path." "$EXIT_USAGE"
       LOG_FILE="$2"
       LOG_ENABLED=true
       shift 2
       ;;
     -*)
-      printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Unknown option: $1${COLOR_RESET}\n" >&2
-      printf '%b\n' "  ${COLOR_DIM}Run '${COLOR_RESET}${COLOR_BOLD}$0 --help${COLOR_RESET}${COLOR_DIM}' for usage information.${COLOR_RESET}\n" >&2
+      error "Unknown option: $1. Run --help for usage."
       exit "$EXIT_USAGE"
       ;;
     *)
-      printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Unexpected argument: $1${COLOR_RESET}\n" >&2
-      printf '%b\n' "  ${COLOR_DIM}Run '${COLOR_RESET}${COLOR_BOLD}$0 --help${COLOR_RESET}${COLOR_DIM}' for usage information.${COLOR_RESET}\n" >&2
+      error "Unexpected argument: $1. Run --help for usage."
       exit "$EXIT_USAGE"
       ;;
     esac
   done
+
+  local mode_count=0
+  if [[ "$MENU_REQUESTED" == true ]]; then ((mode_count += 1)); fi
+  if [[ "$STATUS_REQUESTED" == true ]]; then ((mode_count += 1)); fi
+  if [[ "$DOCTOR_REQUESTED" == true ]]; then ((mode_count += 1)); fi
+  if [[ "$LIST_REQUESTED" == true ]]; then ((mode_count += 1)); fi
+  if [[ "$RESTORE" == true ]]; then ((mode_count += 1)); fi
+  ((mode_count <= 1)) || die "Choose only one command mode: menu, status, doctor, list or restore." "$EXIT_USAGE"
+
+  if [[ "$MENU_REQUESTED" == true ]]; then
+    [[ "$YES" != true && "$JSON_OUTPUT" != true && "$ACTION_REQUESTED" != true ]] || die "--menu cannot be combined with apply, --yes or --json options." "$EXIT_USAGE"
+  fi
+  if [[ "$STATUS_REQUESTED" == true || "$DOCTOR_REQUESTED" == true ]]; then
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" ]] || die "--status and --doctor are read-only commands." "$EXIT_USAGE"
+  fi
+  if [[ "$LIST_REQUESTED" == true ]]; then
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" ]] || die "--list cannot be combined with apply options." "$EXIT_USAGE"
+  fi
+  if [[ "$RESTORE" == true ]]; then
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" ]] || die "--restore cannot be combined with dry-run, skip-update or mirror selection." "$EXIT_USAGE"
+  fi
 }
 
-# ─── Main ─────────────────────────────────────────────────────────────────────
+_is_interactive() {
+  [[ -t 0 && -t 1 ]]
+}
+
+_confirm_action() {
+  local prompt="$1"
+  local answer=""
+  if [[ "$YES" == true ]]; then return 0; fi
+  if ! _is_interactive; then
+    error "Non-interactive changes require --yes. Use --dry-run to preview without applying."
+    return "$EXIT_USAGE"
+  fi
+  printf '%s [y/N]: ' "$prompt" >&2
+  IFS= read -r answer || answer=""
+  case "${answer,,}" in
+  y | yes) return 0 ;;
+  *)
+    info "Cancelled. No system changes were made."
+    return 10
+    ;;
+  esac
+}
+
+_print_apply_preview() {
+  _print_section_header "CHANGE PREVIEW"
+  printf 'Selected mirror: %s\n' "$SELECTED_MIRROR"
+  printf 'APT source file: %s\n' "$APT_DEB822_FILE"
+  printf 'APT network config: %s\n' "$APT_CONF_FILE"
+  printf 'Backup root: %s\n' "$BACKUP_BASE"
+  if [[ -f "$APT_SOURCES_FILE" ]]; then
+    printf 'Legacy sources.list: may be removed if it contains only Ubuntu archive entries (%s)\n' "$APT_SOURCES_FILE"
+  fi
+  if [[ "$SKIP_UPDATE" == true ]]; then
+    printf 'APT update: skipped; existing package lists and archive cache are preserved\n'
+  else
+    printf 'APT update: apt-get update will run after configuration changes\n'
+  fi
+}
+
+_confirm_apply() {
+  [[ "$DRY_RUN" == true ]] && return 0
+  _print_apply_preview
+  _confirm_action "Apply this APT mirror configuration?"
+}
+
+_confirm_restore() {
+  local backup_path="$1"
+  _print_section_header "RESTORE PREVIEW"
+  printf 'Snapshot: %s\n' "$backup_path"
+  printf 'Managed targets restored exactly: %s, %s, %s\n' "$APT_SOURCES_FILE" "$APT_SOURCES_DIR" "$APT_CONF_DIR"
+  printf 'APT update: apt-get update will run after restoration\n'
+  _confirm_action "Restore this snapshot?"
+}
+
+_resolve_backup_path() {
+  local backup_path="$1"
+  if [[ -z "$backup_path" && -d "$BACKUP_BASE" ]]; then
+    backup_path="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn | head -1 | cut -f2-)"
+  fi
+  if [[ -z "$backup_path" || ! -d "$backup_path" ]]; then
+    local legacy_root="${_SYSTEM_ROOT}/root"
+    if [[ -d "$legacy_root" ]]; then
+      backup_path="$(find "$legacy_root" -maxdepth 1 -name 'apt-backup-*' -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn | head -1 | cut -f2-)"
+    fi
+  fi
+  [[ -n "$backup_path" && -d "$backup_path" ]] || return "$EXIT_RESTORE"
+  printf '%s\n' "$backup_path"
+}
+
+_menu_choose() {
+  local title="$1"
+  local prompt="$2"
+  shift 2
+  local -a tags=() labels=() whiptail_args=()
+  while (($# >= 2)); do
+    tags+=("$1")
+    labels+=("$2")
+    whiptail_args+=("$1" "$2")
+    shift 2
+  done
+
+  if command -v whiptail >/dev/null 2>&1; then
+    whiptail --title "$title" --menu "$prompt" 22 78 12 "${whiptail_args[@]}" 3>&1 1>&2 2>&3
+    return $?
+  fi
+
+  printf '\n%s\n%s\n' "$title" "$prompt" >&2
+  local i
+  for ((i = 0; i < ${#tags[@]}; i++)); do
+    printf '  %d) %s\n' "$((i + 1))" "${labels[$i]}" >&2
+  done
+  printf 'Select an option: ' >&2
+  local answer=""
+  IFS= read -r answer || return 1
+  if [[ "$answer" =~ ^[0-9]+$ ]] && ((answer >= 1 && answer <= ${#tags[@]})); then
+    printf '%s\n' "${tags[$((answer - 1))]}"
+    return 0
+  fi
+  for ((i = 0; i < ${#tags[@]}; i++)); do
+    if [[ "$answer" == "${tags[$i]}" ]]; then
+      printf '%s\n' "${tags[$i]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+_menu_input() {
+  local title="$1"
+  local prompt="$2"
+  local default_value="${3:-}"
+  local answer=""
+  if command -v whiptail >/dev/null 2>&1; then
+    whiptail --title "$title" --inputbox "$prompt" 10 78 "$default_value" 3>&1 1>&2 2>&3
+    return $?
+  fi
+  printf '%s [%s]: ' "$prompt" "$default_value" >&2
+  IFS= read -r answer || return 1
+  printf '%s\n' "${answer:-$default_value}"
+}
+
+_menu_message() {
+  local title="$1"
+  local message="$2"
+  if command -v whiptail >/dev/null 2>&1; then
+    whiptail --title "$title" --msgbox "$message" 16 78
+  else
+    printf '\n%s\n%s\n' "$title" "$message" >&2
+    printf 'Press Enter to continue: ' >&2
+    IFS= read -r _ || true
+  fi
+}
+
+_run_list_flow() {
+  _check_probe_tool
+  detect_ubuntu
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    list_mirrors >&2
+    REPORT_COMMAND="list"
+    REPORT_STATUS="complete"
+    _collect_status
+    REPORT_CHECK_NAMES=("mirror_catalog")
+    REPORT_CHECK_STATUSES=("complete")
+    REPORT_CHECK_DETAILS=("Mirror reachability checks completed; see stderr for detailed results")
+    _print_json
+  else
+    list_mirrors
+  fi
+}
+
+_run_benchmark_only() {
+  _check_probe_tool
+  detect_ubuntu
+  SELECTED_MIRROR=""
+  SELECTED_TIME=""
+  _select_mirror
+  printf '\nSelected mirror: %s\nProbe time: %ss\n\n' "$SELECTED_MIRROR" "$SELECTED_TIME"
+}
+
+_run_apply_flow() {
+  if [[ "$DRY_RUN" != true && "$YES" != true ]] && ! _is_interactive; then
+    error "Applying APT changes from a non-interactive session requires --yes. Use --dry-run to preview."
+    return "$EXIT_USAGE"
+  fi
+  if [[ "$(id -u)" -ne 0 ]]; then
+    error "This operation must be run as root."
+    return "$EXIT_NOT_ROOT"
+  fi
+
+  _print_banner
+  _check_commands
+  _check_probe_tool
+  detect_ubuntu
+  if [[ "$DRY_RUN" != true ]]; then _acquire_mutation_lock; fi
+
+  if [[ -n "$FORCE_MIRROR" ]]; then
+    _print_section_header "TESTING SPECIFIED MIRROR"
+    msg "  Mirror: ${COLOR_BOLD}${FORCE_MIRROR}${COLOR_RESET}"
+    local result_file rtime rstatus
+    result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.force.XXXXXX")"
+    _tmp_dirs+=("$result_file")
+    _test_mirror "$FORCE_MIRROR" "$result_file" "$CODENAME"
+    rtime="$(awk '{print $1}' "$result_file")"
+    rstatus="$(awk '{print $2}' "$result_file")"
+    rm -f "$result_file" 2>/dev/null || true
+    if [[ "$rstatus" == "pass" ]]; then
+      SELECTED_MIRROR="$FORCE_MIRROR"
+      SELECTED_TIME="$rtime"
+    else
+      error "Mirror is not reachable: $FORCE_MIRROR"
+      return "$EXIT_NO_MIRROR"
+    fi
+  else
+    _select_mirror
+  fi
+
+  if [[ "$DRY_RUN" != true ]]; then
+    local confirm_status=0
+    _confirm_apply || confirm_status=$?
+    if [[ "$confirm_status" -ne 0 ]]; then return "$confirm_status"; fi
+  fi
+
+  REPORT_COMMAND="apply"
+  REPORT_STATUS="success"
+  [[ "$DRY_RUN" == true ]] && REPORT_STATUS="dry_run"
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _apply_changes >&2
+    _print_json
+  else
+    _apply_changes
+    _print_summary
+  fi
+}
+
+_run_restore_flow() {
+  if [[ "$YES" != true ]] && ! _is_interactive; then
+    error "Restoring APT configuration from a non-interactive session requires --yes."
+    return "$EXIT_USAGE"
+  fi
+  if [[ "$(id -u)" -ne 0 ]]; then
+    error "This operation must be run as root."
+    return "$EXIT_NOT_ROOT"
+  fi
+  _check_commands
+
+  local selected_backup confirm_status=0
+  if ! selected_backup="$(_resolve_backup_path "$RESTORE_PATH")"; then
+    error "No backup snapshot was found."
+    return "$EXIT_RESTORE"
+  fi
+  _confirm_restore "$selected_backup" || confirm_status=$?
+  if [[ "$confirm_status" -ne 0 ]]; then return "$confirm_status"; fi
+
+  _acquire_mutation_lock
+  REPORT_COMMAND="restore"
+  REPORT_STATUS="success"
+  SELECTED_MIRROR="restored"
+  SELECTED_TIME=""
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _restore_backup "$selected_backup" >&2 || return "$EXIT_RESTORE"
+    apt-get update >&2 || return "$EXIT_NETWORK"
+    _print_json
+  else
+    _restore_backup "$selected_backup" || return "$EXIT_RESTORE"
+    apt-get update || return "$EXIT_NETWORK"
+    info "APT sources restored and updated successfully."
+  fi
+}
+
+_menu_overview() {
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    _status_report
+  else
+    _print_status_report
+    _menu_message "Overview" "System status refreshed."
+  fi
+}
+
+_menu_apt() {
+  local choice rc
+  while true; do
+    choice="$(
+      _menu_choose "APT Management" "Choose an action" \\
+      "apply_best" "Find and apply the fastest mirror" \\
+      "apply_custom" "Test and apply a custom mirror" \\
+      "list" "List and test available mirrors" \\
+      "back" "Back to main menu"
+    )" || return 0
+    case "$choice" in
+    apply_best)
+      FORCE_MIRROR=""
+      DRY_RUN=false
+      rc=0
+      _run_apply_flow || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      ;;
+    apply_custom)
+      FORCE_MIRROR="$(_menu_input "Custom mirror" "Enter an Ubuntu mirror base URL" "")" || continue
+      [[ "$FORCE_MIRROR" =~ ^https?://[^[:space:]]+$ ]] || {
+        _menu_message "Invalid mirror URL" "Enter an http:// or https:// URL without spaces."
+        continue
+      }
+      FORCE_MIRROR="${FORCE_MIRROR%/}"
+      DRY_RUN=false
+      rc=0
+      _run_apply_flow || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      ;;
+    list)
+      _run_list_flow
+      _menu_message "APT mirrors" "Mirror testing completed."
+      ;;
+    back) return 0 ;;
+    esac
+  done
+}
+
+_menu_benchmark() {
+  _run_benchmark_only
+  _menu_message "Benchmark" "Benchmark completed. No system configuration was changed."
+}
+
+_menu_backups() {
+  if [[ "$(id -u)" -ne 0 ]]; then
+    _menu_message "Backup and Restore" "Run the menu as root to inspect protected system backups."
+    return 0
+  fi
+  local listing
+  listing="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn || true)"
+  if [[ -z "$listing" ]]; then
+    _menu_message "Backup and Restore" "No Power APT Boost backup snapshots were found."
+    return 0
+  fi
+  local -a args=()
+  local line path
+  while IFS= read -r line; do
+    path="${line#*$'\t'}"
+    args+=("$path" "${path##*/}")
+  done <<<"$listing"
+  local selected rc
+  selected="$(_menu_choose "Backup and Restore" "Select a snapshot to restore" "${args[@]}" "back" "Back")" || return 0
+  [[ "$selected" == back ]] && return 0
+  RESTORE_PATH="$selected"
+  rc=0
+  _run_restore_flow || rc=$?
+  [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Restore result" "Restore finished with exit code $rc."
+}
+
+_menu_diagnostics() {
+  local choice
+  choice="$(
+    _menu_choose "Diagnostics" "Choose a report" \\
+    "status" "System status" \\
+    "doctor" "Run local health checks" \\
+    "back" "Back to main menu"
+  )" || return 0
+  case "$choice" in
+  status)
+    _status_report
+    [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Status report completed."
+    ;;
+  doctor)
+    _doctor_report
+    [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Health checks completed."
+    ;;
+  back) return 0 ;;
+  esac
+}
+
+_country_code_supported() {
+  local requested="$1" entry country mirror_url
+  for entry in "${_MIRROR_CATALOG[@]}"; do
+    IFS='|' read -r country _ mirror_url <<<"$entry"
+    [[ "$country" != "$requested" ]] || return 0
+  done
+  return 1
+}
+
+_menu_settings() {
+  local choice value
+  while true; do
+    choice="$(
+      _menu_choose "Settings" "Settings apply to this session only" \\
+      "timeout" "Probe timeout: ${TIMEOUT_TOTAL}s" \\
+      "country" "Country filter: ${COUNTRY_FILTER:-all}" \\
+      "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \\
+      "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \\
+      "back" "Back to main menu"
+    )" || return 0
+    case "$choice" in
+    timeout)
+      value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
+      if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 300)); then
+        TIMEOUT_TOTAL="$value"
+      else
+        _menu_message "Invalid timeout" "Enter a whole number from 1 to 300."
+      fi
+      ;;
+    country)
+      value="$(_menu_input "Country filter" "Enter a supported two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
+      value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+      if [[ -z "$value" ]]; then
+        COUNTRY_FILTER=""
+      elif [[ "$value" =~ ^[a-z]{2}$ ]] && _country_code_supported "$value"; then
+        COUNTRY_FILTER="$value"
+      else
+        _menu_message "Unsupported country" "Choose a country code present in the built-in mirror catalog."
+      fi
+      ;;
+    ipv6)
+      [[ "$USE_IPV6" == true ]] && USE_IPV6=false || USE_IPV6=true
+      ;;
+    spinner)
+      [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
+      ;;
+    back) return 0 ;;
+    esac
+  done
+}
+
+_menu_main() {
+  if ! _is_interactive; then
+    error "The interactive menu requires a TTY. Use --help for non-interactive commands."
+    return "$EXIT_USAGE"
+  fi
+  while true; do
+    local choice
+    choice="$(
+      _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \\
+      "overview" "Overview" \\
+      "apt" "APT management" \\
+      "benchmark" "Mirror benchmark" \\
+      "backups" "Backup and Restore" \\
+      "diagnostics" "Diagnostics" \\
+      "settings" "Settings" \\
+      "quit" "Exit"
+    )" || return 0
+    case "$choice" in
+    overview) _menu_overview ;;
+    apt) _menu_apt ;;
+    benchmark) _menu_benchmark ;;
+    backups) _menu_backups ;;
+    diagnostics) _menu_diagnostics ;;
+    settings) _menu_settings ;;
+    quit) return 0 ;;
+    esac
+  done
+}
 
 main() {
   _setup_colors
@@ -1399,67 +2058,50 @@ main() {
     _log_to_file "Session started: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   fi
 
-  if [[ "$RESTORE" == true ]]; then
-    need_root
-    _check_commands
-    _acquire_mutation_lock
-    if ! _restore_backup "$RESTORE_PATH"; then
-      die "APT configuration restore failed. Inspect recovery data before retrying." "$EXIT_RESTORE"
-    fi
-    if ! apt-get update; then
-      die "APT configuration was restored, but apt-get update failed. Check repository connectivity." "$EXIT_NETWORK"
-    fi
-    if [[ "$JSON_OUTPUT" == true ]]; then
-      SELECTED_MIRROR="restored"
-      SELECTED_TIME=""
-      _print_json
-    fi
+  if [[ "$STATUS_REQUESTED" == true ]]; then
+    _status_report
     exit "$EXIT_OK"
   fi
 
-  _print_banner
-  need_root
-  _check_commands
-  _check_probe_tool
-  detect_ubuntu
-  if [[ "$DRY_RUN" != true ]]; then
-    _acquire_mutation_lock
+  if [[ "$DOCTOR_REQUESTED" == true ]]; then
+    _doctor_report
+    [[ "$REPORT_STATUS" != "error" ]] || exit "$EXIT_GENERAL"
+    exit "$EXIT_OK"
   fi
 
-  if [[ -n "$FORCE_MIRROR" ]]; then
-    _print_section_header "TESTING SPECIFIED MIRROR"
-    msg "  Mirror: ${COLOR_BOLD}${FORCE_MIRROR}${COLOR_RESET}"
-    echo ""
-    local result_file
-    result_file=$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.force.XXXXXX")
-    _test_mirror "$FORCE_MIRROR" "$result_file" "$CODENAME"
-    local rtime rstatus
-    rtime=$(awk '{print $1}' "$result_file")
-    rstatus=$(awk '{print $2}' "$result_file")
-    rm -f "$result_file" 2>/dev/null || true
-    if [[ "$rstatus" == "pass" ]]; then
-      SELECTED_MIRROR="$FORCE_MIRROR"
-      SELECTED_TIME="$rtime"
-    else
-      printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Mirror is not reachable:${COLOR_RESET}\n" >&2
-      printf '%b\n' "  ${COLOR_DIM}Possible causes:${COLOR_RESET}\n" >&2
-      printf '%b\n' "    - URL is incorrect\n" >&2
-      printf '%b\n' "    - Mirror server is down\n" >&2
-      printf '%b\n' "    - Network connectivity issue\n" >&2
-      exit "$EXIT_NO_MIRROR"
+  if [[ "$LIST_REQUESTED" == true ]]; then
+    local list_status=0
+    _run_list_flow || list_status=$?
+    exit "$list_status"
+  fi
+
+  if [[ "$RESTORE" == true ]]; then
+    local restore_status=0
+    _run_restore_flow || restore_status=$?
+    [[ "$restore_status" -eq "$EXIT_CANCELLED" ]] && restore_status="$EXIT_OK"
+    exit "$restore_status"
+  fi
+
+  if [[ "$MENU_REQUESTED" == true ]]; then
+    local menu_status=0
+    _menu_main || menu_status=$?
+    exit "$menu_status"
+  fi
+
+  if [[ "$ACTION_REQUESTED" != true && "$YES" != true && "$DRY_RUN" != true ]]; then
+    if _is_interactive; then
+      _menu_main
+      exit $?
     fi
-  else
-    _select_mirror
+    error "No command was selected. A non-interactive apply requires --yes; use --status, --doctor or --dry-run for read-only checks."
+    exit "$EXIT_USAGE"
   fi
 
-  _apply_changes
-  _print_summary
-
-  if [[ "$JSON_OUTPUT" == true ]]; then
-    _print_json
-  fi
+  local apply_status=0
+  _run_apply_flow || apply_status=$?
+  [[ "$apply_status" -eq "$EXIT_CANCELLED" ]] && apply_status="$EXIT_OK"
+  exit "$apply_status"
 }
-
 if [[ "${POWER_APT_BOOST_SOURCE_ONLY:-0}" != "1" ]]; then
   main "$@"
 fi

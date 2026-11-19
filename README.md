@@ -17,17 +17,27 @@
 
 Fast Ubuntu APT mirror selector and network optimizer.
 
-Power APT Boost tests Ubuntu mirrors, selects a reachable candidate, writes APT sources, applies network settings, and runs `apt-get update`. The current implementation is still undergoing safety hardening; see the [roadmap](ROADMAP.md) before using it on production systems.
+Power APT Boost is an Ubuntu APT mirror manager with an interactive terminal menu, safe configuration previews, validated backups, exact restore, and read-only diagnostics. Its apply path tests repository endpoints, selects a working mirror, writes managed APT configuration atomically, and verifies the result with `apt-get update`.
 
 > **Version status:** The `main` source currently declares `3.0.0`, while the latest published GitHub release is `v2.1.0`. There is no published `v3.0.0` tag/release yet. The recommended install command below is pinned to `v2.1.0`; use `main` only when you intentionally want unreleased source.
 
 ## Quick Start
 
+On a terminal, clone the repository and open the interactive menu:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v2.1.0/power-apt-boost.sh | sudo bash
+git clone https://github.com/power0matin/power-apt-boost.git
+cd power-apt-boost
+sudo bash power-apt-boost.sh
 ```
 
-Or test first without changes:
+For an intentional non-interactive apply from a pipe or CI job, pass `--yes` explicitly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | sudo bash -s -- --yes
+```
+
+Preview a mirror change without modifying APT configuration:
 
 ```bash
 sudo bash power-apt-boost.sh --dry-run
@@ -35,26 +45,25 @@ sudo bash power-apt-boost.sh --dry-run
 
 ## Features
 
-- Auto-detects Ubuntu codename
-- Tests 20+ global Ubuntu mirrors
-- Selects the fastest working mirror
-- Rollback attempt if `apt-get update` fails (full restoration is being hardened; see [ROADMAP](ROADMAP.md))
-- Backs up APT configuration before changes
-- Writes modern deb822-format APT sources
-- Configures APT network optimizations
-- Machine-readable JSON output for CI/CD
-- Country filtering (current country matching has known limitations; see [ROADMAP](ROADMAP.md))
-- IPv6 probe option (the generated APT configuration currently still forces IPv4)
-- Persistent logging to file
-- Safe `Ctrl+C` interruption
-- Shell-based CLI test runner; backup/restore and mirror-selection integration coverage is being expanded
+- Ubuntu codename detection and an explicit catalog of global and regional mirrors
+- Parallel health checks for main, updates and security repository metadata
+- Numbered terminal menu, with optional `whiptail` dialogs when installed
+- Overview, APT management, mirror benchmark, Backup/Restore, Diagnostics and session Settings screens
+- Safe apply and restore previews with confirmation; `--yes` is required to bypass prompts in non-interactive sessions
+- Fail-closed APT snapshots with SHA-256 validation and exact restore for new snapshots
+- Atomic APT configuration writes and a mutation lock
+- IPv4/IPv6-aware probing and matching APT network configuration
+- Read-only `--status` and `--doctor` commands
+- Versioned JSON reports for CLI automation
+- `--skip-update` preserves existing package lists and downloaded package archives
+- Offline regression suite across Ubuntu 20.04, 22.04 and 24.04
 
 ## Installation
 
 ### One-liner (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v2.1.0/power-apt-boost.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | sudo bash
 ```
 
 ### Manual
@@ -69,29 +78,48 @@ sudo bash power-apt-boost.sh
 ### Verify before running
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v2.1.0/power-apt-boost.sh | less
-# Review the script, then:
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v2.1.0/power-apt-boost.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | less
+# Review the script, then launch an interactive menu after saving it locally:
+sudo bash power-apt-boost.sh
+# Or explicitly approve a non-interactive run:
+curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | sudo bash -s -- --yes
 ```
 
 ## Usage
 
-### Auto-select fastest mirror
+### Interactive menu
+
+Run without arguments in a terminal:
 
 ```bash
 sudo bash power-apt-boost.sh
 ```
 
+The menu provides Overview, APT management, Benchmark, Backup/Restore, Diagnostics and session Settings. It uses a numbered Bash menu by default and `whiptail` dialogs when that tool is already installed. No extra package is installed automatically.
+
+### Read-only status and diagnostics
+
+```bash
+sudo bash power-apt-boost.sh --status
+sudo bash power-apt-boost.sh --doctor
+sudo bash power-apt-boost.sh --status --json
+sudo bash power-apt-boost.sh --doctor --json
+```
+
+`--status` reports the detected OS, APT source files, current managed mirror and available backups. `--doctor` checks local dependencies, permissions, the Ubuntu archive keyring and backup visibility. These commands do not change the system.
+
+### Apply a mirror
+
+```bash
+sudo bash power-apt-boost.sh --mirror https://mirror.example.com/ubuntu
+```
+
+In a terminal, review the preview and confirm before applying. In a non-interactive session, pass `--yes` explicitly.
+
 ### Test without changing anything
 
 ```bash
 sudo bash power-apt-boost.sh --dry-run
-```
-
-### Use a specific mirror
-
-```bash
-sudo bash power-apt-boost.sh --mirror https://mirror.example.com/ubuntu
 ```
 
 ### Restore from backup
@@ -100,17 +128,23 @@ sudo bash power-apt-boost.sh --mirror https://mirror.example.com/ubuntu
 sudo bash power-apt-boost.sh --restore
 ```
 
+Restore displays the selected snapshot and managed paths before confirmation. Use `--restore-path PATH` to select a specific snapshot.
+
 ### List and test all mirrors
 
 ```bash
 sudo bash power-apt-boost.sh --list
 ```
 
-### Machine-readable output (CI/CD)
+### Machine-readable output
 
 ```bash
-sudo bash power-apt-boost.sh --json --quiet
+sudo bash power-apt-boost.sh --status --json
+sudo bash power-apt-boost.sh --doctor --json
+sudo bash power-apt-boost.sh --yes --json
 ```
+
+All JSON reports use schema version 1. `--json` suppresses interactive decoration; list details are written to stderr while its summary report is written to stdout.
 
 ### Filter mirrors by country
 
@@ -130,19 +164,23 @@ sudo bash power-apt-boost.sh --verbose
 |--------|-------------|
 | `-h`, `--help` | Show help message |
 | `-v`, `--version` | Show version |
-| `-m`, `--mirror URL` | Use a specific mirror |
+| `-m`, `--mirror URL` | Test and use a specific mirror |
 | `-r`, `--restore` | Restore APT config from latest backup |
 | `--restore-path PATH` | Restore from a specific backup |
-| `--dry-run` | Test mirrors without changing config |
-| `--skip-update` | Write config but skip `apt-get update` |
-| `--list` | List available mirrors and test them |
-| `--json` | Output as JSON (sets `--quiet --no-spinner`) |
+| `--dry-run` | Test mirrors and preview without changing config |
+| `--skip-update` | Apply config but skip `apt-get update`; preserve existing APT lists and archive cache |
+| `--list` | List available mirrors and test all three repository suites |
+| `--menu` | Open the interactive terminal menu |
+| `--status` | Show read-only system and APT status |
+| `--doctor` | Run read-only local health checks |
+| `-y`, `--yes` | Explicitly confirm apply/restore in non-interactive mode |
+| `--json` | Output reports using JSON schema version 1 |
 | `--verbose` | Show detailed output |
 | `--quiet` | Suppress non-essential output |
-| `--no-spinner` | Disable spinner (for CI/CD) |
-| `--timeout SECS` | Probe timeout in seconds (default: 20) |
-| `--country CODE` | Filter mirrors by country code |
-| `--ipv6` | Use IPv6 for mirror testing |
+| `--no-spinner` | Disable spinner |
+| `--timeout SECS` | Probe timeout in seconds (1-300, default 20) |
+| `--country CODE` | Filter mirrors by supported two-letter country code |
+| `--ipv6` | Use IPv6 for mirror testing and generated APT config |
 | `--log-file PATH` | Write log to file |
 
 ## What It Does
@@ -153,8 +191,8 @@ sudo bash power-apt-boost.sh --verbose
 4. **Backs up** current APT configuration to `/var/backups/power-apt-boost/`
 5. **Writes** modern deb822-format APT sources to `/etc/apt/sources.list.d/ubuntu.sources`
 6. **Configures** APT network optimizations (IPv4, retries, timeouts)
-7. **Cleans** stale package lists
-8. **Runs** `apt-get update`
+7. **Preserves** existing package lists and downloaded archives when `--skip-update` is selected
+8. **Runs** `apt-get update` unless `--skip-update` is selected
 
 ## What It Changes
 
@@ -176,11 +214,12 @@ Backups are created at:
 /var/backups/power-apt-boost/YYYY-MM-DD_HH-MM-SS/
 ```
 
-Each backup contains copies of:
-- `ubuntu.sources` (deb822 format)
-- `sources.list` (legacy format)
-- `sources.list.d/`
-- `apt.conf.d/`
+Each new-format backup contains:
+- `apt-config.tar`: a metadata-preserving archive of the managed APT source/config paths
+- `manifest`: prior path-existence state and snapshot format version
+- `archive.sha256`: checksum used to validate the archive before restore
+
+Legacy snapshots remain readable, but they do not record absent paths and therefore cannot guarantee exact reconstruction of files that were not present when they were created.
 
 ### Restore from latest backup
 

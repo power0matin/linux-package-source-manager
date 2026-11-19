@@ -48,6 +48,18 @@ assert_contains() {
   fi
 }
 
+assert_equal() {
+  local expected="$1" actual="$2" name="$3"
+  ((_tests_run += 1))
+  if [[ "$actual" == "$expected" ]]; then
+    ((_tests_passed += 1))
+    printf '%bPASS%b %s\n' "$GREEN" "$RESET" "$name"
+  else
+    ((_tests_failed += 1))
+    printf '%bFAIL%b %s (values differ)\n' "$RED" "$RESET" "$name"
+  fi
+}
+
 assert_file_contains() {
   local file="$1" expected="$2" name="$3"
   local content=""
@@ -68,6 +80,49 @@ test_cli() {
 
   output="$(bash "$SCRIPT" --version 2>&1)"
   assert_contains "3.0.0" "$output" "version matches script version"
+  assert_contains "--menu" "$(bash "$SCRIPT" --help 2>&1)" "help documents interactive menu"
+  assert_contains "--doctor" "$(bash "$SCRIPT" --help 2>&1)" "help documents doctor command"
+  assert_contains "--yes" "$(bash "$SCRIPT" --help 2>&1)" "help documents explicit non-interactive confirmation"
+
+  code=0
+  bash "$SCRIPT" </dev/null >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "default non-interactive invocation never blocks or mutates"
+
+  code=0
+  bash "$SCRIPT" --menu </dev/null >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "explicit menu rejects non-interactive input"
+
+  code=0
+  bash "$SCRIPT" --mirror https://mirror.example.invalid/ubuntu </dev/null >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "non-interactive mirror apply requires explicit yes before probing"
+
+  code=0
+  bash "$SCRIPT" --status --doctor >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "conflicting report modes are rejected"
+
+  code=0
+  bash "$SCRIPT" --restore --dry-run >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "restore cannot be combined with dry-run"
+
+  code=0
+  bash "$SCRIPT" --restore --skip-update >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "restore cannot be combined with skip-update"
+
+  output="$(bash "$SCRIPT" --status 2>&1)"
+  assert_contains "System Status" "$output" "status command prints a read-only report"
+
+  output="$(bash "$SCRIPT" --doctor 2>&1)"
+  assert_contains "Diagnostics" "$output" "doctor command runs local checks"
+
+  local json_file
+  json_file="$(mktemp)"
+  bash "$SCRIPT" --status --json >"$json_file"
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); assert d["schema_version"] == 1; assert d["command"] == "status"; assert "apt" in d and "backups" in d and "checks" in d' "$json_file"
+  assert_exit_code 0 "$?" "status JSON follows schema version 1"
+  bash "$SCRIPT" --doctor --json >"$json_file"
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); assert d["schema_version"] == 1; assert d["command"] == "doctor"; assert isinstance(d["checks"], list) and d["checks"]' "$json_file"
+  assert_exit_code 0 "$?" "doctor JSON contains structured health checks"
+  rm -f "$json_file"
 
   code=0
   bash "$SCRIPT" --invalid-option >/dev/null 2>&1 || code=$?
@@ -99,8 +154,52 @@ test_filesystem_operations() {
   # shellcheck source=../power-apt-boost.sh
   source "$SCRIPT"
   _setup_colors
-
   mkdir -p "$APT_ETC_DIR" "$APT_SOURCES_DIR"
+  printf 'cancel-before-state\n' >"$APT_DEB822_FILE"
+
+  local menu_selection
+  menu_selection="$(printf '2\n' | _menu_choose "Test menu" "Choose" "first" "First" "second" "Second" 2>/dev/null)"
+  assert_contains "second" "$menu_selection" "numbered menu fallback maps selection to a stable action"
+
+  local confirmation_status=0
+  YES=false
+  _confirm_action "Non-interactive test" >/dev/null 2>&1 || confirmation_status=$?
+  assert_exit_code 2 "$confirmation_status" "mutating actions require explicit yes without a TTY"
+
+  YES=true
+  confirmation_status=0
+  _confirm_action "Approved test" >/dev/null 2>&1 || confirmation_status=$?
+  assert_exit_code 0 "$confirmation_status" "yes flag bypasses confirmation explicitly"
+
+  local cancel_input="${_TEST_ROOT}/cancel.input"
+  printf 'n\n' >"$cancel_input"
+  local before_cancel after_cancel cancel_status=0
+  before_cancel="$(sha256sum "$APT_DEB822_FILE")"
+  _is_interactive() { return 0; }
+  YES=false
+  _confirm_apply <"$cancel_input" >/dev/null 2>&1 || cancel_status=$?
+  unset -f _is_interactive
+  after_cancel="$(sha256sum "$APT_DEB822_FILE")"
+  assert_exit_code 10 "$cancel_status" "declining an apply preview returns cancelled"
+  assert_equal "$before_cancel" "$after_cancel" "cancel leaves APT configuration content unchanged"
+
+  local escaped_json
+  escaped_json="$(mktemp "${TMPDIR:-/tmp}/power-apt-boost-json.XXXXXX")"
+  local escaped_value
+  escaped_value='quote " slash \\ literal'
+  printf '{"value":%s}\n' "$(_json_quote "$escaped_value")" >"$escaped_json"
+  local json_escape_status=0
+  python3 - "$escaped_json" "$escaped_value" <<'PY' || json_escape_status=$?
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    actual = json.load(stream)["value"]
+assert actual == sys.argv[2]
+PY
+  assert_exit_code 0 "$json_escape_status" "JSON quoting round-trips quotes and backslashes"
+  rm -f "$escaped_json"
+
   printf 'deb http://old.example/ubuntu noble main\n' >"$APT_SOURCES_FILE"
   printf 'Types: deb\nURIs: https://old.example/ubuntu\n' >"${APT_SOURCES_DIR}/ubuntu.sources"
   chmod 0640 "$APT_SOURCES_FILE"

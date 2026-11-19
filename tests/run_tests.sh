@@ -223,7 +223,7 @@ SOURCES
   }
   write_managed_config_fixture() {
     mkdir -p "$APT_CONF_DIR"
-    printf '# Power APT Boost test fixture\nprior-apt-config\n' >"$APT_CONF_FILE"
+    printf '# Power APT Boost test fixture\nAcquire::Languages "none";\n# prior-apt-config\n' >"$APT_CONF_FILE"
   }
   mkdir -p "$APT_ETC_DIR" "$APT_SOURCES_DIR"
   printf 'cancel-before-state\n' >"$APT_DEB822_FILE"
@@ -473,7 +473,7 @@ SOURCES
   write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
   printf 'prior-source-config\n' >>"$APT_DEB822_FILE"
   write_managed_config_fixture
-  printf 'prior-apt-config\n' >>"$APT_CONF_FILE"
+  printf '# prior-apt-config\n' >>"$APT_CONF_FILE"
   local cache_index_before cache_package_before
   cache_index_before="$(sha256sum "${_SYSTEM_ROOT}/var/lib/apt/lists/fixture-index")"
   cache_package_before="$(sha256sum "${_SYSTEM_ROOT}/var/cache/apt/archives/fixture.deb")"
@@ -543,7 +543,7 @@ SOURCES
   write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
   printf 'write-rollback-source-config\n' >>"$APT_DEB822_FILE"
   write_managed_config_fixture
-  printf 'write-rollback-apt-config\n' >>"$APT_CONF_FILE"
+  printf '# write-rollback-apt-config\n' >>"$APT_CONF_FILE"
   local write_rollback_code=0
   (
     local write_mv_calls=0
@@ -570,7 +570,7 @@ SOURCES
   write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
   printf 'prior-source-config\n' >>"$APT_DEB822_FILE"
   write_managed_config_fixture
-  printf 'prior-apt-config\n' >>"$APT_CONF_FILE"
+  printf '# prior-apt-config\n' >>"$APT_CONF_FILE"
   local rollback_code=0
   SELECTED_MIRROR="https://broken.example/ubuntu"
   SELECTED_TIME="0.001"
@@ -605,7 +605,7 @@ SOURCES
   local selective_backup selective_restore_status=0
   selective_backup="$(_create_backup)"
   write_managed_source_fixture "https://newer.example/ubuntu"
-  printf '# Power APT Boost test fixture\ncurrent-network-will-be-restored\n' >"$APT_CONF_FILE"
+  printf '# Power APT Boost test fixture\n# current-network-will-be-restored\n' >"$APT_CONF_FILE"
   RESTORE_SCOPE=network
   YES=true
   _run_restore_flow >/dev/null 2>&1 || selective_restore_status=$?

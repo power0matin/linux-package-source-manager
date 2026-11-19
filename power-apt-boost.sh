@@ -362,17 +362,17 @@ need_root() {
 
 _check_commands() {
   local missing=() cmd
-  for cmd in apt-get awk date grep mkdir cp id mktemp tar sha256sum flock chmod stat; do
+  for cmd in apt-get awk date grep mkdir cp id mktemp tar sha256sum flock chmod stat gpgv; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
   if [[ ${#missing[@]} -gt 0 ]]; then
-    printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Missing required commands: ${COLOR_RESET}\n" >&2
-    printf '%b\n' "  ${COLOR_DIM}Fix:${COLOR_RESET} These are standard Ubuntu utilities. Your system may be minimal.\n" >&2
-    printf '%b\n' "  Try: ${COLOR_CYAN}apt-get install -y coreutils gawk grep${COLOR_RESET}\n" >&2
+    printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}Missing required commands:${COLOR_RESET}\n" >&2
+    printf '  %s\n' "${missing[*]}" >&2
+    printf '%b\n' "  ${COLOR_DIM}Fix:${COLOR_RESET} These utilities are required for APT backup and signed Ubuntu mirror verification." >&2
+    printf '%b\n' "  Try: ${COLOR_CYAN}apt-get install -y coreutils gawk grep gnupg${COLOR_RESET}" >&2
     exit "$EXIT_GENERAL"
   fi
 }
-
 _check_probe_tool() {
   command -v curl >/dev/null 2>&1 && return 0
   command -v wget >/dev/null 2>&1 && return 0
@@ -687,9 +687,9 @@ _get_mirrors() {
 
 _catalog_metadata_for_url() {
   local requested_url="$1" i
-  for ((i = 0; i < \${#_CATALOG_URLS[@]}; i++)); do
-    if [[ "\${_CATALOG_URLS[$i]}" == "$requested_url" ]]; then
-      printf '%s\t%s\t%s\t%s\n' "\${_CATALOG_IDS[$i]}" "\${_CATALOG_SOURCES[$i]}" "\${_CATALOG_OFFICIAL[$i]}" "\${_CATALOG_COUNTRIES[$i]}"
+  for ((i = 0; i < ${#_CATALOG_URLS[@]}; i++)); do
+    if [[ "${_CATALOG_URLS[$i]}" == "$requested_url" ]]; then
+      printf '%s\t%s\t%s\t%s\n' "${_CATALOG_IDS[$i]}" "${_CATALOG_SOURCES[$i]}" "${_CATALOG_OFFICIAL[$i]}" "${_CATALOG_COUNTRIES[$i]}"
       return 0
     fi
   done
@@ -698,9 +698,9 @@ _catalog_metadata_for_url() {
 
 _catalog_metadata_for_url() {
   local requested_url="$1" i
-  for ((i = 0; i < \${#_CATALOG_URLS[@]}; i++)); do
-    if [[ "\${_CATALOG_URLS[$i]}" == "$requested_url" ]]; then
-      printf '%s\t%s\t%s\t%s\n' "\${_CATALOG_IDS[$i]}" "\${_CATALOG_SOURCES[$i]}" "\${_CATALOG_OFFICIAL[$i]}" "\${_CATALOG_COUNTRIES[$i]}"
+  for ((i = 0; i < ${#_CATALOG_URLS[@]}; i++)); do
+    if [[ "${_CATALOG_URLS[$i]}" == "$requested_url" ]]; then
+      printf '%s\t%s\t%s\t%s\n' "${_CATALOG_IDS[$i]}" "${_CATALOG_SOURCES[$i]}" "${_CATALOG_OFFICIAL[$i]}" "${_CATALOG_COUNTRIES[$i]}"
       return 0
     fi
   done
@@ -714,7 +714,7 @@ list_mirrors() {
   local mirror_url result_file result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
   local meta mirror_id source official country
   while IFS= read -r mirror_url; do
-    result_file="$(mktemp "\${TMPDIR:-/tmp}/\${APP_SLUG}.list.XXXXXX")"
+    result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.list.XXXXXX")"
     _tmp_dirs+=("$result_file")
     _test_mirror "$mirror_url" "$result_file" "$CODENAME"
     result_line="$(cat "$result_file" 2>/dev/null || true)"
@@ -727,7 +727,7 @@ list_mirrors() {
         "$mirror_id" "$avg_latency" "$score" "$redirects" "$freshness" "$signature" "$source" "$official" >&2
     else
       printf '  %-24s REJECTED reason=%s source=%s official=%s\n' \
-        "$mirror_id" "\${reason:-incompatible_release}" "$source" "$official" >&2
+        "$mirror_id" "${reason:-incompatible_release}" "$source" "$official" >&2
     fi
   done < <(_get_mirrors)
 }
@@ -1013,21 +1013,21 @@ _select_mirror() {
 
   _load_mirror_catalog
   _print_section_header "MIRROR SELECTION"
-  msg "  Ubuntu codename:  \${COLOR_BOLD}\${CODENAME}\${COLOR_RESET}"
+  msg "  Ubuntu codename:  ${COLOR_BOLD}${CODENAME}${COLOR_RESET}"
   mirror_list="$(_get_mirrors)"
   mapfile -t mirrors <<<"$mirror_list"
-  total="\${#mirrors[@]}"
+  total="${#mirrors[@]}"
   total_mirrors="$total"
   ((total > 0)) || die "No mirrors are available for the selected catalog profile." "$EXIT_NO_MIRROR"
 
-  msg "  Mirrors to test:  \${COLOR_BOLD}\${total_mirrors}\${COLOR_RESET}"
-  msg "  Parallel workers: \${COLOR_BOLD}\${BENCH_WORKERS}\${COLOR_RESET}"
-  msg "  Retry policy:     \${COLOR_BOLD}\${PROBE_RETRIES} retries per transient failure\${COLOR_RESET}"
+  msg "  Mirrors to test:  ${COLOR_BOLD}${total_mirrors}${COLOR_RESET}"
+  msg "  Parallel workers: ${COLOR_BOLD}${BENCH_WORKERS}${COLOR_RESET}"
+  msg "  Retry policy:     ${COLOR_BOLD}${PROBE_RETRIES} retries per transient failure${COLOR_RESET}"
   msg "  Eligibility: HTTP 200 + Ubuntu suite metadata + valid archive signature"
   echo ""
 
   bench_start="$(date +%s)"
-  bench_tmpdir="$(mktemp -d "\${TMPDIR:-/tmp}/\${APP_SLUG}.bench.XXXXXX")"
+  bench_tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/${APP_SLUG}.bench.XXXXXX")"
   _tmp_dirs+=("$bench_tmpdir")
   _start_spinner "Testing and verifying Ubuntu mirrors..."
 
@@ -1038,27 +1038,27 @@ _select_mirror() {
 
   idx=0
   while ((idx < total)); do
-    while (("\${#pids[@]}" < BENCH_WORKERS)) && ((idx < total)); do
-      _bench_worker "$idx" "\${mirrors[$idx]}" "$CODENAME" "\${bench_tmpdir}/\${idx}.result" &
+    while (("${#pids[@]}" < BENCH_WORKERS)) && ((idx < total)); do
+      _bench_worker "$idx" "${mirrors[$idx]}" "$CODENAME" "${bench_tmpdir}/${idx}.result" &
       pids+=("$!")
       ((idx += 1))
     done
 
-    if (("\${#pids[@]}" > 0)); then
-      wait -n "\${pids[@]}" 2>/dev/null || true
+    if (("${#pids[@]}" > 0)); then
+      wait -n "${pids[@]}" 2>/dev/null || true
       new_pids=()
-      for pid in "\${pids[@]}"; do
+      for pid in "${pids[@]}"; do
         if kill -0 "$pid" 2>/dev/null; then
           new_pids+=("$pid")
         else
           wait "$pid" 2>/dev/null || true
         fi
       done
-      pids=("\${new_pids[@]}")
+      pids=("${new_pids[@]}")
     fi
   done
 
-  for pid in "\${pids[@]}"; do
+  for pid in "${pids[@]}"; do
     wait "$pid" 2>/dev/null || true
   done
   pids=()
@@ -1069,7 +1069,7 @@ _select_mirror() {
   _stop_spinner
 
   for ((i = 0; i < total; i++)); do
-    result_line="$(cat "\${bench_tmpdir}/\${i}.result" 2>/dev/null || true)"
+    result_line="$(cat "${bench_tmpdir}/${i}.result" 2>/dev/null || true)"
     [[ -n "$result_line" ]] || {
       ((failed += 1)) || true
       continue
@@ -1079,16 +1079,16 @@ _select_mirror() {
     if [[ "$eligible" == true ]]; then
       ((passed += 1)) || true
       if awk -v candidate="$score" -v current="$best_score" 'BEGIN { exit !(candidate < current) }'; then
-        best="\${mirrors[$i]}"
+        best="${mirrors[$i]}"
         best_score="$score"
         best_avg="$avg_latency"
-      elif [[ "$score" == "$best_score" && -n "$best" && "\${mirrors[$i]}" < "$best" ]]; then
-        best="\${mirrors[$i]}"
+      elif [[ "$score" == "$best_score" && -n "$best" && "${mirrors[$i]}" < "$best" ]]; then
+        best="${mirrors[$i]}"
         best_avg="$avg_latency"
       fi
     else
       ((failed += 1)) || true
-      msg_verbose "Rejected \${mirrors[$i]}: \${reason:-incompatible_release}"
+      msg_verbose "Rejected ${mirrors[$i]}: ${reason:-incompatible_release}"
     fi
   done
   rm -rf "$bench_tmpdir" 2>/dev/null || true
@@ -1102,7 +1102,7 @@ _select_mirror() {
   printf '  %-26s %s\n' "Catalog cache:" "$CATALOG_CACHE_STATE"
   printf '  %-26s %s\n' "Official-only profile:" "$OFFICIAL_ONLY"
   if [[ -n "$best" ]]; then
-    printf '\n  \${COLOR_GREEN}Best compatible mirror:\${COLOR_RESET} %s\n' "$best"
+    printf '\n  ${COLOR_GREEN}Best compatible mirror:${COLOR_RESET} %s\n' "$best"
     printf '  Average latency: %ss | deterministic score: %ss\n' "$best_avg" "$best_score"
   fi
 
@@ -1627,8 +1627,9 @@ _doctor_collect() {
   else
     _doctor_add_check "operating_system" "error" "Ubuntu is required; detected $REPORT_OS_PRETTY"
   fi
+
   local cmd
-  for cmd in apt-get awk date grep mkdir cp id mktemp tar sha256sum flock chmod stat find sort head cut chown mv rm sed; do
+  for cmd in apt-get awk date grep mkdir cp id mktemp tar sha256sum flock chmod stat find sort head cut chown mv rm sed gpgv; do
     if command -v "$cmd" >/dev/null 2>&1; then
       _doctor_add_check "command:$cmd" "ok" "available"
     else
@@ -1641,9 +1642,9 @@ _doctor_collect() {
     _doctor_add_check "http_client" "error" "curl or wget is required"
   fi
   if [[ -f "$KEYRING_PATH" ]]; then
-    _doctor_add_check "ubuntu_archive_keyring" "ok" "keyring exists"
+    _doctor_add_check "ubuntu_archive_keyring" "ok" "Ubuntu archive keyring exists"
   else
-    _doctor_add_check "ubuntu_archive_keyring" "warning" "keyring not found at $KEYRING_PATH"
+    _doctor_add_check "ubuntu_archive_keyring" "error" "Ubuntu archive keyring is required to verify mirror signatures: $KEYRING_PATH"
   fi
   if [[ "$(id -u)" -eq 0 ]]; then
     _doctor_add_check "privileges" "ok" "running as root"
@@ -1655,13 +1656,19 @@ _doctor_collect() {
   else
     _doctor_add_check "apt_configuration" "warning" "APT configuration directory is not readable"
   fi
+  if [[ -d "$(dirname "$USER_MIRRORS_FILE")" && -w "$(dirname "$USER_MIRRORS_FILE")" ]]; then
+    _doctor_add_check "custom_mirror_storage" "ok" "custom mirror catalog storage is writable"
+  elif [[ "$(id -u)" -eq 0 ]]; then
+    _doctor_add_check "custom_mirror_storage" "ok" "custom mirror catalog storage will be created on demand"
+  else
+    _doctor_add_check "custom_mirror_storage" "warning" "root is required to manage saved custom mirrors"
+  fi
   if [[ "$REPORT_BACKUP_ACCESSIBLE" == true ]]; then
     _doctor_add_check "backup_directory" "ok" "$REPORT_BACKUP_COUNT backup snapshot(s) visible"
   else
     _doctor_add_check "backup_directory" "warning" "backup directory is not currently accessible or has not been created"
   fi
 }
-
 _report_checks_json() {
   local i
   printf '['
@@ -2148,6 +2155,17 @@ _run_benchmark_only() {
   printf '\nSelected mirror: %s\nProbe time: %ss\n\n' "$SELECTED_MIRROR" "$SELECTED_TIME"
 }
 
+_catalog_url_is_official() {
+  local requested_url="${1%/}" entry id country region url source official enabled
+  for entry in "${_MIRROR_CATALOG[@]}"; do
+    IFS='|' read -r id country region url source official enabled <<<"$entry"
+    if [[ "${url%/}" == "$requested_url" && "$official" == true && "$enabled" == true ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 _run_apply_flow() {
   if [[ "$DRY_RUN" != true && "$YES" != true ]] && ! _is_interactive; then
     error "Applying APT changes from a non-interactive session requires --yes. Use --dry-run to preview."
@@ -2165,24 +2183,33 @@ _run_apply_flow() {
   if [[ "$DRY_RUN" != true ]]; then _acquire_mutation_lock; fi
 
   if [[ -n "$FORCE_MIRROR" ]]; then
-    _print_section_header "TESTING SPECIFIED MIRROR"
-    msg "  Mirror: ${COLOR_BOLD}${FORCE_MIRROR}${COLOR_RESET}"
-    local result_file rtime rstatus
+    local forced_url result_file result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
+    forced_url="$(_validate_mirror_url "$FORCE_MIRROR")" || {
+      error "Invalid Ubuntu mirror URL: $FORCE_MIRROR"
+      return "$EXIT_USAGE"
+    }
+    if [[ "$OFFICIAL_ONLY" == true ]] && ! _catalog_url_is_official "$forced_url"; then
+      error "The specified mirror is not in the built-in official Ubuntu mirror profile."
+      return "$EXIT_USAGE"
+    }
+
+    _print_section_header "VERIFYING SPECIFIED MIRROR"
+    msg "  Mirror: ${COLOR_BOLD}${forced_url}${COLOR_RESET}"
     result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.force.XXXXXX")"
     _tmp_dirs+=("$result_file")
-    _test_mirror "$FORCE_MIRROR" "$result_file" "$CODENAME"
-    rtime="$(awk '{print $1}' "$result_file")"
-    rstatus="$(awk '{print $2}' "$result_file")"
+    _test_mirror "$forced_url" "$result_file" "$CODENAME"
+    result_line="$(cat "$result_file" 2>/dev/null || true)"
     rm -f "$result_file" 2>/dev/null || true
-    if [[ "$rstatus" == "pass" ]]; then
-      SELECTED_MIRROR="$FORCE_MIRROR"
-      SELECTED_TIME="$rtime"
+    IFS='|' read -r eligible score avg_latency main_code updates_code security_code redirects freshness signature reason <<<"$result_line"
+    if [[ "$eligible" == true ]]; then
+      SELECTED_MIRROR="$forced_url"
+      SELECTED_TIME="$avg_latency"
     else
-      error "Mirror is not reachable: $FORCE_MIRROR"
+      error "Specified mirror failed Ubuntu compatibility verification: ${reason:-unknown reason}"
       return "$EXIT_NO_MIRROR"
     fi
   else
-    _select_mirror
+    _select_mirror || return $?
   fi
 
   if [[ "$DRY_RUN" != true ]]; then
@@ -2202,7 +2229,6 @@ _run_apply_flow() {
     _print_summary
   fi
 }
-
 _run_restore_flow() {
   if [[ "$YES" != true ]] && ! _is_interactive; then
     error "Restoring APT configuration from a non-interactive session requires --yes."

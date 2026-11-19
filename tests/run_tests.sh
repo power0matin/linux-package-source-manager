@@ -187,6 +187,7 @@ test_filesystem_operations() {
   escaped_json="$(mktemp "${TMPDIR:-/tmp}/power-apt-boost-json.XXXXXX")"
   local escaped_value
   escaped_value='quote " slash \\ literal'
+  printf '{"value":%s}\n' "$(_json_quote "$escaped_value")" >"$escaped_json"
   local json_escape_status=0
   python3 - "$escaped_json" "$escaped_value" <<'PY' || json_escape_status=$?
 import json

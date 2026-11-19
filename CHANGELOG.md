@@ -11,12 +11,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added an interactive terminal menu with numbered Bash navigation and optional `whiptail` dialogs.
 - Added Overview, APT management, mirror benchmark, Backup/Restore, Diagnostics and session Settings screens.
 - Added read-only `--status` and `--doctor` commands with a versioned JSON report schema.
-- Added explicit `--yes` confirmation for non-interactive apply and restore operations.
+- Added explicit `--yes` confirmation for non-interactive apply, restore and custom mirror management.
+- Added a versioned mirror catalog for built-in, Ubuntu-index and user-defined entries, with strict validation and provenance.
+- Added the Ubuntu mirror index as a discovery source with a 24-hour cache, root-only storage, schema validation and last-known-good fallback; HTTP index data is treated only as untrusted discovery input, with HTTPS-only redirects enforced for both curl and wget and mandatory signed-metadata verification of every selectable mirror.
+- Added signed Ubuntu Release metadata verification for main, updates and security suites, including suite/codename matching, freshness checks and same-host redirect policy.
+- Added bounded benchmark concurrency, configurable retry policy, structured endpoint metrics and deterministic scoring.
+- Added region filtering, an official-only profile and confirmed custom mirror add/enable/disable/remove actions.
 - Made no-argument execution open the menu only on a TTY; non-interactive default execution exits without changing APT configuration.
 
 ### Testing
 
 - Added coverage for menu selection, TTY safety, explicit approval, cancellation, status/doctor reports and JSON escaping.
+- Added offline tests for catalog schemas, cache fallback and refresh, custom mirror persistence, Release freshness, compatibility gates and deterministic benchmark selection.
 
 ### Fixed
 

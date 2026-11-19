@@ -511,7 +511,7 @@ _download_catalog_file() {
   local destination="$1"
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL --connect-timeout "$PROBE_TIMEOUT_CONNECT" --max-time "$TIMEOUT_TOTAL" \
-      --proto '=https' --proto-redir '=https' -o "$destination" "$MIRROR_INDEX_URL"
+      --proto '=http,https' --proto-redir '=https' -o "$destination" "$MIRROR_INDEX_URL"
     return $?
   fi
   if command -v wget >/dev/null 2>&1; then

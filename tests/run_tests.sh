@@ -492,7 +492,7 @@ test_catalog_and_release_metadata() {
   local code output body cache_entry user_entry mode
   local curl_args_file="${_TEST_ROOT}/catalog-curl.args"
   curl() {
-    printf '%s\\n' "$@" >"$curl_args_file"
+    printf '%s\n' "$@" >"$curl_args_file"
     return 0
   }
   _download_catalog_file "${_TEST_ROOT}/catalog-index.download"
@@ -501,6 +501,16 @@ test_catalog_and_release_metadata() {
   assert_contains "=http,https" "$(cat "$curl_args_file")" "catalog fetch allows Ubuntu's published HTTP index"
   assert_contains "--proto-redir" "$(cat "$curl_args_file")" "catalog fetch defines a redirect protocol policy"
   assert_contains "=https" "$(cat "$curl_args_file")" "catalog fetch permits redirects only to HTTPS"
+
+  local redirect_headers="${_TEST_ROOT}/catalog-redirects.headers"
+  printf '  Location: https://index.example.test/mirrors.txt\n' >"$redirect_headers"
+  code=0
+  _validate_https_redirect_headers "$redirect_headers" || code=$?
+  assert_exit_code 0 "$code" "wget catalog fallback accepts HTTPS redirect targets"
+  printf '  Location: http://index.example.test/mirrors.txt\n' >"$redirect_headers"
+  code=0
+  _validate_https_redirect_headers "$redirect_headers" || code=$?
+  assert_exit_code 1 "$code" "wget catalog fallback rejects HTTP redirect targets"
 
   body="${_TEST_ROOT}/InRelease.fixture"
   cat >"$body" <<EOF

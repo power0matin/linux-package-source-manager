@@ -464,8 +464,8 @@ _catalog_entry_valid() {
   [[ -n "$region" && "$region" != *'|'* && "$region" != *$'\n'* ]] || return 1
   _validate_mirror_url "$url" >/dev/null || return 1
   case "$source" in
-    builtin | ubuntu-index | user) ;;
-    *) return 1 ;;
+  builtin | ubuntu-index | user) ;;
+  *) return 1 ;;
   esac
   [[ "$official" == true || "$official" == false ]] || return 1
   [[ "$enabled" == true || "$enabled" == false ]] || return 1
@@ -707,7 +707,6 @@ _get_mirrors() {
   printf '%s\n' "${mirrors[@]}"
 }
 
-
 _catalog_metadata_for_url() {
   local requested_url="$1" i
   for i in "${!_CATALOG_URLS[@]}"; do
@@ -893,7 +892,10 @@ _probe_url_code() {
 
     if [[ "$http_code" == "000" || "$http_code" == "408" || "$http_code" == "429" || "$http_code" =~ ^5[0-9][0-9]$ ]]; then
       ((attempt += 1))
-      if ((attempt < max_attempts)); then sleep 0.2; continue; fi
+      if ((attempt < max_attempts)); then
+        sleep 0.2
+        continue
+      fi
     fi
     break
   done
@@ -1288,10 +1290,10 @@ APTCONF
 
 _apt_target_path() {
   case "$1" in
-  sources.list) printf '%s\n' "$APT_SOURCES_FILE" ;;
-  sources.list.d) printf '%s\n' "$APT_SOURCES_DIR" ;;
-  apt.conf.d) printf '%s\n' "$APT_CONF_DIR" ;;
-  *) return 1 ;;
+sources.list) printf '%s\n' "$APT_SOURCES_FILE" ;;
+sources.list.d) printf '%s\n' "$APT_SOURCES_DIR" ;;
+apt.conf.d) printf '%s\n' "$APT_CONF_DIR" ;;
+*) return 1 ;;
   esac
 }
 
@@ -2284,102 +2286,102 @@ _run_mirror_management() {
   NO_CATALOG_NETWORK="$old_network_setting"
 
   case "$MIRROR_MANAGEMENT_ACTION" in
-    add)
-      _check_probe_tool
-      detect_ubuntu
-      requested_url="$(_validate_mirror_url "$MIRROR_MANAGEMENT_VALUE")" || {
-        error "Invalid Ubuntu mirror URL: $MIRROR_MANAGEMENT_VALUE"
-        return "$EXIT_USAGE"
-      }
-      for i in "${!_CATALOG_URLS[@]}"; do
-        [[ "${_CATALOG_URLS[$i]}" != "$requested_url" ]] || {
-          error "This mirror URL already exists in the catalog as ${_CATALOG_IDS[$i]}."
-          return "$EXIT_USAGE"
-        }
-      done
-      result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.custom.XXXXXX")" || return "$EXIT_GENERAL"
-      _tmp_dirs+=("$result_file")
-      _print_section_header "VERIFYING CUSTOM MIRROR"
-      _test_mirror "$requested_url" "$result_file" "$CODENAME"
-      result_line="$(cat "$result_file" 2>/dev/null || true)"
-      rm -f "$result_file" 2>/dev/null || true
-      IFS='|' read -r eligible score avg_latency main_code updates_code security_code redirects freshness signature reason <<<"$result_line"
-      if [[ "$eligible" != true ]]; then
-        error "Custom mirror rejected: ${reason:-Ubuntu metadata or signature verification failed}."
-        return "$EXIT_NO_MIRROR"
-      fi
-      mirror_id="user-$(printf '%s' "$requested_url" | sha256sum | cut -c1-12)"
-      printf 'Mirror ID: %s\nURL: %s\nAverage latency: %ss\n' "$mirror_id" "$requested_url" "$avg_latency"
-      _confirm_action "Save this verified mirror to the custom catalog?" || confirm_status=$?
-      [[ "$confirm_status" -eq 0 ]] || return "$confirm_status"
-      _acquire_mutation_lock
-      _catalog_add_entry "$mirror_id" "auto" "Custom" "$requested_url" "user" false true || return "$EXIT_GENERAL"
-      _write_user_mirror_catalog || {
-        error "Could not save the custom mirror catalog."
-        return "$EXIT_GENERAL"
-      }
-      info "Saved custom mirror: $mirror_id"
-      ;;
-    remove | disable | enable)
-      mirror_id="$MIRROR_MANAGEMENT_VALUE"
-      for i in "${!_CATALOG_IDS[@]}"; do
-        if [[ "${_CATALOG_IDS[$i]}" == "$mirror_id" && "${_CATALOG_SOURCES[$i]}" == user ]]; then
-          target_index="$i"
-          break
-        fi
-      done
-      if ((target_index < 0)); then
-        error "Custom mirror ID not found: $mirror_id"
-        return "$EXIT_USAGE"
-      fi
-      if [[ "$MIRROR_MANAGEMENT_ACTION" == disable && "${_CATALOG_ENABLED[$target_index]}" == false ]]; then
-        info "Custom mirror is already disabled: $mirror_id"
-        return 0
-      fi
-      if [[ "$MIRROR_MANAGEMENT_ACTION" == enable && "${_CATALOG_ENABLED[$target_index]}" == true ]]; then
-        info "Custom mirror is already enabled: $mirror_id"
-        return 0
-      fi
-      printf 'Mirror ID: %s\nURL: %s\nAction: %s\n' "$mirror_id" "${_CATALOG_URLS[$target_index]}" "$MIRROR_MANAGEMENT_ACTION"
-      _confirm_action "Apply this custom catalog change?" || confirm_status=$?
-      [[ "$confirm_status" -eq 0 ]] || return "$confirm_status"
-      _acquire_mutation_lock
-
-      if [[ "$MIRROR_MANAGEMENT_ACTION" == remove ]]; then
-        local -a ids=() countries=() regions=() urls=() sources=() officials=() enabled=()
-        for i in "${!_CATALOG_IDS[@]}"; do
-          ((i == target_index)) && continue
-          ids+=("${_CATALOG_IDS[$i]}")
-          countries+=("${_CATALOG_COUNTRIES[$i]}")
-          regions+=("${_CATALOG_REGIONS[$i]}")
-          urls+=("${_CATALOG_URLS[$i]}")
-          sources+=("${_CATALOG_SOURCES[$i]}")
-          officials+=("${_CATALOG_OFFICIAL[$i]}")
-          enabled+=("${_CATALOG_ENABLED[$i]}")
-        done
-        _CATALOG_IDS=("${ids[@]}")
-        _CATALOG_COUNTRIES=("${countries[@]}")
-        _CATALOG_REGIONS=("${regions[@]}")
-        _CATALOG_URLS=("${urls[@]}")
-        _CATALOG_SOURCES=("${sources[@]}")
-        _CATALOG_OFFICIAL=("${officials[@]}")
-        _CATALOG_ENABLED=("${enabled[@]}")
-      elif [[ "$MIRROR_MANAGEMENT_ACTION" == disable ]]; then
-        _CATALOG_ENABLED[target_index]=false
-      else
-        _CATALOG_ENABLED[target_index]=true
-      fi
-
-      _write_user_mirror_catalog || {
-        error "Could not save the custom mirror catalog."
-        return "$EXIT_GENERAL"
-      }
-      info "Custom mirror catalog updated: $mirror_id"
-      ;;
-    *)
-      error "Unknown custom mirror management action."
+  add)
+    _check_probe_tool
+    detect_ubuntu
+    requested_url="$(_validate_mirror_url "$MIRROR_MANAGEMENT_VALUE")" || {
+      error "Invalid Ubuntu mirror URL: $MIRROR_MANAGEMENT_VALUE"
       return "$EXIT_USAGE"
-      ;;
+    }
+    for i in "${!_CATALOG_URLS[@]}"; do
+      [[ "${_CATALOG_URLS[$i]}" != "$requested_url" ]] || {
+        error "This mirror URL already exists in the catalog as ${_CATALOG_IDS[$i]}."
+        return "$EXIT_USAGE"
+      }
+    done
+    result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.custom.XXXXXX")" || return "$EXIT_GENERAL"
+    _tmp_dirs+=("$result_file")
+    _print_section_header "VERIFYING CUSTOM MIRROR"
+    _test_mirror "$requested_url" "$result_file" "$CODENAME"
+    result_line="$(cat "$result_file" 2>/dev/null || true)"
+    rm -f "$result_file" 2>/dev/null || true
+    IFS='|' read -r eligible score avg_latency main_code updates_code security_code redirects freshness signature reason <<<"$result_line"
+    if [[ "$eligible" != true ]]; then
+      error "Custom mirror rejected: ${reason:-Ubuntu metadata or signature verification failed}."
+      return "$EXIT_NO_MIRROR"
+    fi
+    mirror_id="user-$(printf '%s' "$requested_url" | sha256sum | cut -c1-12)"
+    printf 'Mirror ID: %s\nURL: %s\nAverage latency: %ss\n' "$mirror_id" "$requested_url" "$avg_latency"
+    _confirm_action "Save this verified mirror to the custom catalog?" || confirm_status=$?
+    [[ "$confirm_status" -eq 0 ]] || return "$confirm_status"
+    _acquire_mutation_lock
+    _catalog_add_entry "$mirror_id" "auto" "Custom" "$requested_url" "user" false true || return "$EXIT_GENERAL"
+    _write_user_mirror_catalog || {
+      error "Could not save the custom mirror catalog."
+      return "$EXIT_GENERAL"
+    }
+    info "Saved custom mirror: $mirror_id"
+    ;;
+  remove | disable | enable)
+    mirror_id="$MIRROR_MANAGEMENT_VALUE"
+    for i in "${!_CATALOG_IDS[@]}"; do
+      if [[ "${_CATALOG_IDS[$i]}" == "$mirror_id" && "${_CATALOG_SOURCES[$i]}" == user ]]; then
+        target_index="$i"
+        break
+      fi
+    done
+    if ((target_index < 0)); then
+      error "Custom mirror ID not found: $mirror_id"
+      return "$EXIT_USAGE"
+    fi
+    if [[ "$MIRROR_MANAGEMENT_ACTION" == disable && "${_CATALOG_ENABLED[$target_index]}" == false ]]; then
+      info "Custom mirror is already disabled: $mirror_id"
+      return 0
+    fi
+    if [[ "$MIRROR_MANAGEMENT_ACTION" == enable && "${_CATALOG_ENABLED[$target_index]}" == true ]]; then
+      info "Custom mirror is already enabled: $mirror_id"
+      return 0
+    fi
+    printf 'Mirror ID: %s\nURL: %s\nAction: %s\n' "$mirror_id" "${_CATALOG_URLS[$target_index]}" "$MIRROR_MANAGEMENT_ACTION"
+    _confirm_action "Apply this custom catalog change?" || confirm_status=$?
+    [[ "$confirm_status" -eq 0 ]] || return "$confirm_status"
+    _acquire_mutation_lock
+
+    if [[ "$MIRROR_MANAGEMENT_ACTION" == remove ]]; then
+      local -a ids=() countries=() regions=() urls=() sources=() officials=() enabled=()
+      for i in "${!_CATALOG_IDS[@]}"; do
+        ((i == target_index)) && continue
+        ids+=("${_CATALOG_IDS[$i]}")
+        countries+=("${_CATALOG_COUNTRIES[$i]}")
+        regions+=("${_CATALOG_REGIONS[$i]}")
+        urls+=("${_CATALOG_URLS[$i]}")
+        sources+=("${_CATALOG_SOURCES[$i]}")
+        officials+=("${_CATALOG_OFFICIAL[$i]}")
+        enabled+=("${_CATALOG_ENABLED[$i]}")
+      done
+      _CATALOG_IDS=("${ids[@]}")
+      _CATALOG_COUNTRIES=("${countries[@]}")
+      _CATALOG_REGIONS=("${regions[@]}")
+      _CATALOG_URLS=("${urls[@]}")
+      _CATALOG_SOURCES=("${sources[@]}")
+      _CATALOG_OFFICIAL=("${officials[@]}")
+      _CATALOG_ENABLED=("${enabled[@]}")
+    elif [[ "$MIRROR_MANAGEMENT_ACTION" == disable ]]; then
+      _CATALOG_ENABLED[target_index]=false
+    else
+      _CATALOG_ENABLED[target_index]=true
+    fi
+
+    _write_user_mirror_catalog || {
+      error "Could not save the custom mirror catalog."
+      return "$EXIT_GENERAL"
+    }
+    info "Custom mirror catalog updated: $mirror_id"
+    ;;
+  *)
+    error "Unknown custom mirror management action."
+    return "$EXIT_USAGE"
+    ;;
   esac
 }
 
@@ -2508,42 +2510,42 @@ _menu_manage_mirrors() {
     )" || return 0
 
     case "$choice" in
-      list)
-        listing=""
-        for i in "${!_CATALOG_IDS[@]}"; do
-          [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
-          listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"$'\n'
-        done
-        [[ -n "$listing" ]] || listing="No custom mirrors have been saved."
-        _menu_message "Custom mirrors" "$listing"
-        ;;
-      add)
-        value="$(_menu_input "Add custom mirror" "Ubuntu mirror base URL (must serve signed InRelease files)" "https://")" || continue
-        MIRROR_MANAGEMENT_ACTION="add"
-        MIRROR_MANAGEMENT_VALUE="$value"
-        rc=0
-        _run_mirror_management || rc=$?
-        [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Add operation finished with exit code $rc."
-        ;;
-      disable | enable | remove)
-        listing=""
-        for i in "${!_CATALOG_IDS[@]}"; do
-          [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
-          listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"$'\n'
-        done
-        [[ -n "$listing" ]] || {
-          _menu_message "Custom mirrors" "There are no saved custom mirrors to change."
-          continue
-        }
-        _menu_message "Saved custom mirror IDs" "$listing"
-        value="$(_menu_input "Custom mirror ID" "Enter the exact ID shown above" "")" || continue
-        MIRROR_MANAGEMENT_ACTION="$choice"
-        MIRROR_MANAGEMENT_VALUE="$value"
-        rc=0
-        _run_mirror_management || rc=$?
-        [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Operation finished with exit code $rc."
-        ;;
-      back) return 0 ;;
+list)
+listing=""
+for i in "${!_CATALOG_IDS[@]}"; do
+[[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
+listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"$'\n'
+done
+[[ -n "$listing" ]] || listing="No custom mirrors have been saved."
+_menu_message "Custom mirrors" "$listing"
+;;
+add)
+value="$(_menu_input "Add custom mirror" "Ubuntu mirror base URL (must serve signed InRelease files)" "https://")" || continue
+MIRROR_MANAGEMENT_ACTION="add"
+MIRROR_MANAGEMENT_VALUE="$value"
+rc=0
+_run_mirror_management || rc=$?
+[[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Add operation finished with exit code $rc."
+;;
+disable | enable | remove)
+listing=""
+for i in "${!_CATALOG_IDS[@]}"; do
+[[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
+listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"$'\n'
+done
+[[ -n "$listing" ]] || {
+_menu_message "Custom mirrors" "There are no saved custom mirrors to change."
+continue
+}
+_menu_message "Saved custom mirror IDs" "$listing"
+value="$(_menu_input "Custom mirror ID" "Enter the exact ID shown above" "")" || continue
+MIRROR_MANAGEMENT_ACTION="$choice"
+MIRROR_MANAGEMENT_VALUE="$value"
+rc=0
+_run_mirror_management || rc=$?
+[[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Operation finished with exit code $rc."
+;;
+back) return 0 ;;
     esac
 
     old_network_setting="$NO_CATALOG_NETWORK"
@@ -2593,7 +2595,6 @@ _menu_apt() {
     esac
   done
 }
-
 
 _menu_benchmark() {
   _run_benchmark_only

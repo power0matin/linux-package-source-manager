@@ -166,6 +166,25 @@ test_cli() {
   code=0
   bash "$SCRIPT" --disable-mirror >/dev/null 2>&1 || code=$?
   assert_exit_code 2 "$code" "custom mirror management requires a mirror ID"
+  code=0
+  bash "$SCRIPT" --apt-retries 11 >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "APT retry count above maximum is rejected"
+  code=0
+  bash "$SCRIPT" --proxy http://user:secret@proxy.example:8080 --dry-run >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "proxy credentials are rejected"
+  code=0
+  bash "$SCRIPT" --clear-proxy --proxy http://127.0.0.1:3128 --dry-run >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "proxy set and clear options cannot be combined"
+  code=0
+  bash "$SCRIPT" --restore --restore-scope invalid >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "unknown selective restore scope is rejected"
+  code=0
+  bash "$SCRIPT" --network-diagnostics >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "live diagnostics require doctor mode"
+  code=0
+  bash "$SCRIPT" --prune-backups 0 >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "backup retention count below one is rejected"
+
 }
 
 test_filesystem_operations() {
@@ -177,6 +196,35 @@ test_filesystem_operations() {
   # shellcheck source=../power-apt-boost.sh
   source "$SCRIPT"
   _setup_colors
+  apt-get() {
+    local arg
+    for arg in "$@"; do
+      [[ "$arg" != --print-uris ]] || return 0
+    done
+    return 1
+  }
+  write_managed_source_fixture() {
+    local mirror="${1:-https://old.example/ubuntu}"
+    cat >"$APT_DEB822_FILE" <<SOURCES
+# Power APT Boost test fixture
+# Mirror: $mirror
+Types: deb
+URIs: $mirror
+Suites: noble noble-updates noble-backports
+Components: main restricted universe multiverse
+Signed-By: $KEYRING_PATH
+
+Types: deb
+URIs: https://security.ubuntu.com/ubuntu
+Suites: noble-security
+Components: main restricted universe multiverse
+Signed-By: $KEYRING_PATH
+SOURCES
+  }
+  write_managed_config_fixture() {
+    mkdir -p "$APT_CONF_DIR"
+    printf '# Power APT Boost test fixture\nAcquire::Languages "none";\n# prior-apt-config\n' >"$APT_CONF_FILE"
+  }
   mkdir -p "$APT_ETC_DIR" "$APT_SOURCES_DIR"
   printf 'cancel-before-state\n' >"$APT_DEB822_FILE"
 
@@ -224,7 +272,7 @@ PY
   rm -f "$escaped_json"
 
   printf 'deb http://old.example/ubuntu noble main\n' >"$APT_SOURCES_FILE"
-  printf 'Types: deb\nURIs: https://old.example/ubuntu\n' >"${APT_SOURCES_DIR}/ubuntu.sources"
+  write_managed_source_fixture
   chmod 0640 "$APT_SOURCES_FILE"
 
   local backup_dir
@@ -335,10 +383,57 @@ ATOMIC
     ((_tests_failed += 1))
     printf '%bFAIL%b IPv6 mode does not force IPv4 simultaneously\n' "$RED" "$RESET"
   fi
+  APT_RETRIES=6
+  APT_PROXY="http://127.0.0.1:3128"
+  CLEAR_APT_PROXY=false
+  _write_apt_config
+  assert_file_contains "$APT_CONF_FILE" 'Acquire::Retries "6";' "APT config applies configured retry count"
+  assert_file_contains "$APT_CONF_FILE" 'Acquire::http::Proxy "http://127.0.0.1:3128";' "APT config applies explicit proxy"
+  APT_PROXY=""
+  _write_apt_config
+  assert_file_contains "$APT_CONF_FILE" 'Acquire::https::Proxy "http://127.0.0.1:3128";' "unspecified proxy setting preserves existing managed proxy"
+  CLEAR_APT_PROXY=true
+  _write_apt_config
+  assert_file_contains "$APT_CONF_FILE" 'Acquire::https::Proxy "DIRECT";' "clear-proxy explicitly bypasses APT proxies"
+  CLEAR_APT_PROXY=false
+  APT_RETRIES=3
+  local proxy_result proxy_status=0
+  proxy_result="$(_validate_proxy_url "https://proxy.example:8443")"
+  assert_equal "https://proxy.example:8443" "$proxy_result" "proxy URL validator accepts a host and port"
+  _validate_proxy_url "http://user:secret@proxy.example:3128" >/dev/null 2>&1 || proxy_status=$?
+  assert_exit_code 1 "$proxy_status" "proxy URL validator rejects embedded credentials"
+  printf 'deb [arch=amd64 signed-by=/usr/share/keyrings/example.gpg] https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
+  write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
+  CODENAME=noble
+  _write_apt_sources "https://archive.ubuntu.com/ubuntu" >/dev/null 2>&1
+  assert_file_contains "$APT_SOURCES_FILE" "signed-by=/usr/share/keyrings/example.gpg" "legacy Ubuntu source options are preserved"
+  rm -f "$APT_SOURCES_FILE"
+
+  printf '# Power APT Boost test fixture\n# Mirror: https://archive.ubuntu.com/ubuntu\nAcquire::Languages "none";\nAcquire::Custom::Option "keep";\n' >"$APT_CONF_FILE"
+  local unmanaged_config_status=0
+  _write_apt_config >/dev/null 2>&1 || unmanaged_config_status=$?
+  assert_exit_code 1 "$unmanaged_config_status" "managed APT config refuses an unexpected custom directive"
+  assert_file_contains "$APT_CONF_FILE" 'Acquire::Custom::Option "keep";' "refused APT config overwrite leaves custom directive intact"
+  write_managed_config_fixture
+
+  dpkg() { printf 'mips64el\n'; }
+  local unsupported_arch_status=0
+  _apt_architecture_supported || unsupported_arch_status=$?
+  assert_exit_code 1 "$unsupported_arch_status" "unsupported architecture does not default to standard archive"
+  unset -f dpkg
 
   NO_CATALOG_NETWORK=true
   _load_mirror_catalog
   NO_CATALOG_NETWORK=false
+  dpkg() { printf 'arm64\n'; }
+  export -f dpkg
+  local ports_mode=1 ports_mirrors
+  _uses_ports_archive && ports_mode=0
+  assert_exit_code 0 "$ports_mode" "non-x86 architecture uses the Ubuntu ports archive"
+  ports_mirrors="$(_get_mirrors)"
+  assert_contains "https://ports.ubuntu.com/ubuntu-ports" "$ports_mirrors" "ports catalog is available for non-x86 architecture"
+  unset -f dpkg
+
   COUNTRY_FILTER=ir
   local iran_mirrors
   iran_mirrors="$(_get_mirrors)"
@@ -346,6 +441,24 @@ ATOMIC
   assert_contains "https://mirror.iranserver.com/ubuntu" "$iran_mirrors" "Iran filter includes IranServer"
   COUNTRY_FILTER=""
   assert_contains "https://archive.ubuntu.com/ubuntu" "$(_get_mirrors)" "unfiltered catalog includes global mirror"
+  rm -f "$APT_SOURCES_FILE" "$APT_DEB822_FILE"
+  rm -f "$APT_SOURCES_DIR"/*.list "$APT_SOURCES_DIR"/*.sources
+  printf 'deb https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
+  cat >"${APT_SOURCES_DIR}/inventory-thirdparty.list" <<'LIST'
+deb https://packages.example.test/apt stable main
+LIST
+  cat >"${APT_SOURCES_DIR}/inventory-duplicate.sources" <<'SOURCES'
+Types: deb
+URIs: https://archive.ubuntu.com/ubuntu
+Suites: noble
+Components: main
+SOURCES
+  _collect_source_inventory
+  assert_equal "3" "$APT_SOURCE_TOTAL" "APT inventory counts active source records"
+  assert_equal "2" "$APT_SOURCE_UBUNTU" "APT inventory classifies Ubuntu archive sources"
+  assert_equal "1" "$APT_SOURCE_THIRD_PARTY" "APT inventory classifies third-party sources"
+  assert_equal "1" "$APT_SOURCE_DUPLICATES" "APT inventory detects duplicate URI/suite records"
+  rm -f "${APT_SOURCES_DIR}/inventory-thirdparty.list" "${APT_SOURCES_DIR}/inventory-duplicate.sources"
 
   NO_SPINNER=true
   _start_spinner "test"
@@ -357,8 +470,10 @@ ATOMIC
   printf 'cached-index\n' >"${_SYSTEM_ROOT}/var/lib/apt/lists/fixture-index"
   printf 'cached-package\n' >"${_SYSTEM_ROOT}/var/cache/apt/archives/fixture.deb"
   printf 'deb https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
-  printf 'prior-source-config\n' >"$APT_DEB822_FILE"
-  printf 'prior-apt-config\n' >"$APT_CONF_FILE"
+  write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
+  printf 'prior-source-config\n' >>"$APT_DEB822_FILE"
+  write_managed_config_fixture
+  printf '# prior-apt-config\n' >>"$APT_CONF_FILE"
   local cache_index_before cache_package_before
   cache_index_before="$(sha256sum "${_SYSTEM_ROOT}/var/lib/apt/lists/fixture-index")"
   cache_package_before="$(sha256sum "${_SYSTEM_ROOT}/var/cache/apt/archives/fixture.deb")"
@@ -369,6 +484,16 @@ ATOMIC
   SELECTED_TIME="0.001"
   _apply_changes >/dev/null 2>&1
   assert_file_contains "${_SYSTEM_ROOT}/var/lib/apt/lists/fixture-index" "cached-index" "skip-update preserves package lists"
+  assert_file_contains "$APT_DEB822_FILE" 'Suites: noble noble-updates noble-backports' "Ubuntu archive stanza keeps security suite separate"
+  assert_file_contains "$APT_DEB822_FILE" 'URIs: https://security.ubuntu.com/ubuntu' "security suite uses the dedicated Ubuntu archive"
+  printf '\nTypes: deb\nURIs: https://thirdparty.example.test/ubuntu\nSuites: stable\nComponents: main\n' >>"$APT_DEB822_FILE"
+  local unmanaged_before unmanaged_after unmanaged_status=0
+  unmanaged_before="$(sha256sum "$APT_DEB822_FILE")"
+  _write_apt_sources "https://example.invalid/ubuntu" >/dev/null 2>&1 || unmanaged_status=$?
+  unmanaged_after="$(sha256sum "$APT_DEB822_FILE")"
+  assert_exit_code 1 "$unmanaged_status" "APT writer refuses an extra repository in a managed Deb822 file"
+  assert_equal "$unmanaged_before" "$unmanaged_after" "refused managed source overwrite leaves the file unchanged"
+
   assert_file_contains "${_SYSTEM_ROOT}/var/cache/apt/archives/fixture.deb" "cached-package" "skip-update preserves downloaded packages"
   local skip_backup
   skip_backup="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' | sort -rn | head -1 | cut -f2)"
@@ -414,9 +539,11 @@ ATOMIC
     printf '%bFAIL%b failed atomic write leaves no destination file\n' "$RED" "$RESET"
   fi
 
-  printf 'write-rollback-sources-list\n' >"$APT_SOURCES_FILE"
-  printf 'write-rollback-source-config\n' >"$APT_DEB822_FILE"
-  printf 'write-rollback-apt-config\n' >"$APT_CONF_FILE"
+  printf 'deb https://archive.ubuntu.com/ubuntu noble main\n# write-rollback-sources-list\n' >"$APT_SOURCES_FILE"
+  write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
+  printf 'write-rollback-source-config\n' >>"$APT_DEB822_FILE"
+  write_managed_config_fixture
+  printf '# write-rollback-apt-config\n' >>"$APT_CONF_FILE"
   local write_rollback_code=0
   (
     local write_mv_calls=0
@@ -440,13 +567,21 @@ ATOMIC
   assert_file_contains "$APT_CONF_FILE" "write-rollback-apt-config" "APT write failure restores previous apt config"
 
   printf 'deb https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
-  printf 'prior-source-config\n' >"$APT_DEB822_FILE"
-  printf 'prior-apt-config\n' >"$APT_CONF_FILE"
+  write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
+  printf 'prior-source-config\n' >>"$APT_DEB822_FILE"
+  write_managed_config_fixture
+  printf '# prior-apt-config\n' >>"$APT_CONF_FILE"
   local rollback_code=0
   SELECTED_MIRROR="https://broken.example/ubuntu"
   SELECTED_TIME="0.001"
   (
-    apt-get() { return 1; }
+    apt-get() {
+      local arg
+      for arg in "$@"; do
+        [[ "$arg" != --print-uris ]] || return 0
+      done
+      return 1
+    }
     DRY_RUN=false
     SKIP_UPDATE=false
     _apply_changes >/dev/null 2>&1
@@ -465,6 +600,41 @@ ATOMIC
   _restore_backup "$tampered_backup" >/dev/null 2>&1 || restore_code=$?
   assert_exit_code 8 "$restore_code" "restore rejects checksum mismatch"
   assert_file_contains "$APT_SOURCES_FILE" "current-state" "checksum failure leaves current files untouched"
+  write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
+  write_managed_config_fixture
+  local selective_backup selective_restore_status=0
+  selective_backup="$(_create_backup)"
+  write_managed_source_fixture "https://newer.example/ubuntu"
+  printf '# Power APT Boost test fixture\n# current-network-will-be-restored\n' >"$APT_CONF_FILE"
+  RESTORE_SCOPE=network
+  YES=true
+  _run_restore_flow >/dev/null 2>&1 || selective_restore_status=$?
+  assert_exit_code 0 "$selective_restore_status" "network-only restore succeeds without apt-get update"
+  assert_contains "newer.example" "$(cat "$APT_DEB822_FILE")" "network-only restore leaves APT sources untouched"
+  assert_file_contains "$APT_CONF_FILE" "prior-apt-config" "network-only restore restores network settings"
+  RESTORE_SCOPE=all
+  YES=false
+
+  local verified_count=0 snapshot
+  _create_backup >/dev/null
+  sleep 1
+  printf 'snapshot-b\n' >"${APT_SOURCES_DIR}/prune-marker"
+  _create_backup >/dev/null
+  sleep 1
+  printf 'snapshot-c\n' >"${APT_SOURCES_DIR}/prune-marker"
+  _create_backup >/dev/null
+  PRUNE_BACKUPS_KEEP=1
+  YES=true
+  _run_prune_backups >/dev/null 2>&1
+  for snapshot in "$BACKUP_BASE"/*; do
+    [[ -d "$snapshot" && ! -L "$snapshot" && -f "$snapshot/manifest" && -f "$snapshot/archive.sha256" ]] || continue
+    grep -qx 'format=1' "$snapshot/manifest" || continue
+    (cd "$snapshot" && sha256sum -c archive.sha256 >/dev/null 2>&1) || continue
+    ((verified_count += 1))
+  done
+  assert_equal "1" "$verified_count" "backup cleanup retains only the requested newest verified snapshot"
+  PRUNE_BACKUPS_KEEP=""
+  YES=false
 }
 
 test_probe_parser_and_list_criteria() {

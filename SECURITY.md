@@ -56,16 +56,25 @@ This policy covers the `power-apt-boost.sh` script and its direct behavior. The 
 
 ### Integrity and current limitations
 
-- The script uses `set -euo pipefail`; strict shell options do not by themselves provide transactional file operations.
-- The current source/config writes are not all atomic.
-- Backup copy failures are not consistently treated as fatal, and restore does not yet guarantee exact reconstruction of files that existed or did not exist before the operation.
-- Rollback after a failed `apt-get update` is best-effort in the current source and must not be treated as a guaranteed full-system restore.
-- `--dry-run` is intended to test mirror selection without applying persistent APT configuration changes.
-- Atomic writes, validated snapshots, exact restore and verified rollback are mandatory Phase 1 work. Until that work is merged, inspect the script and maintain an independent recovery path before applying it to a production host.
+- APT source and network configuration writes use atomic replacement. Existing file ownership and mode are preserved when a managed file is replaced.
+- Apply and restore operations use a mutation lock. A validated format-1 snapshot with a SHA-256 checksum is required before an apply operation.
+- Restore validates the snapshot before staging the current APT paths. New snapshots record whether each managed path existed, so restore can recreate or remove those paths exactly.
+- If a source/config write or `apt-get update` fails, the tool attempts to restore the previous APT configuration from the validated snapshot. If rollback itself fails, the recovery snapshot/staging path is reported for manual recovery.
+- Snapshots cover `/etc/apt/sources.list`, `sources.list.d` and `apt.conf.d`. They do not snapshot installed packages, package lists or downloaded archives. In particular, the ordinary package-index maintenance performed by `apt-get update` is not rolled back.
+- Legacy backups remain readable but do not contain the full prior path-existence manifest; selective restore is supported only for validated manifest-based snapshots.
+- The tool refuses to replace unmanaged or mixed source files, non-tool-owned managed-config files and symlinked targets. Separate third-party source files are read for inventory but are not rewritten.
+- `--dry-run` benchmarks and previews without applying persistent APT configuration changes.
 
 ## Release status
 
 The `main` branch currently declares script version `3.0.0`, but that version has not been published as a Git tag/release. The latest published release is `v2.1.0`. For production use, prefer the tagged release unless you have reviewed and intentionally chosen the unreleased source.
+
+### Network and proxy diagnostics
+
+- `--doctor` performs local checks without changing APT configuration.
+- Live DNS and HTTPS/TLS probes are opt-in through `--doctor --network-diagnostics`.
+- APT proxy URLs supplied through `--proxy` cannot contain usernames or passwords; do not place credentials in command-line arguments or shell history.
+- `--clear-proxy` explicitly writes `DIRECT`; leaving proxy options unset preserves existing external APT proxy settings and existing proxy directives in the tool-managed file.
 
 ## Best Practices for Users
 

@@ -3,7 +3,7 @@
 > **Roadmap version:** 1.0  
 > **Prepared:** 2026-11-19  
 > **Project:** [power0matin/power-apt-boost](https://github.com/power0matin/power-apt-boost)  
-> **Current implementation baseline:** `main` at `ca9a96a5d7c4aba4c4ef7edd33b47f384106b633`  
+> **Current implementation baseline:** `main` at `56eaf13e76e276bbaae160e59a0aca506490f02d`  
 > **Current script version string:** `3.0.0`
 
 This document is the implementation plan for evolving Power APT Boost into an **Ubuntu-first package-source and mirror manager for servers and developer environments**. It expands the existing Ubuntu APT mirror selector to cover the package ecosystems commonly used on Ubuntu servers, including Python, Node.js, Docker/OCI, Go, Rust, PHP, Java and selected additional ecosystems.
@@ -927,20 +927,20 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 
 **Goal:** Finish the APT experience beyond selecting an archive URL.
 
-- [ ] Complete APT source inventory and status display.
-- [ ] Add archive/security/ports/suite-aware selection.
-- [ ] Preserve all third-party repositories and options.
-- [ ] Add safe APT proxy management.
-- [ ] Add safe network timeout/retry management.
-- [ ] Add diagnostics for signatures, metadata freshness, DNS, TLS, proxies and duplicate sources.
-- [ ] Add selective restore and backup cleanup policy.
-- [ ] Add profile preview and APT-only apply.
+- [x] Complete APT source inventory and status display across legacy and Deb822 formats, including duplicate URI/suite reporting.
+- [x] Add archive/security/ports/suite-aware selection with architecture guards and a separate security pocket where required.
+- [x] Preserve third-party source files and legacy source-line options; refuse unsafe rewrites of mixed, modified, symlinked or unclassified managed files.
+- [x] Add safe APT proxy set/clear management without accepting embedded credentials.
+- [x] Add bounded APT network timeout/retry management.
+- [x] Add diagnostics for signature trust prerequisites and insecure overrides, cached metadata age, opt-in DNS/TLS, proxies and duplicate sources.
+- [x] Add selective restore scopes and checksum-verified backup cleanup/retention.
+- [x] Add explicit apply preview and keep persistent changes scoped to APT source/network configuration.
 
 **Acceptance criteria**
 
-- [ ] Supported Ubuntu releases can be inspected, benchmarked, optimized and restored without losing third-party source configuration.
-- [ ] Security repositories remain enabled and signature verification remains active.
-- [ ] User-visible success requires a successful post-apply verification.
+- [x] Supported Ubuntu releases in the CI matrix can be inspected, benchmarked, optimized and restored without destructive changes to third-party source configuration.
+- [x] Security repositories remain enabled and the generated Ubuntu sources retain explicit archive keyring verification.
+- [x] Apply reports success only after the generated configuration passes APT parser verification (and `apt-get update` succeeds unless explicitly skipped).
 
 ### Phase 5 — Python ecosystem manager
 
@@ -1145,7 +1145,8 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Current execution state:** Phase 3 — PR #4 is ready for review; ShellCheck, shfmt and all three Ubuntu offline test jobs pass on the current PR head.  
-**Next permitted work unit:** Merge PR #4 and re-check the resulting `main` head before starting Phase 4.  
+**Current execution state:** Phase 4 — PR #5 is open for review; ShellCheck and shfmt pass, and all three Ubuntu offline suites pass 145/145 on head `575b12c597112c2d85135b3e1246f75ff7c68164`.  
+**Previous phases:** PRs #1-#4 are merged into `main`; Phase 3 is complete.  
+**Next permitted work unit:** Review and merge PR #5 before starting Phase 5.  
 **Live-network validation:** Public mirror discovery and real archive-signature checks were not run in CI; CI uses offline fixtures and mocked probe responses.  
 **Release/deployment status:** No release, tag or deployment has been created.

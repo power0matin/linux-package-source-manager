@@ -444,22 +444,22 @@ ATOMIC
 test_probe_parser_and_list_criteria() {
   _probe_url_code() {
     case "$1" in
-    */noble/InRelease) printf '200\t0.010000\t0\t%s\tvalid\tvalid\tnot-declared\t\n' "$1" ;;
-    */noble-updates/InRelease) printf '200\t0.020000\t0\t%s\tvalid\tvalid\tnot-declared\t\n' "$1" ;;
-    */noble-security/InRelease) printf '200\t0.030000\t0\t%s\tvalid\tvalid\tnot-declared\t\n' "$1" ;;
-    *) printf '404\t0.040000\t0\t%s\tinvalid\tunknown\tunknown\tmissing_endpoint\n' "$1" ;;
+    */noble/InRelease) printf '200\t0.010000\t\n' ;;
+    */noble-updates/InRelease) printf '200\t0.020000\t\n' ;;
+    */noble-security/InRelease) printf '200\t0.030000\t\n' ;;
+    *) printf '404\t0.040000\tmissing endpoint\n' ;;
     esac
   }
 
   local result_file
   result_file="$(mktemp)"
   _test_mirror "https://fixture.invalid/ubuntu" "$result_file" "noble" >/dev/null 2>&1
-  assert_contains "true|" "$(cat "$result_file")" "mirror tester accepts three compatible signed endpoints"
+  assert_contains " pass" "$(cat "$result_file")" "mirror tester accepts all three successful endpoints"
   rm -f "$result_file"
 
   result_file="$(mktemp)"
   _test_mirror "https://fixture.invalid/ubuntu" "$result_file" "other" >/dev/null 2>&1
-  assert_contains "false|" "$(cat "$result_file")" "mirror tester rejects incompatible endpoint coverage"
+  assert_contains " fail" "$(cat "$result_file")" "mirror tester rejects incomplete endpoint coverage"
   rm -f "$result_file"
 }
 

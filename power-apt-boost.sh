@@ -1287,6 +1287,15 @@ _is_official_ubuntu_uri() {
   [[ "$host" == "ubuntu.com" || "$host" == *.ubuntu.com || "$host" == "canonical.com" || "$host" == *.canonical.com ]]
 }
 
+_is_ubuntu_archive_uri() {
+  local uri="$1" host
+  host="${uri#*://}"
+  host="${host%%/*}"
+  host="${host##*@}"
+  host="${host%%:*}"
+  [[ "$host" == "archive.ubuntu.com" || "$host" == *.archive.ubuntu.com || "$host" == "security.ubuntu.com" || "$host" == "ports.ubuntu.com" ]]
+}
+
 _validate_proxy_url() {
   local url="$1" authority suffix port
   [[ "$url" != *'@'* && "$url" != *'?'* && "$url" != *'#'* && "$url" != *$'\n'* && "$url" != *$'\r'* ]] || return 1
@@ -1409,6 +1418,10 @@ _write_apt_sources() {
     security_url="https://security.ubuntu.com/ubuntu"
   fi
 
+  if [[ -L "$APT_DEB822_FILE" ]]; then
+    error "Refusing to replace a symlinked APT source file: $APT_DEB822_FILE."
+    return 1
+  fi
   if [[ -f "$APT_DEB822_FILE" ]]; then
     if grep -q '^# Power APT Boost' "$APT_DEB822_FILE"; then
       managed_mirror="$(sed -n 's/^# Mirror: //p' "$APT_DEB822_FILE" | head -1)"
@@ -1428,16 +1441,16 @@ _write_apt_sources() {
           ;;
         esac
       done < <(_apt_source_records "$APT_DEB822_FILE")
-      if ((existing_count == 0)); then
-        error "Managed Ubuntu source file cannot be parsed safely; refusing to replace it."
+      if ((existing_count != 4)); then
+        error "Managed Ubuntu source file has an unexpected number of active URI/suite entries; refusing to replace it."
         return 1
       fi
     else
       while IFS='|' read -r existing_uri existing_suite; do
         [[ -n "$existing_uri" && -n "$existing_suite" ]] || continue
         ((existing_count += 1))
-        if ! _is_official_ubuntu_uri "$existing_uri"; then
-          error "Refusing to overwrite unmanaged third-party Deb822 source: $existing_uri ($existing_suite)."
+        if ! _is_ubuntu_archive_uri "$existing_uri"; then
+          error "Refusing to overwrite unmanaged or non-archive Deb822 source: $existing_uri ($existing_suite)."
           return 1
         fi
       done < <(_apt_source_records "$APT_DEB822_FILE")
@@ -1448,12 +1461,14 @@ _write_apt_sources() {
     fi
   fi
 
-  if [[ -f "$APT_SOURCES_FILE" ]]; then
+  if [[ -L "$APT_SOURCES_FILE" ]]; then
+    has_third_party=true
+  elif [[ -f "$APT_SOURCES_FILE" ]]; then
     local legacy_uri legacy_suite legacy_count=0
     while IFS='|' read -r legacy_uri legacy_suite; do
       [[ -n "$legacy_uri" && -n "$legacy_suite" ]] || continue
       ((legacy_count += 1))
-      if ! _is_official_ubuntu_uri "$legacy_uri"; then
+      if ! _is_ubuntu_archive_uri "$legacy_uri"; then
         has_third_party=true
       fi
     done < <(_apt_source_records "$APT_SOURCES_FILE")
@@ -1494,7 +1509,11 @@ SOURCES
 }
 
 _write_apt_config() {
-  local force_ip_config proxy_config=""
+  local force_ip_config proxy_config="" existing_proxy_config=""
+  if [[ -L "$APT_CONF_FILE" ]]; then
+    error "Refusing to replace a symlinked APT network config: $APT_CONF_FILE."
+    return 1
+  fi
   if [[ -f "$APT_CONF_FILE" ]] && ! grep -q '^# Power APT Boost' "$APT_CONF_FILE"; then
     error "Refusing to overwrite unmanaged APT network settings in $APT_CONF_FILE."
     return 1
@@ -1509,6 +1528,9 @@ _write_apt_config() {
 Acquire::https::Proxy "DIRECT";'
   elif [[ -n "$APT_PROXY" ]]; then
     proxy_config="$(printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";' "$APT_PROXY" "$APT_PROXY")"
+  elif [[ -f "$APT_CONF_FILE" ]]; then
+    existing_proxy_config="$(grep -E '^Acquire::(http|https)::Proxy ' "$APT_CONF_FILE" || true)"
+    proxy_config="$existing_proxy_config"
   fi
   _atomic_write "$APT_CONF_FILE" 0644 <<APTCONF
 # Power APT Boost — APT network optimization

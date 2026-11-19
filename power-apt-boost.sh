@@ -99,6 +99,12 @@ COUNTRY_FILTER=""
 USE_IPV6=false
 BENCH_WORKERS="$DEFAULT_BENCH_WORKERS"
 PROBE_RETRIES=1
+APT_RETRIES=3
+APT_PROXY=""
+CLEAR_APT_PROXY=false
+RESTORE_SCOPE="all"
+PRUNE_BACKUPS_KEEP=""
+NETWORK_DIAGNOSTICS=false
 OFFICIAL_ONLY=false
 REFRESH_CATALOG=false
 NO_CATALOG_NETWORK=false
@@ -135,6 +141,14 @@ REPORT_SOURCES_LIST="absent"
 REPORT_DEB822="absent"
 REPORT_MANAGED_CONFIG="absent"
 REPORT_CURRENT_MIRROR=""
+REPORT_SOURCE_COUNT=0
+REPORT_UBUNTU_SOURCE_COUNT=0
+REPORT_THIRD_PARTY_SOURCE_COUNT=0
+REPORT_DUPLICATE_SOURCE_COUNT=0
+APT_SOURCE_TOTAL=0
+APT_SOURCE_UBUNTU=0
+APT_SOURCE_THIRD_PARTY=0
+APT_SOURCE_DUPLICATES=0
 REPORT_BACKUP_ACCESSIBLE=false
 REPORT_BACKUP_COUNT=0
 REPORT_LATEST_BACKUP=""
@@ -423,6 +437,7 @@ _MIRROR_CATALOG=(
   "ir-linuxmirrors|ir|Iran|https://linuxmirrors.ir/ubuntu|builtin|false|true"
   "ir-kubarcloud|ir|Iran|https://mirror.kubarcloud.com/ubuntu|builtin|false|true"
   "global-archive|global|Global|https://archive.ubuntu.com/ubuntu|builtin|true|true"
+  "global-ports|global|Global|https://ports.ubuntu.com/ubuntu-ports|builtin|true|true"
   "global-kernel|global|Global|https://mirrors.kernel.org/ubuntu|builtin|false|true"
   "us-archive|us|United States|https://us.archive.ubuntu.com/ubuntu|builtin|true|true"
   "us-princeton|us|United States|https://mirror.math.princeton.edu/pub/ubuntu|builtin|false|true"
@@ -452,7 +467,7 @@ _validate_mirror_url() {
   [[ -n "$authority" && "$authority" != .* && "$authority" != *..* ]] || return 1
   path="/${url#*://}"
   path="/${path#*/}"
-  [[ "$path" == */ubuntu ]] || return 1
+  [[ "$path" == */ubuntu || "$path" == */ubuntu-ports ]] || return 1
   [[ "$path" != *"/../"* && "$path" != *"/./"* ]] || return 1
   printf '%s\n' "$url"
 }
@@ -696,6 +711,11 @@ _get_mirrors() {
 
   for i in "${!_CATALOG_URLS[@]}"; do
     [[ "${_CATALOG_ENABLED[$i]}" == true ]] || continue
+    if _uses_ports_archive; then
+      [[ "${_CATALOG_URLS[$i]}" == */ubuntu-ports ]] || continue
+    else
+      [[ "${_CATALOG_URLS[$i]}" != */ubuntu-ports ]] || continue
+    fi
     if [[ "$OFFICIAL_ONLY" == true && "${_CATALOG_OFFICIAL[$i]}" != true ]]; then continue; fi
     if [[ -n "$country_lower" && "${_CATALOG_COUNTRIES[$i]}" != "$country_lower" ]]; then continue; fi
     mirrors+=("${_CATALOG_URLS[$i]}")
@@ -1242,16 +1262,162 @@ _atomic_write() {
   fi
 }
 
+# ─── APT Source Inventory and Architecture Helpers ───────────────────────────
+
+_apt_architecture() {
+  local architecture="unknown"
+  if command -v dpkg >/dev/null 2>&1; then
+    architecture="$(dpkg --print-architecture 2>/dev/null || true)"
+  fi
+  printf '%s\n' "\${architecture:-unknown}"
+}
+
+_uses_ports_archive() {
+  case "$(_apt_architecture)" in
+  amd64 | i386 | unknown) return 1 ;;
+  *) return 0 ;;
+  esac
+}
+
+_is_official_ubuntu_uri() {
+  local uri="$1" host
+  host="\${uri#*://}"
+  host="\${host%%/*}"
+  host="\${host%%:*}"
+  [[ "$host" == "ubuntu.com" || "$host" == *.ubuntu.com || "$host" == "canonical.com" || "$host" == *.canonical.com ]]
+}
+
+_validate_proxy_url() {
+  local url="$1" authority suffix port
+  [[ "$url" != *'@'* && "$url" != *'?'* && "$url" != *'#'* && "$url" != *$'\n'* && "$url" != *$'\r'* ]] || return 1
+  [[ "$url" =~ ^https?://([A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(:[0-9]{1,5})?$ ]] || return 1
+  authority="\${url#*://}"
+  if [[ "$authority" == \[* ]]; then
+    suffix="\${authority#*]}"
+    if [[ -n "$suffix" ]]; then
+      [[ "$suffix" =~ ^:([0-9]{1,5})$ ]] || return 1
+      port="\${BASH_REMATCH[1]}"
+      ((port >= 1 && port <= 65535)) || return 1
+    fi
+  elif [[ "$authority" == *:* ]]; then
+    port="\${authority##*:}"
+    [[ "$port" =~ ^[0-9]{1,5}$ ]] || return 1
+    ((port >= 1 && port <= 65535)) || return 1
+  fi
+  printf '%s\n' "$url"
+}
+
+_apt_source_records() {
+  local file="$1"
+  if [[ "$file" == *.sources ]]; then
+    awk '
+      function flush_stanza(  u, s, nu, ns, i, j, has_deb) {
+        has_deb = (types ~ /(^|[[:space:]])deb([[:space:]]|$)/)
+        if (has_deb && enabled != "no" && uris != "" && suites != "") {
+          nu = split(uris, u, /[[:space:]]+/)
+          ns = split(suites, s, /[[:space:]]+/)
+          for (i = 1; i <= nu; i++)
+            for (j = 1; j <= ns; j++)
+              if (u[i] ~ /^https?:\/\// && s[j] != "") print u[i] "|" s[j]
+        }
+        types = ""; uris = ""; suites = ""; enabled = "yes"; current = ""
+      }
+      /^[[:space:]]*#/ { next }
+      /^[[:space:]]*$/ { flush_stanza(); next }
+      /^[^[:space:]][^:]*:/ {
+        current = tolower($1); sub(/:$/, "", current)
+        value = $0; sub(/^[^:]*:[[:space:]]*/, "", value)
+        if (current == "enabled") enabled = tolower(value)
+        else if (current == "types") types = types " " value
+        else if (current == "uris") uris = uris " " value
+        else if (current == "suites") suites = suites " " value
+        next
+      }
+      /^[[:space:]]+/ {
+        value = $0; sub(/^[[:space:]]+/, "", value)
+        if (current == "types") types = types " " value
+        else if (current == "uris") uris = uris " " value
+        else if (current == "suites") suites = suites " " value
+      }
+      END { flush_stanza() }
+    ' "$file"
+  else
+    awk '
+      {
+        line = $0
+        sub(/[[:space:]]*#.*/, "", line)
+        n = split(line, fields, /[[:space:]]+/)
+        if (fields[1] != "deb" && fields[1] != "deb-src") next
+        i = 2
+        if (fields[i] ~ /^\[/) {
+          while (i <= n && fields[i] !~ /\]$/) i++
+          i++
+        }
+        if (fields[i] ~ /^https?:\/\// && fields[i + 1] != "")
+          print fields[i] "|" fields[i + 1]
+      }
+    ' "$file"
+  fi
+}
+
+_collect_source_inventory() {
+  local file record uri suite key
+  local -A seen=()
+  APT_SOURCE_TOTAL=0
+  APT_SOURCE_UBUNTU=0
+  APT_SOURCE_THIRD_PARTY=0
+  APT_SOURCE_DUPLICATES=0
+  for file in "$APT_SOURCES_FILE" "$APT_SOURCES_DIR"/*.list "$APT_SOURCES_DIR"/*.sources; do
+    [[ -f "$file" ]] || continue
+    while IFS='|' read -r uri suite; do
+      [[ -n "$uri" && -n "$suite" ]] || continue
+      ((APT_SOURCE_TOTAL += 1)) || true
+      if _is_official_ubuntu_uri "$uri"; then
+        ((APT_SOURCE_UBUNTU += 1)) || true
+      else
+        ((APT_SOURCE_THIRD_PARTY += 1)) || true
+      fi
+      key="$uri|$suite"
+      if [[ -n "\${seen[$key]:-}" ]]; then
+        ((APT_SOURCE_DUPLICATES += 1)) || true
+      else
+        seen[$key]=1
+      fi
+    done < <(_apt_source_records "$file")
+  done
+}
+
 _write_apt_sources() {
   local mirror_url="$1"
+  local has_third_party=false security_url
   if [[ ! -f "$KEYRING_PATH" ]]; then
     warn "Keyring not found at $KEYRING_PATH; APT signature validation may fail."
   fi
 
-  local has_third_party=false
+  # Never replace a file that is not clearly owned by this tool.
+  if [[ -f "$APT_DEB822_FILE" ]] && ! grep -q '^# Power APT Boost' "$APT_DEB822_FILE"; then
+    error "Refusing to overwrite unmanaged Deb822 sources: $APT_DEB822_FILE."
+    error "Move or review the existing Ubuntu source file manually; no source file was changed."
+    return 1
+  fi
+
+  if _uses_ports_archive; then
+    [[ "$mirror_url" == */ubuntu-ports ]] || {
+      error "Architecture $(_apt_architecture) requires a ports archive URL ending in /ubuntu-ports."
+      return 1
+    }
+    security_url="$mirror_url"
+  else
+    [[ "$mirror_url" != */ubuntu-ports ]] || {
+      error "The ports archive is not valid for architecture $(_apt_architecture)."
+      return 1
+    }
+    security_url="https://security.ubuntu.com/ubuntu"
+  fi
+
   if [[ -f "$APT_SOURCES_FILE" ]]; then
-    if grep -v '^\s*$' "$APT_SOURCES_FILE" 2>/dev/null |
-      grep -v '^\s*#' |
+    if grep -v '^\\s*$' "$APT_SOURCES_FILE" 2>/dev/null |
+      grep -v '^\\s*#' |
       grep -v 'archive.ubuntu.com' |
       grep -v 'security.ubuntu.com' |
       grep -q . 2>/dev/null; then
@@ -1263,10 +1429,17 @@ _write_apt_sources() {
 # Power APT Boost — Ubuntu mirror configuration
 # Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 # Mirror: $mirror_url
+# Architecture: $(_apt_architecture)
 
 Types: deb
 URIs: $mirror_url
-Suites: $CODENAME $CODENAME-updates $CODENAME-backports $CODENAME-security
+Suites: $CODENAME $CODENAME-updates $CODENAME-backports
+Components: main restricted universe multiverse
+Signed-By: $KEYRING_PATH
+
+Types: deb
+URIs: $security_url
+Suites: $CODENAME-security
 Components: main restricted universe multiverse
 Signed-By: $KEYRING_PATH
 SOURCES
@@ -1284,22 +1457,46 @@ SOURCES
 }
 
 _write_apt_config() {
-  local force_ip_config
+  local force_ip_config proxy_config=""
+  if [[ -f "$APT_CONF_FILE" ]] && ! grep -q '^# Power APT Boost' "$APT_CONF_FILE"; then
+    error "Refusing to overwrite unmanaged APT network settings in $APT_CONF_FILE."
+    return 1
+  fi
   if [[ "$USE_IPV6" == true ]]; then
     force_ip_config='Acquire::ForceIPv6 "true";'
   else
     force_ip_config='Acquire::ForceIPv4 "true";'
+  fi
+  if [[ "$CLEAR_APT_PROXY" == true ]]; then
+    proxy_config='Acquire::http::Proxy "DIRECT";
+Acquire::https::Proxy "DIRECT";'
+  elif [[ -n "$APT_PROXY" ]]; then
+    proxy_config="Acquire::http::Proxy \\"$APT_PROXY\\";
+Acquire::https::Proxy \\"$APT_PROXY\\";"
   fi
   _atomic_write "$APT_CONF_FILE" 0644 <<APTCONF
 # Power APT Boost — APT network optimization
 # Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
 $force_ip_config
-Acquire::Retries "3";
+Acquire::Retries "$APT_RETRIES";
 Acquire::http::Timeout "$TIMEOUT_TOTAL";
 Acquire::https::Timeout "$TIMEOUT_TOTAL";
 Acquire::Languages "none";
+$proxy_config
 APTCONF
+}
+
+_verify_apt_configuration() {
+  [[ -s "$APT_DEB822_FILE" && -f "$APT_CONF_FILE" ]] || return 1
+  grep -Fq "URIs: $SELECTED_MIRROR" "$APT_DEB822_FILE" || return 1
+  grep -Fq "Acquire::Retries \\"$APT_RETRIES\\";" "$APT_CONF_FILE" || return 1
+  apt-get \\
+    -o "Dir::Etc::sourcelist=$APT_SOURCES_FILE" \\
+    -o "Dir::Etc::sourceparts=$APT_SOURCES_DIR" \\
+    -o "Dir::Etc::main=$APT_ETC_DIR/apt.conf" \\
+    -o "Dir::Etc::parts=$APT_CONF_DIR" \\
+    --print-uris update >/dev/null 2>&1
 }
 
 _apt_target_path() {
@@ -1422,7 +1619,17 @@ _restore_backup() {
     return "$EXIT_RESTORE"
   }
 
-  local -a target_names=(sources.list sources.list.d apt.conf.d)
+  local -a target_names=()
+  case "$RESTORE_SCOPE" in
+  all) target_names=(sources.list sources.list.d apt.conf.d) ;;
+  sources) target_names=(sources.list sources.list.d) ;;
+  network) target_names=(apt.conf.d) ;;
+  *)
+    rm -rf "$stage_dir"
+    error "Unknown restore scope: $RESTORE_SCOPE"
+    return "$EXIT_RESTORE"
+    ;;
+  esac
   local -a moved_targets=()
   local dest
   for key in "${target_names[@]}"; do
@@ -1497,6 +1704,15 @@ _acquire_mutation_lock() {
 _apply_changes() {
   _print_section_header "APPLYING CHANGES"
   printf '  Mirror: %s\n' "$SELECTED_MIRROR"
+  printf '  Architecture: %s\n' "$(_apt_architecture)"
+  printf '  APT timeout/retries: %ss / %s\n' "$TIMEOUT_TOTAL" "$APT_RETRIES"
+  if [[ "$CLEAR_APT_PROXY" == true ]]; then
+    printf '  APT proxy: DIRECT (explicitly disabled)\n'
+  elif [[ -n "$APT_PROXY" ]]; then
+    printf '  APT proxy: %s\n' "$APT_PROXY"
+  else
+    printf '  APT proxy: preserve existing external settings\n'
+  fi
   printf '  Probe time: %ss\n\n' "$SELECTED_TIME"
 
   if [[ "$DRY_RUN" == true ]]; then
@@ -1528,8 +1744,17 @@ DRYRUN
     die "Configuration write failed. The original APT configuration was restored." "$EXIT_GENERAL"
   fi
 
+  if ! _verify_apt_configuration; then
+    warn "APT parser verification failed. Restoring the validated snapshot."
+    if ! _restore_backup "$backup_dir"; then
+      die "APT verification failed and rollback failed. Recovery snapshot: $backup_dir" "$EXIT_RESTORE"
+    fi
+    die "APT configuration verification failed. The original configuration was restored." "$EXIT_GENERAL"
+  fi
+
   if [[ "$SKIP_UPDATE" == true ]]; then
-    msg_color "$COLOR_YELLOW" "  Skipped apt-get update. Existing package lists and archive cache were left untouched."
+    info "APT source and network configuration passed local parser verification."
+    msg_color "$COLOR_YELLOW" "  Package-index refresh skipped by request; cached package lists were left untouched."
     return 0
   fi
 
@@ -1597,6 +1822,11 @@ _collect_status() {
     REPORT_CURRENT_MIRROR="$(awk -F': ' '$1 == "URIs" {print $2; exit}' "$APT_DEB822_FILE" 2>/dev/null || true)"
     REPORT_CURRENT_MIRROR="$(printf '%s' "$REPORT_CURRENT_MIRROR" | sed -E 's#(https?://)[^/@]+@#\1[REDACTED]@#g')"
   fi
+  _collect_source_inventory
+  REPORT_SOURCE_COUNT="$APT_SOURCE_TOTAL"
+  REPORT_UBUNTU_SOURCE_COUNT="$APT_SOURCE_UBUNTU"
+  REPORT_THIRD_PARTY_SOURCE_COUNT="$APT_SOURCE_THIRD_PARTY"
+  REPORT_DUPLICATE_SOURCE_COUNT="$APT_SOURCE_DUPLICATES"
   REPORT_BACKUP_ACCESSIBLE=false
   REPORT_BACKUP_COUNT=0
   REPORT_LATEST_BACKUP=""
@@ -1616,6 +1846,10 @@ _print_status_report() {
   printf '%-24s %s\n' "Deb822 ubuntu.sources:" "$REPORT_DEB822"
   printf '%-24s %s\n' "Managed APT config:" "$REPORT_MANAGED_CONFIG"
   printf '%-24s %s\n' "Current mirror:" "${REPORT_CURRENT_MIRROR:-not detected}"
+  printf '%-24s %s\n' "APT source records:" "$REPORT_SOURCE_COUNT"
+  printf '%-24s %s\n' "Ubuntu source records:" "$REPORT_UBUNTU_SOURCE_COUNT"
+  printf '%-24s %s\n' "Third-party records:" "$REPORT_THIRD_PARTY_SOURCE_COUNT"
+  printf '%-24s %s\n' "Duplicate URI/suite records:" "$REPORT_DUPLICATE_SOURCE_COUNT"
   if [[ "$REPORT_BACKUP_ACCESSIBLE" == true ]]; then
     printf '%-24s %s\n' "Available backups:" "$REPORT_BACKUP_COUNT"
     printf '%-24s %s\n' "Latest backup:" "${REPORT_LATEST_BACKUP:-none}"
@@ -1650,7 +1884,7 @@ _doctor_collect() {
   fi
 
   local cmd
-  for cmd in apt-get awk date grep mkdir cp id mktemp tar sha256sum flock chmod stat find sort head cut chown mv rm sed gpgv; do
+  for cmd in apt-get apt-config awk date grep mkdir cp id mktemp tar sha256sum flock chmod stat find sort head cut chown mv rm sed gpgv; do
     if command -v "$cmd" >/dev/null 2>&1; then
       _doctor_add_check "command:$cmd" "ok" "available"
     else
@@ -1665,7 +1899,7 @@ _doctor_collect() {
   if [[ -f "$KEYRING_PATH" ]]; then
     _doctor_add_check "ubuntu_archive_keyring" "ok" "Ubuntu archive keyring exists"
   else
-    _doctor_add_check "ubuntu_archive_keyring" "error" "Ubuntu archive keyring is required to verify mirror signatures: $KEYRING_PATH"
+    _doctor_add_check "ubuntu_archive_keyring" "error" "Ubuntu archive keyring is required to verify mirror signatures"
   fi
   if [[ "$(id -u)" -eq 0 ]]; then
     _doctor_add_check "privileges" "ok" "running as root"
@@ -1689,6 +1923,68 @@ _doctor_collect() {
   else
     _doctor_add_check "backup_directory" "warning" "backup directory is not currently accessible or has not been created"
   fi
+
+  if ((REPORT_DUPLICATE_SOURCE_COUNT > 0)); then
+    _doctor_add_check "duplicate_sources" "warning" "$REPORT_DUPLICATE_SOURCE_COUNT duplicate URI/suite record(s) detected"
+  else
+    _doctor_add_check "duplicate_sources" "ok" "No duplicate URI/suite records detected"
+  fi
+
+  local insecure_sources=""
+  insecure_sources="$(grep -RilE 'trusted[[:space:]]*=[[:space:]]*yes|Allow-Insecure|Allow-Unauthenticated|Check-Valid-Until:[[:space:]]*no' "$APT_SOURCES_FILE" "$APT_SOURCES_DIR" "$APT_CONF_DIR" 2>/dev/null | head -1 || true)"
+  if [[ -n "$insecure_sources" ]]; then
+    _doctor_add_check "signature_policy" "warning" "Potentially unsafe APT trust override detected; inspect local source/config files"
+  elif [[ -f "$KEYRING_PATH" ]] && command -v gpgv >/dev/null 2>&1; then
+    _doctor_add_check "signature_policy" "ok" "Archive keyring and gpgv are available; no obvious insecure override found"
+  else
+    _doctor_add_check "signature_policy" "error" "Archive signature verification prerequisites are unavailable"
+  fi
+
+  local list_dir="\${_SYSTEM_ROOT}/var/lib/apt/lists" release_file now mtime stale_metadata=false release_count=0
+  now="$(date +%s)"
+  if [[ -d "$list_dir" ]]; then
+    while IFS= read -r release_file; do
+      [[ -n "$release_file" ]] || continue
+      ((release_count += 1))
+      mtime="$(stat -c '%Y' "$release_file" 2>/dev/null || echo 0)"
+      if ((now - mtime > CATALOG_MAX_RELEASE_AGE)); then stale_metadata=true; fi
+    done < <(find "$list_dir" -maxdepth 1 -type f -name '*_InRelease' -print 2>/dev/null)
+  fi
+  if ((release_count == 0)); then
+    _doctor_add_check "metadata_freshness" "warning" "No cached InRelease metadata found; run apt-get update after checking connectivity"
+  elif [[ "$stale_metadata" == true ]]; then
+    _doctor_add_check "metadata_freshness" "warning" "At least one cached InRelease file is older than seven days"
+  else
+    _doctor_add_check "metadata_freshness" "ok" "$release_count cached InRelease file(s) are no older than seven days"
+  fi
+
+  local proxy_dump proxy_count
+  proxy_dump="$(apt-config dump 2>/dev/null || true)"
+  proxy_count="$(printf '%s\n' "$proxy_dump" | grep -Ec '^Acquire::(http|https)::Proxy[[:space:]]' || true)"
+  if ((proxy_count > 0)); then
+    _doctor_add_check "apt_proxy" "ok" "$proxy_count APT proxy directive(s) configured; values are masked"
+  else
+    _doctor_add_check "apt_proxy" "ok" "No explicit APT proxy directive detected"
+  fi
+
+  if [[ "$NETWORK_DIAGNOSTICS" == true ]]; then
+    if command -v getent >/dev/null 2>&1 && getent ahosts security.ubuntu.com >/dev/null 2>&1; then
+      _doctor_add_check "dns" "ok" "security.ubuntu.com resolved successfully"
+    else
+      _doctor_add_check "dns" "warning" "Could not resolve security.ubuntu.com"
+    fi
+    local tls_url="https://security.ubuntu.com/ubuntu/dists/\${REPORT_CODENAME}-security/InRelease"
+    if command -v curl >/dev/null 2>&1 && curl --fail --silent --show-error --connect-timeout 5 --max-time 12 --output /dev/null "$tls_url" 2>/dev/null; then
+      _doctor_add_check "tls" "ok" "HTTPS request to the Ubuntu security archive succeeded"
+    elif command -v wget >/dev/null 2>&1 && wget --quiet --spider --timeout=12 "$tls_url" >/dev/null 2>&1; then
+      _doctor_add_check "tls" "ok" "HTTPS request to the Ubuntu security archive succeeded"
+    else
+      _doctor_add_check "tls" "warning" "HTTPS/TLS request to the Ubuntu security archive failed or was blocked"
+    fi
+  else
+    _doctor_add_check "dns" "skipped" "Live DNS test skipped; use --doctor --network-diagnostics to run it"
+    _doctor_add_check "tls" "skipped" "Live TLS test skipped; use --doctor --network-diagnostics to run it"
+  fi
 }
 _report_checks_json() {
   local i
@@ -1711,7 +2007,7 @@ _print_json() {
   printf '  "status": %s,\n' "$(_json_quote "$REPORT_STATUS")"
   printf '  "timestamp": %s,\n' "$(_json_quote "$(date -u '+%Y-%m-%dT%H:%M:%SZ')")"
   printf '  "system": {"id": %s, "pretty_name": %s, "version_id": %s, "codename": %s},\n' "$(_json_quote "$REPORT_OS_ID")" "$(_json_quote "$REPORT_OS_PRETTY")" "$(_json_quote "$REPORT_VERSION_ID")" "$(_json_quote "$REPORT_CODENAME")"
-  printf '  "apt": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "current_mirror": %s},\n' "$(_json_quote "$REPORT_SOURCES_LIST")" "$(_json_quote "$REPORT_DEB822")" "$(_json_quote "$REPORT_MANAGED_CONFIG")" "$(_json_quote "$REPORT_CURRENT_MIRROR")"
+  printf '  "apt": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "current_mirror": %s, "source_records": %s, "ubuntu_source_records": %s, "third_party_source_records": %s, "duplicate_source_records": %s},\n' "$(_json_quote "$REPORT_SOURCES_LIST")" "$(_json_quote "$REPORT_DEB822")" "$(_json_quote "$REPORT_MANAGED_CONFIG")" "$(_json_quote "$REPORT_CURRENT_MIRROR")" "$REPORT_SOURCE_COUNT" "$REPORT_UBUNTU_SOURCE_COUNT" "$REPORT_THIRD_PARTY_SOURCE_COUNT" "$REPORT_DUPLICATE_SOURCE_COUNT"
   printf '  "backups": {"accessible": %s, "count": %s, "latest": %s},\n' "$REPORT_BACKUP_ACCESSIBLE" "$REPORT_BACKUP_COUNT" "$(_json_quote "$REPORT_LATEST_BACKUP")"
   printf '  "operation": {"mirror": %s, "response_time_seconds": %s, "dry_run": %s, "skip_update": %s},\n' "$(_json_quote "$SELECTED_MIRROR")" "$(_json_quote "$SELECTED_TIME")" "$DRY_RUN" "$SKIP_UPDATE"
   printf '  "catalog": {"source": %s, "cache_state": %s, "last_refresh": %s, "invalid_entries": %s},\n' "$(_json_quote "$CATALOG_SOURCE")" "$(_json_quote "$CATALOG_CACHE_STATE")" "$(_json_quote "$CATALOG_LAST_REFRESH")" "$CATALOG_INVALID_ENTRIES"
@@ -1816,6 +2112,8 @@ ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}-m, --mirror URL${COLOR_RESET}        Use a specific Ubuntu mirror
   ${COLOR_GREEN}-r, --restore${COLOR_RESET}           Restore APT config from backup
   ${COLOR_GREEN}    --restore-path PATH${COLOR_RESET}   Restore from a specific backup
+  ${COLOR_GREEN}    --restore-scope SCOPE${COLOR_RESET} Restore all, sources or network settings
+  ${COLOR_GREEN}    --prune-backups N${COLOR_RESET}   Keep N newest verified snapshots; remove older verified snapshots
   ${COLOR_GREEN}    --dry-run${COLOR_RESET}            Test mirrors without changing config
   ${COLOR_GREEN}    --skip-update${COLOR_RESET}        Write config but skip apt-get update (preserve caches)
   ${COLOR_GREEN}    --list${COLOR_RESET}               List available mirrors and test them
@@ -1823,6 +2121,10 @@ ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}    --official-only${COLOR_RESET}       Use only built-in official Ubuntu archive hosts
   ${COLOR_GREEN}    --workers N${COLOR_RESET}           Benchmark concurrency (1-${MAX_WORKERS_LIMIT}, default: 8)
   ${COLOR_GREEN}    --retries N${COLOR_RESET}           Retry transient probe failures (0-3, default: 1)
+  ${COLOR_GREEN}    --apt-retries N${COLOR_RESET}       APT network retries (0-10, default: 3)
+  ${COLOR_GREEN}    --proxy URL${COLOR_RESET}           Set HTTP/HTTPS proxy (without embedded credentials)
+  ${COLOR_GREEN}    --clear-proxy${COLOR_RESET}        Explicitly bypass APT proxies
+  ${COLOR_GREEN}    --network-diagnostics${COLOR_RESET} Run live DNS/TLS checks with --doctor
   ${COLOR_GREEN}    --add-mirror URL${COLOR_RESET}      Verify and save a custom mirror
   ${COLOR_GREEN}    --remove-mirror ID${COLOR_RESET}    Remove a saved custom mirror
   ${COLOR_GREEN}    --disable-mirror ID${COLOR_RESET}   Disable a saved custom mirror
@@ -1850,12 +2152,23 @@ ${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
   ${COLOR_DIM}# Read-only status and diagnostics${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME} --status
   sudo bash ${_SCRIPT_NAME} --doctor
+  sudo bash ${_SCRIPT_NAME} --doctor --network-diagnostics
 
   ${COLOR_DIM}# Test without changing system config${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME} --dry-run
 
   ${COLOR_DIM}# Use a specific mirror${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME} --mirror https://mirror.example.com/ubuntu
+
+  ${COLOR_DIM}# Restore source or network settings only${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --restore --restore-scope sources
+  sudo bash ${_SCRIPT_NAME} --restore --restore-scope network
+
+  ${COLOR_DIM}# Keep the five newest verified backups${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --prune-backups 5 --yes
+
+  ${COLOR_DIM}# Configure an APT proxy and retry policy${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --proxy http://127.0.0.1:3128 --apt-retries 5 --yes
 
   ${COLOR_DIM}# Restore from latest backup${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME} --restore
@@ -1936,6 +2249,14 @@ _parse_args() {
       RESTORE=true
       shift
       ;;
+    --restore-scope)
+      case "${2:-}" in
+      all | sources | network) RESTORE_SCOPE="$2" ;;
+      *) die "Option $1 must be all, sources or network." "$EXIT_USAGE" ;;
+      esac
+      RESTORE=true
+      shift 2
+      ;;
     --restore-path)
       [[ -n "${2:-}" ]] || die "Option $1 requires a backup path." "$EXIT_USAGE"
       RESTORE_PATH="$2"
@@ -1976,6 +2297,36 @@ _parse_args() {
       (($2 >= 0 && $2 <= 3)) || die "Option $1 must be between 0 and 3." "$EXIT_USAGE"
       PROBE_RETRIES="$2"
       shift 2
+      ;;
+    --apt-retries)
+      [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires an integer from 0 to 10." "$EXIT_USAGE"
+      (($2 >= 0 && $2 <= 10)) || die "Option $1 must be between 0 and 10." "$EXIT_USAGE"
+      APT_RETRIES="$2"
+      ACTION_REQUESTED=true
+      shift 2
+      ;;
+    --proxy)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a proxy URL." "$EXIT_USAGE"
+      [[ "$CLEAR_APT_PROXY" != true ]] || die "--proxy cannot be combined with --clear-proxy." "$EXIT_USAGE"
+      APT_PROXY="$(_validate_proxy_url "$2")" || die "Invalid proxy URL. Use http(s)://host[:port] without credentials or a path." "$EXIT_USAGE"
+      ACTION_REQUESTED=true
+      shift 2
+      ;;
+    --clear-proxy)
+      [[ -z "$APT_PROXY" ]] || die "--clear-proxy cannot be combined with --proxy." "$EXIT_USAGE"
+      CLEAR_APT_PROXY=true
+      ACTION_REQUESTED=true
+      shift
+      ;;
+    --prune-backups)
+      [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires a retention count from 1 to 100." "$EXIT_USAGE"
+      (($2 >= 1 && $2 <= 100)) || die "Option $1 must be between 1 and 100." "$EXIT_USAGE"
+      PRUNE_BACKUPS_KEEP="$2"
+      shift 2
+      ;;
+    --network-diagnostics)
+      NETWORK_DIAGNOSTICS=true
+      shift
       ;;
     --add-mirror)
       [[ -n "${2:-}" ]] || die "Option $1 requires a mirror URL." "$EXIT_USAGE"
@@ -2078,23 +2429,29 @@ _parse_args() {
   [[ "$LIST_REQUESTED" != true ]] || ((mode_count += 1))
   [[ "$RESTORE" != true ]] || ((mode_count += 1))
   [[ "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || ((mode_count += 1))
-  ((mode_count <= 1)) || die "Choose only one command mode: menu, status, doctor, list, restore or mirror management." "$EXIT_USAGE"
+  [[ -z "$PRUNE_BACKUPS_KEEP" ]] || ((mode_count += 1))
+  ((mode_count <= 1)) || die "Choose only one command mode: menu, status, doctor, list, restore, backup pruning or mirror management." "$EXIT_USAGE"
+  [[ "$RESTORE_SCOPE" == all || "$RESTORE" == true ]] || die "--restore-scope requires --restore." "$EXIT_USAGE"
+  [[ "$NETWORK_DIAGNOSTICS" != true || "$DOCTOR_REQUESTED" == true ]] || die "--network-diagnostics can only be used with --doctor." "$EXIT_USAGE"
 
   if [[ "$MENU_REQUESTED" == true ]]; then
     [[ "$YES" != true && "$JSON_OUTPUT" != true && "$ACTION_REQUESTED" != true && "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true ]] || die "--menu cannot be combined with CLI operation flags." "$EXIT_USAGE"
   fi
   if [[ "$STATUS_REQUESTED" == true || "$DOCTOR_REQUESTED" == true ]]; then
-    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true && "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || die "--status and --doctor are read-only commands and cannot be combined with operation flags." "$EXIT_USAGE"
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true && "$MIRROR_MANAGEMENT_REQUESTED" != true && -z "$PRUNE_BACKUPS_KEEP" ]] || die "--status and --doctor are read-only commands and cannot be combined with operation flags." "$EXIT_USAGE"
+  fi
+  if [[ -n "$PRUNE_BACKUPS_KEEP" ]]; then
+    [[ "$ACTION_REQUESTED" != true && "$RESTORE" != true && "$LIST_REQUESTED" != true && "$MIRROR_MANAGEMENT_REQUESTED" != true && "$JSON_OUTPUT" != true && "$NETWORK_DIAGNOSTICS" != true ]] || die "--prune-backups cannot be combined with another command." "$EXIT_USAGE"
   fi
   if [[ "$LIST_REQUESTED" == true ]]; then
     [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || die "--list cannot be combined with apply or mirror-management options." "$EXIT_USAGE"
   fi
   if [[ "$RESTORE" == true ]]; then
-    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || die "--restore cannot be combined with apply or mirror-management options." "$EXIT_USAGE"
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$MIRROR_MANAGEMENT_REQUESTED" != true && -z "$PRUNE_BACKUPS_KEEP" ]] || die "--restore cannot be combined with apply or mirror-management options." "$EXIT_USAGE"
   fi
   if [[ "$MIRROR_MANAGEMENT_REQUESTED" == true ]]; then
     [[ "$JSON_OUTPUT" != true && "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true ]] || die "Mirror management cannot be combined with --json, --official-only or --refresh-catalog." "$EXIT_USAGE"
-    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && "$RESTORE" != true && "$LIST_REQUESTED" != true && -z "$FORCE_MIRROR" ]] || die "Mirror management cannot be combined with other operations." "$EXIT_USAGE"
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && "$RESTORE" != true && "$LIST_REQUESTED" != true && -z "$FORCE_MIRROR" && -z "$PRUNE_BACKUPS_KEEP" ]] || die "Mirror management cannot be combined with other operations." "$EXIT_USAGE"
   fi
 }
 _is_interactive() {
@@ -2125,6 +2482,14 @@ _print_apply_preview() {
   printf 'Selected mirror: %s\n' "$SELECTED_MIRROR"
   printf 'APT source file: %s\n' "$APT_DEB822_FILE"
   printf 'APT network config: %s\n' "$APT_CONF_FILE"
+  printf 'APT timeout/retries: %ss / %s\n' "$TIMEOUT_TOTAL" "$APT_RETRIES"
+  if [[ "$CLEAR_APT_PROXY" == true ]]; then
+    printf 'APT proxy: DIRECT (explicitly disabled)\n'
+  elif [[ -n "$APT_PROXY" ]]; then
+    printf 'APT proxy: %s\n' "$APT_PROXY"
+  else
+    printf 'APT proxy: existing settings preserved\n'
+  fi
   printf 'Backup root: %s\n' "$BACKUP_BASE"
   if [[ -f "$APT_SOURCES_FILE" ]]; then
     printf 'Legacy sources.list: may be removed if it contains only Ubuntu archive entries (%s)\n' "$APT_SOURCES_FILE"
@@ -2146,8 +2511,16 @@ _confirm_restore() {
   local backup_path="$1"
   _print_section_header "RESTORE PREVIEW"
   printf 'Snapshot: %s\n' "$backup_path"
-  printf 'Managed targets restored exactly: %s, %s, %s\n' "$APT_SOURCES_FILE" "$APT_SOURCES_DIR" "$APT_CONF_DIR"
-  printf 'APT update: apt-get update will run after restoration\n'
+  case "$RESTORE_SCOPE" in
+  all) printf 'Restore scope: all APT source and network configuration\n' ;;
+  sources) printf 'Restore scope: APT sources only\n' ;;
+  network) printf 'Restore scope: APT network settings only\n' ;;
+  esac
+  if [[ "$RESTORE_SCOPE" == network ]]; then
+    printf 'APT update: skipped for network-only restore\n'
+  else
+    printf 'APT update: apt-get update will run after restoration\n'
+  fi
   _confirm_action "Restore this snapshot?"
 }
 
@@ -2421,6 +2794,22 @@ _run_apply_flow() {
       error "Invalid Ubuntu mirror URL: $FORCE_MIRROR"
       return "$EXIT_USAGE"
     }
+    if _uses_ports_archive && [[ "$forced_url" != */ubuntu-ports ]]; then
+      error "Architecture $(_apt_architecture) requires a mirror URL ending in /ubuntu-ports."
+      return "$EXIT_USAGE"
+    fi
+    if ! _uses_ports_archive && [[ "$forced_url" == */ubuntu-ports ]]; then
+      error "A ports archive URL cannot be used on architecture $(_apt_architecture)."
+      return "$EXIT_USAGE"
+    fi
+    if _uses_ports_archive && [[ "$forced_url" != */ubuntu-ports ]]; then
+      error "Architecture $(_apt_architecture) requires a mirror URL ending in /ubuntu-ports."
+      return "$EXIT_USAGE"
+    fi
+    if ! _uses_ports_archive && [[ "$forced_url" == */ubuntu-ports ]]; then
+      error "A ports archive URL cannot be used on architecture $(_apt_architecture)."
+      return "$EXIT_USAGE"
+    fi
     if [[ "$OFFICIAL_ONLY" == true ]] && ! _catalog_url_is_official "$forced_url"; then
       error "The specified mirror is not in the built-in official Ubuntu mirror profile."
       return "$EXIT_USAGE"
@@ -2462,6 +2851,54 @@ _run_apply_flow() {
     _print_summary
   fi
 }
+_run_prune_backups() {
+  if [[ "$YES" != true ]] && ! _is_interactive; then
+    error "Non-interactive backup cleanup requires --yes."
+    return "$EXIT_USAGE"
+  fi
+  if [[ "$(id -u)" -ne 0 ]]; then
+    error "Backup cleanup must be run as root."
+    return "$EXIT_NOT_ROOT"
+  fi
+  [[ -d "$BACKUP_BASE" ]] || {
+    info "No backup directory exists; nothing to clean."
+    return 0
+  }
+
+  local listing line path valid_count=0 removed_count=0 confirm_status=0
+  local -a valid_backups=()
+  listing="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn || true)"
+  while IFS= read -r line; do
+    path="\${line#*$'\t'}"
+    [[ -n "$path" && "$(dirname "$path")" == "$BACKUP_BASE" && ! -L "$path" ]] || continue
+    [[ -f "$path/manifest" && ! -L "$path/manifest" && -f "$path/apt-config.tar" && ! -L "$path/apt-config.tar" && -f "$path/archive.sha256" && ! -L "$path/archive.sha256" ]] || continue
+    grep -qx 'format=1' "$path/manifest" || continue
+    (cd "$path" && sha256sum -c archive.sha256 >/dev/null 2>&1) || continue
+    valid_backups+=("$path")
+    ((valid_count += 1))
+  done <<<"$listing"
+
+  if ((valid_count <= PRUNE_BACKUPS_KEEP)); then
+    info "Found $valid_count verified snapshot(s); retention limit is $PRUNE_BACKUPS_KEEP. Nothing to remove."
+    return 0
+  fi
+  printf 'Verified snapshots: %s\nRetention count: %s\n' "$valid_count" "$PRUNE_BACKUPS_KEEP"
+  _confirm_action "Remove $((valid_count - PRUNE_BACKUPS_KEEP)) older verified backup snapshot(s)?" || confirm_status=$?
+  [[ "$confirm_status" -eq 0 ]] || return "$confirm_status"
+  _acquire_mutation_lock
+  local i
+  for ((i = PRUNE_BACKUPS_KEEP; i < valid_count; i++)); do
+    path="\${valid_backups[$i]}"
+    [[ "$(dirname "$path")" == "$BACKUP_BASE" && ! -L "$path" ]] || return "$EXIT_RESTORE"
+    rm -rf -- "$path" || {
+      error "Could not remove verified backup snapshot: $path"
+      return "$EXIT_RESTORE"
+    }
+    ((removed_count += 1))
+  done
+  info "Removed $removed_count old verified snapshot(s); retained the $PRUNE_BACKUPS_KEEP newest."
+}
+
 _run_restore_flow() {
   if [[ "$YES" != true ]] && ! _is_interactive; then
     error "Restoring APT configuration from a non-interactive session requires --yes."
@@ -2488,12 +2925,16 @@ _run_restore_flow() {
   SELECTED_TIME=""
   if [[ "$JSON_OUTPUT" == true ]]; then
     _restore_backup "$selected_backup" >&2 || return "$EXIT_RESTORE"
-    apt-get update >&2 || return "$EXIT_NETWORK"
+    if [[ "$RESTORE_SCOPE" != network ]]; then apt-get update >&2 || return "$EXIT_NETWORK"; fi
     _print_json
   else
     _restore_backup "$selected_backup" || return "$EXIT_RESTORE"
-    apt-get update || return "$EXIT_NETWORK"
-    info "APT sources restored and updated successfully."
+    if [[ "$RESTORE_SCOPE" != network ]]; then
+      apt-get update || return "$EXIT_NETWORK"
+      info "APT sources restored and updated successfully."
+    else
+      info "APT network settings restored; package indexes were not changed."
+    fi
   fi
 }
 
@@ -2800,6 +3241,13 @@ main() {
     local list_status=0
     _run_list_flow || list_status=$?
     exit "$list_status"
+  fi
+
+  if [[ -n "$PRUNE_BACKUPS_KEEP" ]]; then
+    local prune_status=0
+    _run_prune_backups || prune_status=$?
+    [[ "$prune_status" -eq "$EXIT_CANCELLED" ]] && prune_status="$EXIT_OK"
+    exit "$prune_status"
   fi
 
   if [[ "$RESTORE" == true ]]; then

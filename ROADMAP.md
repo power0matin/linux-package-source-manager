@@ -906,22 +906,22 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 
 **Goal:** Replace hard-coded URL assumptions with a validated, ecosystem-aware catalog and trustworthy benchmark data.
 
-- [ ] Define and validate catalog schema.
-- [ ] Separate built-in, dynamically discovered and user-defined entries.
-- [ ] Integrate Ubuntu mirror discovery as one input.
-- [ ] Add cache of last known-good catalog.
-- [ ] Add protocol-aware probe adapters.
-- [ ] Add bounded concurrency and configurable timeout/retry policy.
-- [ ] Record latency, response code, redirect, freshness and availability measurements.
-- [ ] Add deterministic compatibility gates and documented scoring.
-- [ ] Add manual region selection and official-only profile.
-- [ ] Add custom mirror validation and delete/disable actions.
+- [x] Define and validate catalog schema.
+- [x] Separate built-in, dynamically discovered and user-defined entries.
+- [x] Integrate Ubuntu mirror discovery as one input.
+- [x] Add cache of last known-good catalog.
+- [x] Add protocol-aware APT probe and Release-metadata verification.
+- [x] Add bounded concurrency and configurable timeout/retry policy.
+- [x] Record latency, response code, redirect, freshness and availability measurements.
+- [x] Add deterministic compatibility gates and documented scoring.
+- [x] Add manual region selection and official-only profile.
+- [x] Add custom mirror validation and add/remove/disable/enable actions.
 
 **Acceptance criteria**
 
-- [ ] Catalog failure does not prevent use of a last known-good catalog or a manually supplied mirror.
-- [ ] Invalid/stale/incompatible sources cannot win merely because they are fast.
-- [ ] Benchmark does not install packages or change system configuration.
+- [x] Catalog discovery failure falls back to a schema-valid last-known-good cache; a manually supplied mirror can be verified independently of discovery.
+- [x] Invalid, stale, incompatible, redirected-to-untrusted or unsigned sources cannot win merely because they are fast.
+- [x] Benchmark/list paths remain read-only: no package installation and no APT configuration mutation.
 
 ### Phase 4 — Complete Ubuntu APT manager
 
@@ -1145,6 +1145,7 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Current execution state:** Phase 2 — PR #3 is open; ShellCheck, shfmt and all three Ubuntu test jobs pass (71/71 each). Merge approval is pending.  
-**Next permitted work unit:** Merge Phase 2 before starting Phase 3.  
-**Release/deployment status:** No release or deployment is implied by this document.
+**Current execution state:** Phase 3 — PR #4 is ready for review; ShellCheck, shfmt and all three Ubuntu offline test jobs pass on the current PR head.  
+**Next permitted work unit:** Merge PR #4 and re-check the resulting `main` head before starting Phase 4.  
+**Live-network validation:** Public mirror discovery and real archive-signature checks were not run in CI; CI uses offline fixtures and mocked probe responses.  
+**Release/deployment status:** No release, tag or deployment has been created.

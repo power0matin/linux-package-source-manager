@@ -45,8 +45,13 @@ sudo bash power-apt-boost.sh --dry-run
 
 ## Features
 
-- Ubuntu codename detection and an explicit catalog of global and regional mirrors
-- Parallel health checks for main, updates and security repository metadata
+- Ubuntu codename detection and a versioned catalog of built-in, Ubuntu-index and user-defined mirrors
+- Strict mirror URL and catalog-record validation, including provenance and official-host status
+- Last-known-good Ubuntu mirror index cache with TTL, schema checks and failure fallback
+- Region selection and an official-only benchmark profile
+- Bounded parallel probes with configurable worker limits and transient retry policy
+- Ubuntu Release origin, suite, codename, metadata-age and archive-signature verification for main, updates and security
+- Deterministic benchmark score: average endpoint latency plus 50 ms per redirect
 - Numbered terminal menu, with optional `whiptail` dialogs when installed
 - Overview, APT management, mirror benchmark, Backup/Restore, Diagnostics and session Settings screens
 - Safe apply and restore previews with confirmation; `--yes` is required to bypass prompts in non-interactive sessions
@@ -84,6 +89,22 @@ sudo bash power-apt-boost.sh
 # Or explicitly approve a non-interactive run:
 curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | sudo bash -s -- --yes
 ```
+
+## Mirror catalog and benchmark
+
+The mirror catalog combines three sources:
+
+- **Built-in:** reviewed archive hosts bundled with the script. The official-only profile uses only entries explicitly marked as official in this catalog.
+- **Ubuntu index:** candidates returned by `mirrors.ubuntu.com/mirrors.txt`. Discovery is refreshed at most once per 24 hours unless `--refresh-catalog` is requested. The last-known-good cache is stored at `/var/cache/power-apt-boost/ubuntu-index-v1.tsv` with root-only permissions. Index entries are candidates, not proof that a host is an official Ubuntu country mirror.
+- **Custom:** user-managed entries stored at `/etc/power-apt-boost/custom-mirrors-v1.tsv`, with root-only permissions. Adding a custom entry requires a successful live verification of all three Ubuntu suites.
+
+A candidate is eligible only when the main, updates and security `InRelease` files return HTTP 200, identify the expected Ubuntu origin/suite/codename, have metadata no older than seven days (and a non-expired `Valid-Until` when present), and pass `gpgv` verification with the local Ubuntu archive keyring. Redirects must remain on the same host and cannot downgrade HTTPS to HTTP. Missing signature-verification support fails closed.
+
+The deterministic ranking score is:
+
+`average(InRelease endpoint latency) + 0.050 seconds × redirect count`
+
+Only eligible mirrors are ranked. Benchmark workers are bounded to 1–8 and transient probe retries to 0–3. Benchmark and list operations do not install packages or edit APT configuration.
 
 ## Usage
 

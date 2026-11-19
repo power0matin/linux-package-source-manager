@@ -3,7 +3,7 @@
 > **Roadmap version:** 1.0  
 > **Prepared:** 2026-11-19  
 > **Project:** [power0matin/power-apt-boost](https://github.com/power0matin/power-apt-boost)  
-> **Current implementation baseline:** `main` at `ca9a96a5d7c4aba4c4ef7edd33b47f384106b633`  
+> **Current implementation baseline:** `main` at `56eaf13e76e276bbaae160e59a0aca506490f02d`  
 > **Current script version string:** `3.0.0`
 
 This document is the implementation plan for evolving Power APT Boost into an **Ubuntu-first package-source and mirror manager for servers and developer environments**. It expands the existing Ubuntu APT mirror selector to cover the package ecosystems commonly used on Ubuntu servers, including Python, Node.js, Docker/OCI, Go, Rust, PHP, Java and selected additional ecosystems.
@@ -1145,7 +1145,8 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Current execution state:** Phase 3 — PR #4 is ready for review; ShellCheck, shfmt and all three Ubuntu offline test jobs pass on the current PR head.  
-**Next permitted work unit:** Merge PR #4 and re-check the resulting `main` head before starting Phase 4.  
+**Current execution state:** Phase 4 — implementation is on `feat/phase-4-apt-manager-20261120`; test and documentation validation are in progress.  
+**Previous phases:** PRs #1-#4 are merged into `main`; Phase 3 is complete.  
+**Next permitted work unit:** Complete Phase 4 validation, open its focused PR, then wait for review and merge before starting Phase 5.  
 **Live-network validation:** Public mirror discovery and real archive-signature checks were not run in CI; CI uses offline fixtures and mocked probe responses.  
 **Release/deployment status:** No release, tag or deployment has been created.

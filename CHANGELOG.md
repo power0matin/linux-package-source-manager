@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Added APT source inventory for legacy and Deb822 sources, with Ubuntu/third-party classification and duplicate URI/suite reporting.
+- Added architecture-aware Ubuntu archive selection, including a separate security pocket on amd64/i386 and ports archive selection on other architectures.
+- Added explicit APT proxy set/clear options, APT retry configuration and bounded live DNS/TLS diagnostics.
+- Added selective restore scopes and verified backup retention cleanup.
+- Added interactive-menu controls for APT retries, proxies, network diagnostics and backup cleanup.
 - Added an interactive terminal menu with numbered Bash navigation and optional `whiptail` dialogs.
 - Added Overview, APT management, mirror benchmark, Backup/Restore, Diagnostics and session Settings screens.
 - Added read-only `--status` and `--doctor` commands with a versioned JSON report schema.
@@ -21,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Testing
 
+- Added coverage for source inventory, duplicate detection, proxy validation, APT retry configuration, ports-archive selection, unmanaged Deb822 preservation, security-suite separation, network-only restore and verified backup pruning.
 - Added coverage for menu selection, TTY safety, explicit approval, cancellation, status/doctor reports and JSON escaping.
 - Added offline tests for catalog schemas, cache fallback and refresh, custom mirror persistence, Release freshness, compatibility gates and deterministic benchmark selection.
 

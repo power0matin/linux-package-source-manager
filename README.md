@@ -188,40 +188,55 @@ sudo bash power-apt-boost.sh --verbose
 | `-m`, `--mirror URL` | Test and use a specific mirror |
 | `-r`, `--restore` | Restore APT config from latest backup |
 | `--restore-path PATH` | Restore from a specific backup |
+| `--restore-scope SCOPE` | Restore all APT config, sources only, or network settings only |
+| `--prune-backups N` | Keep N newest verified snapshots; remove older verified snapshots |
 | `--dry-run` | Test mirrors and preview without changing config |
 | `--skip-update` | Apply config but skip `apt-get update`; preserve existing APT lists and archive cache |
 | `--list` | List available mirrors and test all three repository suites |
 | `--menu` | Open the interactive terminal menu |
 | `--status` | Show read-only system and APT status |
 | `--doctor` | Run read-only local health checks |
-| `-y`, `--yes` | Explicitly confirm apply/restore in non-interactive mode |
+| `--network-diagnostics` | Run bounded live DNS/TLS checks; requires `--doctor` |
+| `-y`, `--yes` | Explicitly confirm apply/restore/cleanup in non-interactive mode |
 | `--json` | Output reports using JSON schema version 1 |
 | `--verbose` | Show detailed output |
 | `--quiet` | Suppress non-essential output |
 | `--no-spinner` | Disable spinner |
-| `--timeout SECS` | Probe timeout in seconds (1-300, default 20) |
+| `--timeout SECS` | Probe and APT network timeout in seconds (1-300, default 20) |
+| `--apt-retries N` | APT network retries (0-10, default 3) |
+| `--proxy URL` | Set HTTP/HTTPS APT proxy (no embedded credentials) |
+| `--clear-proxy` | Explicitly bypass APT proxies with `DIRECT` |
+| `--workers N` | Mirror benchmark concurrency (1-8) |
+| `--retries N` | Retry transient mirror probe failures (0-3) |
+| `--refresh-catalog` | Refresh Ubuntu mirror discovery before listing/benchmarking |
+| `--official-only` | Limit the catalog to built-in official Ubuntu archive hosts |
+| `--add-mirror URL` | Verify and save a custom mirror |
+| `--remove-mirror ID` | Remove a saved custom mirror |
+| `--disable-mirror ID` | Disable a saved custom mirror |
+| `--enable-mirror ID` | Enable a saved custom mirror |
 | `--country CODE` | Filter mirrors by supported two-letter country code |
 | `--ipv6` | Use IPv6 for mirror testing and generated APT config |
 | `--log-file PATH` | Write log to file |
 
 ## What It Does
 
-1. **Detects** Ubuntu version codename
-2. **Tests** multiple Ubuntu mirrors for reachability and speed
-3. **Selects** the fastest working mirror
-4. **Backs up** current APT configuration to `/var/backups/power-apt-boost/`
-5. **Writes** modern deb822-format APT sources to `/etc/apt/sources.list.d/ubuntu.sources`
-6. **Configures** APT network optimizations (IPv4, retries, timeouts)
-7. **Preserves** existing package lists and downloaded archives when `--skip-update` is selected
-8. **Runs** `apt-get update` unless `--skip-update` is selected
+1. **Inspects** active APT source records from `sources.list`, `.list` and `.sources` files, including third-party and duplicate records.
+2. **Detects** Ubuntu codename and system architecture.
+3. **Builds** an architecture-compatible catalog: standard archive plus a separate security pocket on amd64/i386, or the Ubuntu ports archive on other architectures.
+4. **Tests** mirror `InRelease` endpoints for main, updates and security; checks suite/codename, metadata freshness, redirect policy and Ubuntu archive signatures.
+5. **Ranks** only verified candidates using average endpoint latency plus a fixed redirect penalty.
+6. **Previews** the exact managed APT source and network configuration before an approved apply.
+7. **Creates** a checksum-validated snapshot, writes managed files atomically and verifies the generated configuration with APT's own parser.
+8. **Runs** `apt-get update` unless `--skip-update` is selected; a failed write or update restores the previous APT configuration.
 
 ## What It Changes
 
 | File | Action |
 |------|--------|
-| `/etc/apt/sources.list.d/ubuntu.sources` | Created/overwritten |
-| `/etc/apt/apt.conf.d/99-power-apt-boost` | Created/overwritten |
-| `/etc/apt/sources.list` | Removed (if no third-party repos) |
+| `/etc/apt/sources.list.d/ubuntu.sources` | Created or updated only when tool-managed or containing only recognized Ubuntu archive entries; unexpected repositories cause a safe refusal |
+| `/etc/apt/apt.conf.d/99-power-apt-boost` | Created or updated only when tool-managed; symlinks and unmanaged files are refused |
+| `/etc/apt/sources.list` | Removed only when every active source is a recognized Ubuntu archive; third-party, ESM and unclassified entries are preserved |
+| Other `sources.list.d/*.list` and `*.sources` files | Read for inventory, otherwise left untouched |
 | `/var/backups/power-apt-boost/` | Validated APT snapshots (archive, manifest and SHA-256 checksum) |
 | `/run/lock/power-apt-boost.lock` | Mutation lock file |
 
@@ -258,6 +273,48 @@ sudo bash power-apt-boost.sh --restore-path /var/backups/power-apt-boost/2025-01
 
 Prefer the script's `--restore` / `--restore-path` command. New snapshots record the existence state of the complete managed APT source/config directories, include a SHA-256 checksum, and restore those paths as a unit. Legacy snapshots remain readable but cannot guarantee exact removal of files that did not exist when they were created.
 
+## Ubuntu APT source safety and network controls
+
+### Source inventory
+
+`--status` and `--status --json` report the number of active source records, recognized Ubuntu archive records, third-party records and duplicate URI/suite pairs. The inventory reads legacy `sources.list` plus `.list` and Deb822 `.sources` files. It does not change them.
+
+### Archive, security and architecture handling
+
+On amd64/i386, the selected mirror serves the release, updates and backports suites; the security suite stays on `security.ubuntu.com`. On other architectures, the ports archive serves all four suites. Generated entries retain `Signed-By` pointing to the local Ubuntu archive keyring. The apply path checks the source layout and asks APT to parse the resulting configuration before reporting success.
+
+### Third-party source preservation
+
+Power APT Boost does not rewrite separate third-party source files. It refuses to replace an unmanaged or mixed `ubuntu.sources` file, and refuses to replace a managed file if an additional repository stanza has been added to it. It also preserves `sources.list` when it contains non-archive, ESM or unclassified entries. Move unrelated repositories into their own `.list` or `.sources` file rather than combining them with the tool-managed Ubuntu file.
+
+### APT proxy and retry configuration
+
+```bash
+sudo bash power-apt-boost.sh --proxy http://127.0.0.1:3128 --timeout 45 --apt-retries 5
+sudo bash power-apt-boost.sh --clear-proxy
+```
+
+The proxy URL accepts only an HTTP(S) host and optional port. Usernames, passwords, paths, query strings and fragments are rejected; use an APT-supported credential mechanism separately when authentication is required. With no proxy option, an existing proxy directive in the managed file and settings in other APT config files are preserved. `--clear-proxy` explicitly writes `DIRECT`.
+
+### Diagnostics
+
+```bash
+sudo bash power-apt-boost.sh --doctor
+sudo bash power-apt-boost.sh --doctor --network-diagnostics
+```
+
+The default doctor checks local APT trust prerequisites, suspicious insecure-source overrides, duplicate source records, cached InRelease file age and configured proxy presence. Live DNS and TLS checks run only when `--network-diagnostics` is supplied.
+
+### Selective restore and backup cleanup
+
+```bash
+sudo bash power-apt-boost.sh --restore --restore-scope sources
+sudo bash power-apt-boost.sh --restore --restore-scope network
+sudo bash power-apt-boost.sh --prune-backups 5 --yes
+```
+
+Restore scope can be `all`, `sources` or `network`. A network-only restore does not run `apt-get update`; source and full restores do. Backup cleanup considers only format-1 snapshots with a valid SHA-256 manifest, retains the requested number of newest snapshots and asks for confirmation. Non-interactive cleanup requires `--yes`. Legacy or invalid snapshots are not deleted by the cleanup command.
+
 ## What It Does NOT Change
 
 The current tool is an APT source/configuration utility. It does not:
@@ -278,7 +335,7 @@ Power APT Boost tests each mirror against three endpoints:
 /dists/<codename>-security/InRelease
 ```
 
-Only mirrors that return HTTP 200 for all three are considered. The selector measures the wall-clock duration of three concurrent endpoint probes. This is a reachability/response-time proxy, not a sustained bandwidth benchmark or a mirror-freshness check. The `--list` command uses the same three-endpoint health criteria.
+A candidate is eligible only when all three endpoints return HTTP 200, match the expected Ubuntu origin/suite/codename, pass freshness and same-host redirect checks, and verify against the local Ubuntu archive keyring. The selector measures endpoint response time; it is not a sustained bandwidth benchmark. The deterministic score is the average endpoint latency plus 50 ms per redirect. Concurrency is bounded to 1-8 workers, and `--list` uses the same compatibility checks.
 
 ### Default mirrors
 
@@ -381,14 +438,15 @@ If you have third-party APT sources in `/etc/apt/sources.list`, Power APT Boost 
 | 22.04 LTS Jammy | CLI smoke checks |
 | 20.04 LTS Focal | CLI smoke checks |
 
-CI runs offline regression tests for snapshot creation, checksum verification, exact restore, atomic writes, IP-family configuration, country filtering, dry-run behavior and mirror endpoint criteria. Live mirror connectivity is not part of the automated test suite. Requires Bash 4.0+ and one of: curl, wget.
+CI runs ShellCheck, shfmt and an offline regression suite on Ubuntu 20.04, 22.04 and 24.04. Offline tests cover source parsing, inventory, backup/restore, config ownership, proxy validation, architecture-specific archive selection, rollback and mirror compatibility. Live mirror connectivity and external DNS/TLS availability are not CI prerequisites. Requires Bash 4.0+ and one of: curl, wget.
 
 ## Security
 
 - See [SECURITY.md](SECURITY.md) for reporting vulnerabilities
 - Review the script before running from a URL
 - Use `--dry-run` to preview changes
-- A backup is attempted before changes, but complete backup validation and exact rollback are not yet guaranteed; see Phase 1 in [ROADMAP.md](ROADMAP.md)
+- A checksum-validated snapshot is required before APT configuration changes. File writes are atomic; failed writes or `apt-get update` restore the previous managed APT configuration.
+- Snapshots cover APT source/configuration paths only. They do not snapshot installed packages or restore package-index/cache side effects performed internally by `apt-get update`.
 
 ## Contributing
 

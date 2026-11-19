@@ -707,6 +707,7 @@ _load_mirror_catalog() {
 _get_mirrors() {
   local -a mirrors=()
   local i found_country=false existing country_lower
+  _apt_architecture_supported || die "Unsupported or undetected APT architecture: $(_apt_architecture)." "$EXIT_USAGE"
   country_lower="$(printf '%s' "$COUNTRY_FILTER" | tr '[:upper:]' '[:lower:]')"
 
   for i in "${!_CATALOG_URLS[@]}"; do
@@ -1272,10 +1273,18 @@ _apt_architecture() {
   printf '%s\n' "${architecture:-unknown}"
 }
 
+_apt_architecture_supported() {
+  case "$(_apt_architecture)" in
+  amd64 | i386 | arm64 | armhf | ppc64el | riscv64 | s390x) return 0 ;;
+  *) return 1 ;;
+  esac
+}
+
 _uses_ports_archive() {
   case "$(_apt_architecture)" in
-  amd64 | i386 | unknown) return 1 ;;
-  *) return 0 ;;
+  amd64 | i386) return 1 ;;
+  arm64 | armhf | ppc64el | riscv64 | s390x) return 0 ;;
+  *) return 2 ;;
   esac
 }
 
@@ -1400,6 +1409,10 @@ _collect_source_inventory() {
 _write_apt_sources() {
   local mirror_url="$1"
   local has_third_party=false security_url managed_mirror="" existing_uri existing_suite existing_count=0
+  if ! _apt_architecture_supported; then
+    error "Unsupported or undetected APT architecture: $(_apt_architecture). Refusing to choose an archive."
+    return 1
+  fi
   if [[ ! -f "$KEYRING_PATH" ]]; then
     warn "Keyring not found at $KEYRING_PATH; APT signature validation may fail."
   fi
@@ -1445,6 +1458,22 @@ _write_apt_sources() {
         error "Managed Ubuntu source file has an unexpected number of active URI/suite entries; refusing to replace it."
         return 1
       fi
+      local field_count
+      field_count="$(grep -Ec '^[A-Za-z][A-Za-z0-9-]*:' "$APT_DEB822_FILE" || true)"
+      if [[ "$field_count" != 10 ]] ||
+        [[ "$(grep -c '^Types: deb$' "$APT_DEB822_FILE" || true)" != 2 ]] ||
+        [[ "$(grep -c '^URIs:' "$APT_DEB822_FILE" || true)" != 2 ]] ||
+        [[ "$(grep -c '^Suites:' "$APT_DEB822_FILE" || true)" != 2 ]] ||
+        [[ "$(grep -c '^Components: main restricted universe multiverse$' "$APT_DEB822_FILE" || true)" != 2 ]] ||
+        [[ "$(grep -c "^Signed-By: $KEYRING_PATH$" "$APT_DEB822_FILE" || true)" != 2 ]]; then
+        error "Managed Ubuntu source file contains unexpected fields or options; refusing to overwrite it."
+        return 1
+      fi
+      if ! grep -Fxq "Suites: $CODENAME $CODENAME-updates $CODENAME-backports" "$APT_DEB822_FILE" ||
+        ! grep -Fxq "Suites: $CODENAME-security" "$APT_DEB822_FILE"; then
+        error "Managed Ubuntu source file suite configuration was changed; refusing to overwrite it."
+        return 1
+      fi
     else
       while IFS='|' read -r existing_uri existing_suite; do
         [[ -n "$existing_uri" && -n "$existing_suite" ]] || continue
@@ -1473,6 +1502,10 @@ _write_apt_sources() {
       fi
     done < <(_apt_source_records "$APT_SOURCES_FILE")
     if [[ -s "$APT_SOURCES_FILE" && "$legacy_count" -eq 0 ]]; then
+      has_third_party=true
+    fi
+    if grep -Eq '^[[:space:]]*deb(-src)?[[:space:]]+\[' "$APT_SOURCES_FILE"; then
+      warn "APT source options detected in sources.list; preserving the file rather than dropping options."
       has_third_party=true
     fi
   fi
@@ -1509,14 +1542,30 @@ SOURCES
 }
 
 _write_apt_config() {
-  local force_ip_config proxy_config="" existing_proxy_config=""
+  local force_ip_config proxy_config="" existing_proxy_config="" existing_line
   if [[ -L "$APT_CONF_FILE" ]]; then
     error "Refusing to replace a symlinked APT network config: $APT_CONF_FILE."
     return 1
   fi
-  if [[ -f "$APT_CONF_FILE" ]] && ! grep -q '^# Power APT Boost' "$APT_CONF_FILE"; then
-    error "Refusing to overwrite unmanaged APT network settings in $APT_CONF_FILE."
-    return 1
+  if [[ -f "$APT_CONF_FILE" ]]; then
+    if ! grep -q '^# Power APT Boost' "$APT_CONF_FILE"; then
+      error "Refusing to overwrite unmanaged APT network settings in $APT_CONF_FILE."
+      return 1
+    fi
+    while IFS= read -r existing_line || [[ -n "$existing_line" ]]; do
+      [[ "$existing_line" =~ ^[[:space:]]*(#|$) ]] && continue
+      case "$existing_line" in
+      'Acquire::ForceIPv4 "'*'";' | 'Acquire::ForceIPv6 "'*'";' | \
+        'Acquire::Retries "'*'";' | 'Acquire::http::Timeout "'*'";' | \
+        'Acquire::https::Timeout "'*'";' | 'Acquire::Languages "'*'";' | \
+        'Acquire::http::Proxy "'*'";' | 'Acquire::https::Proxy "'*'";' ) ;;
+      *)
+        error "Refusing to overwrite an unexpected directive in managed APT config: $APT_CONF_FILE."
+        error "Move the custom directive to a separate apt.conf.d file, then retry."
+        return 1
+        ;;
+      esac
+    done <"$APT_CONF_FILE"
   fi
   if [[ "$USE_IPV6" == true ]]; then
     force_ip_config='Acquire::ForceIPv6 "true";'

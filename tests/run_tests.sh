@@ -402,6 +402,26 @@ ATOMIC
   assert_equal "https://proxy.example:8443" "$proxy_result" "proxy URL validator accepts a host and port"
   _validate_proxy_url "http://user:secret@proxy.example:3128" >/dev/null 2>&1 || proxy_status=$?
   assert_exit_code 1 "$proxy_status" "proxy URL validator rejects embedded credentials"
+  printf 'deb [arch=amd64 signed-by=/usr/share/keyrings/example.gpg] https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
+  write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
+  CODENAME=noble
+  _write_apt_sources "https://archive.ubuntu.com/ubuntu" >/dev/null 2>&1
+  assert_file_contains "$APT_SOURCES_FILE" "signed-by=/usr/share/keyrings/example.gpg" "legacy Ubuntu source options are preserved"
+  rm -f "$APT_SOURCES_FILE"
+
+  printf '# Power APT Boost test fixture\n# Mirror: https://archive.ubuntu.com/ubuntu\nAcquire::Languages "none";\nAcquire::Custom::Option "keep";\n' >"$APT_CONF_FILE"
+  local unmanaged_config_status=0
+  _write_apt_config >/dev/null 2>&1 || unmanaged_config_status=$?
+  assert_exit_code 1 "$unmanaged_config_status" "managed APT config refuses an unexpected custom directive"
+  assert_file_contains "$APT_CONF_FILE" 'Acquire::Custom::Option "keep";' "refused APT config overwrite leaves custom directive intact"
+  write_managed_config_fixture
+
+  dpkg() { printf 'mips64el\n'; }
+  local unsupported_arch_status=0
+  _apt_architecture_supported || unsupported_arch_status=$?
+  assert_exit_code 1 "$unsupported_arch_status" "unsupported architecture does not default to standard archive"
+  unset -f dpkg
+
   dpkg() { printf 'arm64\n'; }
   local ports_mode=1 ports_mirrors
   _uses_ports_archive || ports_mode=0
@@ -520,7 +540,7 @@ SOURCES
     printf '%bFAIL%b failed atomic write leaves no destination file\n' "$RED" "$RESET"
   fi
 
-  printf 'deb https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
+  printf 'deb https://archive.ubuntu.com/ubuntu noble main\n# write-rollback-sources-list\n' >"$APT_SOURCES_FILE"
   write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
   printf 'write-rollback-source-config\n' >>"$APT_DEB822_FILE"
   write_managed_config_fixture

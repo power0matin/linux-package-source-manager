@@ -183,7 +183,8 @@ test_filesystem_operations() {
   assert_exit_code 10 "$cancel_status" "declining an apply preview returns cancelled"
   assert_equal "$before_cancel" "$after_cancel" "cancel leaves APT configuration content unchanged"
 
-  local escaped_json="${_TEST_ROOT}/escaped.json"
+  local escaped_json
+  escaped_json="$(mktemp "${TMPDIR:-/tmp}/power-apt-boost-json.XXXXXX")"
   local escaped_value
   escaped_value='quote " slash \\ literal'
   local json_escape_status=0
@@ -196,6 +197,7 @@ with open(sys.argv[1], encoding="utf-8") as stream:
 assert actual == sys.argv[2]
 PY
   assert_exit_code 0 "$json_escape_status" "JSON quoting round-trips quotes and backslashes"
+  rm -f "$escaped_json"
 
   printf 'deb http://old.example/ubuntu noble main\n' >"$APT_SOURCES_FILE"
   printf 'Types: deb\nURIs: https://old.example/ubuntu\n' >"${APT_SOURCES_DIR}/ubuntu.sources"

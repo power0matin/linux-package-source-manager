@@ -1281,6 +1281,11 @@ _write_apt_sources() {
     warn "Keyring not found at $KEYRING_PATH; APT signature validation may fail."
   fi
 
+  if [[ -e "$APT_DEB822_FILE" ]] && ! _apt_legacy_managed_source_is_owned "$APT_DEB822_FILE"; then
+    error "Refusing to overwrite an unmanaged source file: $APT_DEB822_FILE"
+    return 1
+  fi
+
   if ! _atomic_write "$APT_DEB822_FILE" 0644 <<SOURCES; then
 # Power APT Boost — Ubuntu mirror configuration
 # Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')

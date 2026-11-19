@@ -1854,7 +1854,7 @@ _print_status_report() {
   printf '%-24s %s\n' "HTTPS proxy:" "$REPORT_APT_NETWORK_HTTPS_PROXY"
   printf '%-24s %s\n' "APT retries:" "$REPORT_APT_NETWORK_RETRIES"
   printf '%-24s %s\n' "APT IP family:" "$REPORT_APT_NETWORK_IP_FAMILY"
-  if (($(${#REPORT_APT_SOURCE_FILE[@]} > 0)); then
+  if ((${#REPORT_APT_SOURCE_FILE[@]} > 0)); then
     printf '\nAPT source inventory:\n'
     local i
     for ((i = 0; i < ${#REPORT_APT_SOURCE_FILE[@]}; i++)); do
@@ -1862,7 +1862,7 @@ _print_status_report() {
       printf '      %s | %s | %s\n' "${REPORT_APT_SOURCE_KIND[$i]}" "${REPORT_APT_SOURCE_URIS[$i]}" "${REPORT_APT_SOURCE_SUITES[$i]}"
     done
   fi
-  if (($(${#REPORT_APT_SOURCE_WARNINGS[@]} > 0)); then
+  if ((${#REPORT_APT_SOURCE_WARNINGS[@]} > 0)); then
     printf '\nAPT inventory warnings:\n'
     local warning
     for warning in "${REPORT_APT_SOURCE_WARNINGS[@]}"; do
@@ -1929,6 +1929,29 @@ _doctor_collect() {
     _doctor_add_check "apt_configuration" "ok" "APT configuration directory is readable"
   else
     _doctor_add_check "apt_configuration" "warning" "APT configuration directory is not readable"
+  fi
+  if [[ "$REPORT_APT_SOURCE_DUPLICATES" -gt 0 ]]; then
+    _doctor_add_check "apt_source_duplicates" "warning" "$REPORT_APT_SOURCE_DUPLICATES duplicate enabled source definition(s) found"
+  else
+    _doctor_add_check "apt_source_duplicates" "ok" "no duplicate enabled source definitions found"
+  fi
+  if ((${#REPORT_APT_SOURCE_WARNINGS[@]} > 0)); then
+    local source_warning
+    for source_warning in "${REPORT_APT_SOURCE_WARNINGS[@]}"; do
+      _doctor_add_check "apt_source_integrity" "warning" "$source_warning"
+    done
+  else
+    _doctor_add_check "apt_source_integrity" "ok" "no source suite, keyring or trust warnings found"
+  fi
+  if [[ "$REPORT_APT_NETWORK_IP_FAMILY" == conflict ]]; then
+    _doctor_add_check "apt_network_family" "warning" "ForceIPv4 and ForceIPv6 are both enabled in APT configuration"
+  else
+    _doctor_add_check "apt_network_family" "ok" "effective configured IP-family policy: $REPORT_APT_NETWORK_IP_FAMILY"
+  fi
+  if [[ "$REPORT_APT_NETWORK_HTTP_PROXY" != "not set" || "$REPORT_APT_NETWORK_HTTPS_PROXY" != "not set" ]]; then
+    _doctor_add_check "apt_proxy" "ok" "APT proxy configured (credentials redacted in reports)"
+  else
+    _doctor_add_check "apt_proxy" "ok" "no APT proxy configured"
   fi
   if [[ -d "$(dirname "$USER_MIRRORS_FILE")" && -w "$(dirname "$USER_MIRRORS_FILE")" ]]; then
     _doctor_add_check "custom_mirror_storage" "ok" "custom mirror catalog storage is writable"

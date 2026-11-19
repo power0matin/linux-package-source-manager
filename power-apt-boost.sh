@@ -1803,6 +1803,14 @@ ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}    --dry-run${COLOR_RESET}            Test mirrors without changing config
   ${COLOR_GREEN}    --skip-update${COLOR_RESET}        Write config but skip apt-get update (preserve caches)
   ${COLOR_GREEN}    --list${COLOR_RESET}               List available mirrors and test them
+  ${COLOR_GREEN}    --refresh-catalog${COLOR_RESET}     Refresh the Ubuntu mirror index, then list
+  ${COLOR_GREEN}    --official-only${COLOR_RESET}       Use only built-in official Ubuntu archive hosts
+  ${COLOR_GREEN}    --workers N${COLOR_RESET}           Benchmark concurrency (1-${MAX_WORKERS_LIMIT}, default: 8)
+  ${COLOR_GREEN}    --retries N${COLOR_RESET}           Retry transient probe failures (0-3, default: 1)
+  ${COLOR_GREEN}    --add-mirror URL${COLOR_RESET}      Verify and save a custom mirror
+  ${COLOR_GREEN}    --remove-mirror ID${COLOR_RESET}    Remove a saved custom mirror
+  ${COLOR_GREEN}    --disable-mirror ID${COLOR_RESET}   Disable a saved custom mirror
+  ${COLOR_GREEN}    --enable-mirror ID${COLOR_RESET}    Enable a saved custom mirror
   ${COLOR_GREEN}    --menu${COLOR_RESET}               Open the interactive terminal menu
   ${COLOR_GREEN}    --status${COLOR_RESET}             Show current system and APT status
   ${COLOR_GREEN}    --doctor${COLOR_RESET}             Run local dependency and configuration checks
@@ -1843,17 +1851,34 @@ ${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME} --list
 
   ${COLOR_DIM}# Filter mirrors by country${COLOR_RESET}
-  sudo bash ${_SCRIPT_NAME} --country us
+  sudo bash ${_SCRIPT_NAME} --refresh-catalog
+
+  ${COLOR_DIM}# Test only built-in official archive hosts${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --list --official-only
+
+  ${COLOR_DIM}# Tune bounded benchmark concurrency and retry policy${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --dry-run --workers 4 --retries 2
+
+  ${COLOR_DIM}# Add a custom mirror (each suite must pass signed metadata checks)${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --add-mirror https://mirror.example.com/ubuntu
+
+  ${COLOR_DIM}# Disable or remove a saved custom mirror by its ID${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --disable-mirror user-0123456789ab
+  sudo bash ${_SCRIPT_NAME} --remove-mirror user-0123456789ab
+
+  ${COLOR_DIM}# Filter mirrors by country code${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --list --country us
 
 ${COLOR_BOLD}${COLOR_BLUE}WHAT IT DOES${COLOR_RESET}
   1. Detects your Ubuntu version
-  2. Tests multiple mirrors in parallel for speed
-  3. Selects the fastest working mirror
-  4. Backs up current APT configuration
-  5. Writes optimized APT sources (deb822 format)
-  6. Configures network optimizations (retries, timeouts)
-  7. Preserves existing package lists and downloaded packages when --skip-update is selected
-  8. Runs apt-get update unless --skip-update is selected
+  2. Loads a versioned catalog from built-in, Ubuntu-index and user-defined sources
+  3. Verifies main, updates and security Release metadata and Ubuntu archive signatures
+  4. Rejects stale, incompatible, redirected or unsigned mirror endpoints
+  5. Ranks compatible mirrors by average latency plus a 50 ms penalty per redirect
+  6. Backs up current APT configuration before an approved apply
+  7. Writes optimized APT sources (deb822 format) and network configuration
+  8. Preserves existing package lists and downloaded package archives when --skip-update is selected
+  9. Runs apt-get update unless --skip-update is selected
 
 ${COLOR_BOLD}${COLOR_BLUE}BACKUPS${COLOR_RESET}
   Location:  ${BACKUP_BASE}/

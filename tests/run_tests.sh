@@ -336,6 +336,9 @@ ATOMIC
     printf '%bFAIL%b IPv6 mode does not force IPv4 simultaneously\n' "$RED" "$RESET"
   fi
 
+  NO_CATALOG_NETWORK=true
+  _load_mirror_catalog
+  NO_CATALOG_NETWORK=false
   COUNTRY_FILTER=ir
   local iran_mirrors
   iran_mirrors="$(_get_mirrors)"
@@ -344,9 +347,6 @@ ATOMIC
   COUNTRY_FILTER=""
   assert_contains "https://archive.ubuntu.com/ubuntu" "$(_get_mirrors)" "unfiltered catalog includes global mirror"
 
-  NO_CATALOG_NETWORK=true
-  _load_mirror_catalog
-  NO_CATALOG_NETWORK=false
   NO_SPINNER=true
   _start_spinner "test"
   local spinner_code=1
@@ -443,12 +443,12 @@ ATOMIC
   printf 'prior-source-config\n' >"$APT_DEB822_FILE"
   printf 'prior-apt-config\n' >"$APT_CONF_FILE"
   local rollback_code=0
+  SELECTED_MIRROR="https://broken.example/ubuntu"
+  SELECTED_TIME="0.001"
   (
     apt-get() { return 1; }
     DRY_RUN=false
     SKIP_UPDATE=false
-    SELECTED_MIRROR="https://broken.example/ubuntu"
-    SELECTED_TIME="0.001"
     _apply_changes >/dev/null 2>&1
   ) || rollback_code=$?
   assert_exit_code 3 "$rollback_code" "failed apt-get update returns network exit code after rollback"

@@ -706,131 +706,249 @@ _classify_wget_error() {
 }
 
 # Writes tab-separated HTTP status, elapsed seconds and failure reason.
+_validate_release_metadata() {
+  local body="$1" expected_codename="$2" expected_suite="$3"
+  local origin label suite codename release_date valid_until now release_epoch valid_until_epoch
+  origin="$(awk -F': *' '$1 == "Origin" {print $2; exit}' "$body")"
+  label="$(awk -F': *' '$1 == "Label" {print $2; exit}' "$body")"
+  suite="$(awk -F': *' '$1 == "Suite" {print $2; exit}' "$body")"
+  codename="$(awk -F': *' '$1 == "Codename" {print $2; exit}' "$body")"
+  release_date="$(awk -F': *' '$1 == "Date" {sub(/\\r$/, "", $2); print $2; exit}' "$body")"
+  valid_until="$(awk -F': *' '$1 == "Valid-Until" {sub(/\\r$/, "", $2); print $2; exit}' "$body")"
+
+  [[ "$origin" == "Ubuntu" && "$label" == "Ubuntu" ]] || {
+    printf 'invalid\\tincompatible_origin\\tunknown\\n'
+    return 1
+  }
+  [[ "$suite" == "$expected_suite" && "$codename" == "$expected_codename" ]] || {
+    printf 'invalid\\tincompatible_suite\\tunknown\\n'
+    return 1
+  }
+  [[ -n "$release_date" ]] || {
+    printf 'invalid\\tmissing_release_date\\tunknown\\n'
+    return 1
+  }
+
+  release_epoch="$(date -d "$release_date" +%s 2>/dev/null)" || {
+    printf 'invalid\\tinvalid_release_date\\tunknown\\n'
+    return 1
+  }
+  now="$(date +%s)"
+  if ((release_epoch > now + 600)); then
+    printf 'invalid\\tfuture_release_metadata\\tunknown\\n'
+    return 1
+  fi
+
+  if [[ -n "$valid_until" ]]; then
+    valid_until_epoch="$(date -d "$valid_until" +%s 2>/dev/null)" || {
+      printf 'invalid\\tinvalid_valid_until\\tunknown\\n'
+      return 1
+    }
+    if ((valid_until_epoch <= now)); then
+      printf 'invalid\\texpired_release_metadata\\texpired\\n'
+      return 1
+    fi
+    printf 'valid\\t\\tvalid-until\\n'
+    return 0
+  fi
+
+  printf 'valid\\t\\tnot-declared\\n'
+}
+
+_same_mirror_origin() {
+  local requested="$1" effective="$2" requested_scheme requested_host effective_scheme effective_host
+  requested_scheme="${requested%%://*}"
+  effective_scheme="${effective%%://*}"
+  requested_host="${requested#*://}"
+  requested_host="${requested_host%%/*}"
+  effective_host="${effective#*://}"
+  effective_host="${effective_host%%/*}"
+  requested_host="$(printf '%s' "$requested_host" | tr '[:upper:]' '[:lower:]')"
+  effective_host="$(printf '%s' "$effective_host" | tr '[:upper:]' '[:lower:]')"
+  [[ "$requested_host" == "$effective_host" ]] || return 1
+  [[ "$requested_scheme" != https || "$effective_scheme" == https ]]
+}
+
 _probe_url_code() {
-  local url="$1"
-  local ip_flag="-4"
-  local reason=""
-  local http_code="000"
-  local elapsed="0.000000"
-  local connect_timeout="$PROBE_TIMEOUT_CONNECT"
-
+  local url="$1" expected_suite="$2" expected_codename="$3"
+  local ip_flag="-4" attempt=0 max_attempts=$((PROBE_RETRIES + 1))
+  local http_code="000" elapsed="0.000000" redirects=0 effective_url="$url"
+  local metadata_status="invalid" signature_status="unknown" freshness="unknown" reason=""
+  local tmpdir body headers request_output request_error wget_output start end
   [[ "$USE_IPV6" == true ]] && ip_flag="-6"
-  ((TIMEOUT_TOTAL < connect_timeout)) && connect_timeout="$TIMEOUT_TOTAL"
 
-  if command -v curl >/dev/null 2>&1; then
-    local curl_stderr curl_output
-    curl_stderr="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.curlerr.XXXXXX")"
-    curl_output="$(curl "$ip_flag" -L -sS \
-      --connect-timeout "$connect_timeout" \
-      --max-time "$TIMEOUT_TOTAL" \
-      -o /dev/null -w '%{http_code}\t%{time_total}' "$url" 2>"$curl_stderr")" || true
-
-    if [[ "$curl_output" == *$'\t'* ]]; then
-      http_code="${curl_output%%$'\t'*}"
-      elapsed="${curl_output#*$'\t'}"
-    elif [[ -n "$curl_output" ]]; then
-      http_code="$curl_output"
-    fi
-    if [[ "$http_code" == "000" || -z "$http_code" ]]; then
-      reason="$(_classify_curl_error "$curl_stderr")"
-      http_code="000"
-    fi
-    rm -f "$curl_stderr" 2>/dev/null || true
-    printf '%s\t%s\t%s\n' "$http_code" "$elapsed" "$reason"
+  tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/${APP_SLUG}.probe.XXXXXX")" || {
+    printf '000\\t0.000000\\t0\\t%s\\tinvalid\\tunknown\\tunknown\\ttemporary_directory_failed\\n' "$url"
     return 0
+  }
+  _tmp_dirs+=("$tmpdir")
+  body="$tmpdir/inrelease"
+  headers="$tmpdir/headers"
+
+  while ((attempt < max_attempts)); do
+    : >"$body"
+    : >"$headers"
+    request_output=""
+    request_error=""
+
+    if command -v curl >/dev/null 2>&1; then
+      request_output="$(curl "$ip_flag" -sS -L --max-redirs 5 \\
+        --proto '=http,https' --proto-redir '=https' \\
+        --connect-timeout "$PROBE_TIMEOUT_CONNECT" \\
+        --max-time "$TIMEOUT_TOTAL" \\
+        --dump-header "$headers" --output "$body" \\
+        --write-out '%{http_code}\\t%{time_total}\\t%{num_redirects}\\t%{url_effective}' \\
+        "$url" 2>"$tmpdir/curl.err")" || request_error="$(cat "$tmpdir/curl.err" 2>/dev/null || true)"
+      if [[ "$request_output" == *$'\\t'* ]]; then
+        IFS=$'\\t' read -r http_code elapsed redirects effective_url <<<"$request_output"
+      else
+        http_code="000"
+      fi
+    elif command -v wget >/dev/null 2>&1; then
+      start="$(date +%s.%N)"
+      wget_output="$(wget --server-response --max-redirect=5 --timeout="$TIMEOUT_TOTAL" \\
+        --tries=1 -q -O "$body" "$url" 2>&1)" || request_error="$wget_output"
+      end="$(date +%s.%N)"
+      elapsed="$(awk -v s="$start" -v e="$end" 'BEGIN { printf "%.6f", e-s }')"
+      http_code="$(printf '%s\\n' "$wget_output" | awk '/HTTP\\// {code=$2} END {print code+0}')"
+      [[ "$http_code" != 0 ]] || http_code="000"
+      redirects="$(printf '%s\\n' "$wget_output" | grep -ci 'Location:' || true)"
+      effective_url="$url"
+      if ((redirects > 0)); then
+        effective_url="$(printf '%s\\n' "$wget_output" | sed -n 's/.*Location: *\\(https\\?:\\/\\/[^[:space:]]*\\).*/\\1/p' | tail -1)"
+        [[ -n "$effective_url" ]] || effective_url="$url"
+      fi
+    else
+      request_error="no_http_client"
+    fi
+
+    if [[ "$http_code" == "000" || "$http_code" == "408" || "$http_code" == "429" || "$http_code" =~ ^5[0-9][0-9]$ ]]; then
+      ((attempt += 1))
+      if ((attempt < max_attempts)); then sleep 0.2; continue; fi
+    fi
+    break
+  done
+
+  if [[ "$http_code" != "200" ]]; then
+    if [[ -n "$request_error" ]]; then
+      if command -v curl >/dev/null 2>&1; then
+        reason="$(_classify_curl_error "$tmpdir/curl.err")"
+      else
+        reason="$(_classify_wget_error "$request_error")"
+      fi
+    else
+      reason="http_status_${http_code}"
+    fi
+  elif ! _same_mirror_origin "$url" "$effective_url"; then
+    reason="cross_origin_redirect"
+  elif ((redirects > 5)); then
+    reason="too_many_redirects"
+  else
+    local metadata_result metadata_reason
+    metadata_result="$(_validate_release_metadata "$body" "$expected_codename" "$expected_suite")" || true
+    IFS=$'\\t' read -r metadata_status metadata_reason freshness <<<"$metadata_result"
+    if [[ "$metadata_status" != valid ]]; then
+      reason="${metadata_reason:-invalid_release_metadata}"
+    elif command -v gpgv >/dev/null 2>&1 && [[ -f "$KEYRING_PATH" ]]; then
+      if gpgv --keyring "$KEYRING_PATH" "$body" >/dev/null 2>&1; then
+        signature_status="valid"
+      else
+        signature_status="invalid"
+        reason="invalid_archive_signature"
+      fi
+    else
+      signature_status="unknown"
+      reason="archive_signature_verifier_unavailable"
+    fi
   fi
 
-  if command -v wget >/dev/null 2>&1; then
-    local wget_output start end
-    start="$(date +%s.%N)"
-    wget_output="$(wget "$ip_flag" --server-response --spider \
-      --timeout="$TIMEOUT_TOTAL" --tries=1 -q "$url" 2>&1)" || true
-    end="$(date +%s.%N)"
-    elapsed="$(awk -v s="$start" -v e="$end" 'BEGIN { printf "%.6f", e-s }')"
-    http_code="$(printf '%s\n' "$wget_output" | awk '/HTTP\// {code=$2} END {print code+0}')"
-    [[ "$http_code" != "0" ]] || http_code="000"
-    if [[ "$http_code" == "000" ]]; then
-      reason="$(_classify_wget_error "$wget_output")"
-    fi
-    printf '%s\t%s\t%s\n' "$http_code" "$elapsed" "$reason"
-    return 0
-  fi
-
-  printf '000\t%s\t%s\n' "$elapsed" "no_http_client"
+  rm -rf "$tmpdir" 2>/dev/null || true
+  printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \\
+    "$http_code" "$elapsed" "$redirects" "$effective_url" \\
+    "$metadata_status" "$signature_status" "$freshness" "$reason"
 }
 
 _test_mirror() {
-  local base_url="${1%/}"
-  local result_file="$2"
-  local codename="$3"
+  local base_url="${1%/}" result_file="$2" codename="$3"
   local main_url="${base_url}/dists/${codename}/InRelease"
   local updates_url="${base_url}/dists/${codename}-updates/InRelease"
   local security_url="${base_url}/dists/${codename}-security/InRelease"
-  local tmpdir
+  local tmpdir start end elapsed
   tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/${APP_SLUG}.mirror.XXXXXX")"
   _tmp_dirs+=("$tmpdir")
 
-  local start end elapsed
   start="$(date +%s.%N)"
-  _probe_url_code "$main_url" >"$tmpdir/main" 2>"$tmpdir/main.err" &
+  _probe_url_code "$main_url" "$codename" "$codename" >"$tmpdir/main" &
   local pid_main=$!
-  _probe_url_code "$updates_url" >"$tmpdir/updates" 2>"$tmpdir/updates.err" &
+  _probe_url_code "$updates_url" "${codename}-updates" "$codename" >"$tmpdir/updates" &
   local pid_updates=$!
-  _probe_url_code "$security_url" >"$tmpdir/security" 2>"$tmpdir/security.err" &
+  _probe_url_code "$security_url" "${codename}-security" "$codename" >"$tmpdir/security" &
   local pid_security=$!
-
   wait "$pid_main" 2>/dev/null || true
   wait "$pid_updates" 2>/dev/null || true
   wait "$pid_security" 2>/dev/null || true
   end="$(date +%s.%N)"
   elapsed="$(awk -v s="$start" -v e="$end" 'BEGIN { printf "%.6f", e-s }')"
 
-  local main_code main_time main_reason
-  local updates_code updates_time updates_reason
-  local security_code security_time security_reason
-  IFS=$'\t' read -r main_code main_time main_reason <"$tmpdir/main" || true
-  IFS=$'\t' read -r updates_code updates_time updates_reason <"$tmpdir/updates" || true
-  IFS=$'\t' read -r security_code security_time security_reason <"$tmpdir/security" || true
+  local main_code main_time main_redirects main_effective main_metadata main_signature main_freshness main_reason
+  local updates_code updates_time updates_redirects updates_effective updates_metadata updates_signature updates_freshness updates_reason
+  local security_code security_time security_redirects security_effective security_metadata security_signature security_freshness security_reason
+  IFS=$'\\t' read -r main_code main_time main_redirects main_effective main_metadata main_signature main_freshness main_reason <"$tmpdir/main" || true
+  IFS=$'\\t' read -r updates_code updates_time updates_redirects updates_effective updates_metadata updates_signature updates_freshness updates_reason <"$tmpdir/updates" || true
+  IFS=$'\\t' read -r security_code security_time security_redirects security_effective security_metadata security_signature security_freshness security_reason <"$tmpdir/security" || true
+
   main_code="${main_code:-000}"
   main_time="${main_time:-0.000000}"
+  main_redirects="${main_redirects:-0}"
   updates_code="${updates_code:-000}"
   updates_time="${updates_time:-0.000000}"
+  updates_redirects="${updates_redirects:-0}"
   security_code="${security_code:-000}"
   security_time="${security_time:-0.000000}"
+  security_redirects="${security_redirects:-0}"
+
+  local eligible=true failure_reason="" total_redirects avg_latency score freshness_summary signature_summary
+  local endpoint
+  for endpoint in \\
+    "$main_code:$main_metadata:$main_signature:$main_reason" \\
+    "$updates_code:$updates_metadata:$updates_signature:$updates_reason" \\
+    "$security_code:$security_metadata:$security_signature:$security_reason"; do
+    IFS=':' read -r http_code metadata_status signature_status reason <<<"$endpoint"
+    if [[ "$http_code" != 200 || "$metadata_status" != valid || "$signature_status" != valid ]]; then
+      eligible=false
+      [[ -n "$failure_reason" ]] || failure_reason="${reason:-incompatible_or_unverified_release}"
+    fi
+  done
+
+  total_redirects=$((main_redirects + updates_redirects + security_redirects))
+  avg_latency="$(awk -v a="$main_time" -v b="$updates_time" -v c="$security_time" 'BEGIN { printf "%.6f", (a+b+c)/3 }')"
+  score="$(awk -v avg="$avg_latency" -v redirects="$total_redirects" 'BEGIN { printf "%.6f", avg + (redirects * 0.050000) }')"
+  freshness_summary="valid-until-or-date"
+  if [[ "$main_freshness" == not-declared || "$updates_freshness" == not-declared || "$security_freshness" == not-declared ]]; then
+    freshness_summary="valid-date-no-valid-until"
+  fi
+  signature_summary="verified"
+  [[ "$eligible" == true ]] || signature_summary="not-fully-verified"
+
   rm -rf "$tmpdir" 2>/dev/null || true
+  if [[ "$eligible" == true ]]; then
+    printf 'true|%s|%s|%s|%s|%s|%s|%s|%s\\n' \\
+      "$score" "$avg_latency" "$main_code" "$updates_code" "$security_code" \\
+      "$total_redirects" "$freshness_summary" "$signature_summary" >"$result_file"
+  else
+    printf 'false|%s|%s|%s|%s|%s|%s|%s|%s|%s\\n' \\
+      "$score" "$avg_latency" "$main_code" "$updates_code" "$security_code" \\
+      "$total_redirects" "$freshness_summary" "$signature_summary" "$failure_reason" >"$result_file"
+  fi
 
   msg_color "$COLOR_BOLD" "  ┌─ $base_url"
-  local fail_msg icon
-  if [[ "$main_code" == "200" ]]; then
-    icon="${COLOR_GREEN}✓${COLOR_RESET}"
-    printf '  │  %b main:     HTTP %s in %ss\n' "$icon" "$main_code" "$main_time" >&2
+  printf '  │  main: %s (%ss, HTTP %s)\\n' "$([[ "$main_metadata" == valid && "$main_signature" == valid ]] && echo VERIFIED || echo REJECTED)" "$main_time" "$main_code" >&2
+  printf '  │  updates: %s (%ss, HTTP %s)\\n' "$([[ "$updates_metadata" == valid && "$updates_signature" == valid ]] && echo VERIFIED || echo REJECTED)" "$updates_time" "$updates_code" >&2
+  printf '  │  security: %s (%ss, HTTP %s)\\n' "$([[ "$security_metadata" == valid && "$security_signature" == valid ]] && echo VERIFIED || echo REJECTED)" "$security_time" "$security_code" >&2
+  if [[ "$eligible" == true ]]; then
+    printf '  └─ %b PASS%b score=%ss avg=%ss redirects=%s freshness=%s\\n' "$COLOR_GREEN" "$COLOR_RESET" "$score" "$avg_latency" "$total_redirects" "$freshness_summary" >&2
   else
-    fail_msg="main: HTTP $main_code in ${main_time}s"
-    [[ -n "$main_reason" ]] && fail_msg+=" — $main_reason"
-    printf '  │  %b %s\n' "${COLOR_RED}✗${COLOR_RESET}" "$fail_msg" >&2
-  fi
-  if [[ "$updates_code" == "200" ]]; then
-    icon="${COLOR_GREEN}✓${COLOR_RESET}"
-    printf '  │  %b updates:  HTTP %s in %ss\n' "$icon" "$updates_code" "$updates_time" >&2
-  else
-    fail_msg="updates: HTTP $updates_code in ${updates_time}s"
-    [[ -n "$updates_reason" ]] && fail_msg+=" — $updates_reason"
-    printf '  │  %b %s\n' "${COLOR_RED}✗${COLOR_RESET}" "$fail_msg" >&2
-  fi
-  if [[ "$security_code" == "200" ]]; then
-    icon="${COLOR_GREEN}✓${COLOR_RESET}"
-    printf '  │  %b security: HTTP %s in %ss\n' "$icon" "$security_code" "$security_time" >&2
-  else
-    fail_msg="security: HTTP $security_code in ${security_time}s"
-    [[ -n "$security_reason" ]] && fail_msg+=" — $security_reason"
-    printf '  │  %b %s\n' "${COLOR_RED}✗${COLOR_RESET}" "$fail_msg" >&2
-  fi
-  if [[ "$main_code" == "200" && "$updates_code" == "200" && "$security_code" == "200" ]]; then
-    printf '  └─ %b PASS%b total: %ss\n' "$COLOR_GREEN" "$COLOR_RESET" "$elapsed" >&2
-    printf '%s pass\n' "$elapsed" >"$result_file"
-  else
-    printf '  └─ %b FAIL%b total: %ss\n' "$COLOR_RED" "$COLOR_RESET" "$elapsed" >&2
-    printf '%s fail\n' "$elapsed" >"$result_file"
+    printf '  └─ %b REJECTED%b reason=%s\\n' "$COLOR_RED" "$COLOR_RESET" "$failure_reason" >&2
   fi
 }
 

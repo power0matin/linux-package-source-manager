@@ -507,17 +507,31 @@ _catalog_read_file() {
   done <"$file"
 }
 
+_validate_https_redirect_headers() {
+  local headers_file="$1" target
+  while IFS= read -r target; do
+    [[ "$target" == https://* ]] || return 1
+  done < <(awk 'tolower($1) == "location:" {print $2}' "$headers_file")
+}
+
 _download_catalog_file() {
-  local destination="$1"
+  local destination="$1" headers_file
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL --connect-timeout "$PROBE_TIMEOUT_CONNECT" --max-time "$TIMEOUT_TOTAL" \
       --proto '=http,https' --proto-redir '=https' -o "$destination" "$MIRROR_INDEX_URL"
     return $?
   fi
   if command -v wget >/dev/null 2>&1; then
-    wget --timeout="$TIMEOUT_TOTAL" --tries=1 --max-redirect=5 -q \
-      -O "$destination" "$MIRROR_INDEX_URL"
-    return $?
+    headers_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.index-headers.XXXXXX")" || return 1
+    if wget --server-response --timeout="$TIMEOUT_TOTAL" --tries=1 --max-redirect=5 \
+      -O "$destination" "$MIRROR_INDEX_URL" >/dev/null 2>"$headers_file"; then
+      if _validate_https_redirect_headers "$headers_file"; then
+        rm -f "$headers_file"
+        return 0
+      fi
+    fi
+    rm -f "$headers_file" "$destination"
+    return 1
   fi
   return 1
 }

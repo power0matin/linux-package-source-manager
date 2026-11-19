@@ -2921,8 +2921,8 @@ _run_prune_backups() {
     error "Backup cleanup must be run as root."
     return "$EXIT_NOT_ROOT"
   fi
-  [[ -d "$BACKUP_BASE" ]] || {
-    info "No backup directory exists; nothing to clean."
+  [[ -d "$BACKUP_BASE" && ! -L "$BACKUP_BASE" ]] || {
+    info "No safe backup directory exists; nothing to clean."
     return 0
   }
 
@@ -3122,25 +3122,50 @@ _menu_backups() {
     _menu_message "Backup and Restore" "Run the menu as root to inspect protected system backups."
     return 0
   fi
-  local listing
-  listing="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn || true)"
-  if [[ -z "$listing" ]]; then
-    _menu_message "Backup and Restore" "No Power APT Boost backup snapshots were found."
-    return 0
-  fi
-  local -a args=()
-  local line path
-  while IFS= read -r line; do
-    path="${line#*$'\t'}"
-    args+=("$path" "${path##*/}")
-  done <<<"$listing"
-  local selected rc
-  selected="$(_menu_choose "Backup and Restore" "Select a snapshot to restore" "${args[@]}" "back" "Back")" || return 0
-  [[ "$selected" == back ]] && return 0
-  RESTORE_PATH="$selected"
-  rc=0
-  _run_restore_flow || rc=$?
-  [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Restore result" "Restore finished with exit code $rc."
+
+  local choice value listing line path selected rc
+  choice="$(
+    _menu_choose "Backup and Restore" "Choose an action" \
+      "restore" "Restore a verified backup snapshot" \
+      "cleanup" "Remove older verified snapshots" \
+      "back" "Back to main menu"
+  )" || return 0
+
+  case "$choice" in
+  cleanup)
+    value="$(_menu_input "Backup retention" "How many newest verified snapshots should be kept? (1-100)" "5")" || return 0
+    if [[ ! "$value" =~ ^[0-9]+$ ]] || ((value < 1 || value > 100)); then
+      _menu_message "Invalid retention count" "Enter a whole number from 1 to 100."
+      return 0
+    fi
+    PRUNE_BACKUPS_KEEP="$value"
+    rc=0
+    _run_prune_backups || rc=$?
+    PRUNE_BACKUPS_KEEP=""
+    [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Backup cleanup" "Cleanup finished with exit code $rc."
+    ;;
+  restore)
+    listing="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn || true)"
+    if [[ -z "$listing" ]]; then
+      _menu_message "Backup and Restore" "No Power APT Boost backup snapshots were found."
+      return 0
+    fi
+    local -a args=()
+    while IFS= read -r line; do
+      path="${line#*$'\t'}"
+      [[ -n "$path" ]] || continue
+      args+=("$path" "${path##*/}")
+    done <<<"$listing"
+    selected="$(_menu_choose "Backup and Restore" "Select a snapshot to restore" "${args[@]}" "back" "Back")" || return 0
+    [[ "$selected" == back ]] && return 0
+    RESTORE_PATH="$selected"
+    RESTORE_SCOPE="all"
+    rc=0
+    _run_restore_flow || rc=$?
+    [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Restore result" "Restore finished with exit code $rc."
+    ;;
+  back) return 0 ;;
+  esac
 }
 
 _menu_diagnostics() {
@@ -3149,6 +3174,7 @@ _menu_diagnostics() {
     _menu_choose "Diagnostics" "Choose a report" \
       "status" "System status" \
       "doctor" "Run local health checks" \
+      "network" "Run live DNS and TLS checks" \
       "back" "Back to main menu"
   )" || return 0
   case "$choice" in
@@ -3157,8 +3183,15 @@ _menu_diagnostics() {
     [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Status report completed."
     ;;
   doctor)
+    NETWORK_DIAGNOSTICS=false
     _doctor_report
     [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Health checks completed."
+    ;;
+  network)
+    NETWORK_DIAGNOSTICS=true
+    _doctor_report
+    NETWORK_DIAGNOSTICS=false
+    [[ "$JSON_OUTPUT" == true ]] || _menu_message "Network diagnostics" "Live DNS and TLS checks completed."
     ;;
   back) return 0 ;;
   esac
@@ -3182,6 +3215,9 @@ _menu_settings() {
         "country" "Country filter: ${COUNTRY_FILTER:-all}" \
         "workers" "Benchmark workers: ${BENCH_WORKERS}" \
         "retries" "Probe retries: ${PROBE_RETRIES}" \
+        "apt-retries" "APT retries: ${APT_RETRIES}" \
+        "proxy" "APT proxy: ${APT_PROXY:-unchanged}" \
+        "clear-proxy" "Clear the managed APT proxy override" \
         "official" "Official-only profile: $([[ "$OFFICIAL_ONLY" == true ]] && echo enabled || echo disabled)" \
         "refresh" "Refresh Ubuntu mirror catalog on next run" \
         "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \
@@ -3223,6 +3259,29 @@ _menu_settings() {
       else
         _menu_message "Invalid retry count" "Enter a whole number from 0 to 3."
       fi
+      ;;
+    apt-retries)
+      value="$(_menu_input "APT retries" "Enter a value from 0 to 10" "$APT_RETRIES")" || continue
+      if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 0 && value <= 10)); then
+        APT_RETRIES="$value"
+      else
+        _menu_message "Invalid APT retry count" "Enter a whole number from 0 to 10."
+      fi
+      ;;
+    proxy)
+      value="$(_menu_input "APT proxy" "Enter http(s)://host[:port], without username/password" "$APT_PROXY")" || continue
+      local proxy_status=0
+      APT_PROXY="$(_validate_proxy_url "$value")" || proxy_status=$?
+      if [[ "$proxy_status" -eq 0 ]]; then
+        CLEAR_APT_PROXY=false
+      else
+        APT_PROXY=""
+        _menu_message "Invalid proxy" "Enter a valid proxy host and optional port, without credentials."
+      fi
+      ;;
+    clear-proxy)
+      APT_PROXY=""
+      CLEAR_APT_PROXY=true
       ;;
     official)
       [[ "$OFFICIAL_ONLY" == true ]] && OFFICIAL_ONLY=false || OFFICIAL_ONLY=true

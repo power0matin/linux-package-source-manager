@@ -52,6 +52,7 @@ readonly PROBE_TIMEOUT_CONNECT=5
 readonly MIRROR_INDEX_URL="https://mirrors.ubuntu.com/mirrors.txt"
 readonly MIRROR_CATALOG_SCHEMA=1
 readonly CATALOG_CACHE_TTL=86400
+readonly CATALOG_MAX_RELEASE_AGE=604800
 readonly CATALOG_CACHE_FILE="${_SYSTEM_ROOT}/var/cache/${APP_SLUG}/ubuntu-index-v1.tsv"
 readonly USER_MIRRORS_FILE="${_SYSTEM_ROOT}/etc/${APP_SLUG}/custom-mirrors-v1.tsv"
 readonly MAX_WORKERS_LIMIT=8
@@ -774,40 +775,44 @@ _validate_release_metadata() {
   valid_until="$(awk -F': *' '$1 == "Valid-Until" {sub(/\r$/, "", $2); print $2; exit}' "$body")"
 
   [[ "$origin" == "Ubuntu" && "$label" == "Ubuntu" ]] || {
-    printf 'invalid\tincompatible_origin\tunknown\n'
+    printf 'invalid|incompatible_origin|unknown\n'
     return 1
   }
   [[ "$suite" == "$expected_suite" && "$codename" == "$expected_codename" ]] || {
-    printf 'invalid\tincompatible_suite\tunknown\n'
+    printf 'invalid|incompatible_suite|unknown\n'
     return 1
   }
   [[ -n "$release_date" ]] || {
-    printf 'invalid\tmissing_release_date\tunknown\n'
+    printf 'invalid|missing_release_date|unknown\n'
     return 1
   }
   release_epoch="$(date -d "$release_date" +%s 2>/dev/null)" || {
-    printf 'invalid\tinvalid_release_date\tunknown\n'
+    printf 'invalid|invalid_release_date|unknown\n'
     return 1
   }
   now="$(date +%s)"
   if ((release_epoch > now + 600)); then
-    printf 'invalid\tfuture_release_metadata\tunknown\n'
+    printf 'invalid|future_release_metadata|unknown\n'
+    return 1
+  fi
+  if ((now - release_epoch > CATALOG_MAX_RELEASE_AGE)); then
+    printf 'invalid|stale_release_metadata\tstale\n'
     return 1
   fi
 
   if [[ -n "$valid_until" ]]; then
     valid_until_epoch="$(date -d "$valid_until" +%s 2>/dev/null)" || {
-      printf 'invalid\tinvalid_valid_until\tunknown\n'
+      printf 'invalid|invalid_valid_until|unknown\n'
       return 1
     }
     if ((valid_until_epoch <= now)); then
-      printf 'invalid\texpired_release_metadata\texpired\n'
+      printf 'invalid|expired_release_metadata|expired\n'
       return 1
     fi
-    printf 'valid\t\tvalid-until\n'
+    printf 'valid|ok|valid-until\n'
     return 0
   fi
-  printf 'valid\t\tnot-declared\n'
+  printf 'valid|ok|not-declared\n'
 }
 
 _same_mirror_origin() {
@@ -900,7 +905,7 @@ _probe_url_code() {
   else
     local metadata_result metadata_reason
     metadata_result="$(_validate_release_metadata "$body" "$expected_codename" "$expected_suite")" || true
-    IFS=$'\t' read -r metadata_status metadata_reason freshness <<<"$metadata_result"
+    IFS='|' read -r metadata_status metadata_reason freshness <<<"$metadata_result"
     if [[ "$metadata_status" != valid ]]; then
       reason="${metadata_reason:-invalid_release_metadata}"
     elif command -v gpgv >/dev/null 2>&1 && [[ -f "$KEYRING_PATH" ]]; then
@@ -1009,7 +1014,7 @@ _select_mirror() {
   local mirror_list total_mirrors bench_start bench_end bench_duration
   local bench_tmpdir idx total i pid result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
   local best="" best_score="999999" best_avg="" tested=0 passed=0 failed=0
-  local -a mirrors new_pids
+  local -a mirrors
   local -a pids=()
 
   _load_mirror_catalog
@@ -1039,6 +1044,7 @@ _select_mirror() {
 
   idx=0
   while ((idx < total)); do
+    pids=()
     while (("${#pids[@]}" < BENCH_WORKERS)) && ((idx < total)); do
       _bench_worker "$idx" "${mirrors[$idx]}" "$CODENAME" "${bench_tmpdir}/${idx}.result" &
       pids+=("$!")
@@ -1046,26 +1052,12 @@ _select_mirror() {
       ((idx += 1))
     done
 
-    if (("${#pids[@]}" > 0)); then
-      wait -n "${pids[@]}" 2>/dev/null || true
-      new_pids=()
-      for pid in "${pids[@]}"; do
-        if kill -0 "$pid" 2>/dev/null; then
-          new_pids+=("$pid")
-        else
-          wait "$pid" 2>/dev/null || true
-        fi
-      done
-      pids=("${new_pids[@]}")
-      _bg_pids=("${new_pids[@]}")
-    fi
-  done
-
-  for pid in "${pids[@]}"; do
-    wait "$pid" 2>/dev/null || true
+    for pid in "${pids[@]}"; do
+      wait "$pid" 2>/dev/null || true
+    done
+    _bg_pids=()
   done
   pids=()
-  _bg_pids=()
 
   bench_end="$(date +%s)"
   bench_duration=$((bench_end - bench_start))
@@ -1105,7 +1097,7 @@ _select_mirror() {
   printf '  %-26s %s\n' "Catalog cache:" "$CATALOG_CACHE_STATE"
   printf '  %-26s %s\n' "Official-only profile:" "$OFFICIAL_ONLY"
   if [[ -n "$best" ]]; then
-    printf '\n  ${COLOR_GREEN}Best compatible mirror:${COLOR_RESET} %s\n' "$best"
+    printf '\n  Best compatible mirror: %s\n' "$best"
     printf '  Average latency: %ss | deterministic score: %ss\n' "$best_avg" "$best_score"
   fi
 

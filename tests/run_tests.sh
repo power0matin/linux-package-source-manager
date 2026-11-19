@@ -321,6 +321,9 @@ ATOMIC
   COUNTRY_FILTER=""
   assert_contains "https://archive.ubuntu.com/ubuntu" "$(_get_mirrors)" "unfiltered catalog includes global mirror"
 
+  NO_CATALOG_NETWORK=true
+  _load_mirror_catalog
+  NO_CATALOG_NETWORK=false
   NO_SPINNER=true
   _start_spinner "test"
   local spinner_code=1
@@ -444,23 +447,165 @@ ATOMIC
 test_probe_parser_and_list_criteria() {
   _probe_url_code() {
     case "$1" in
-    */noble/InRelease) printf '200\t0.010000\t\n' ;;
-    */noble-updates/InRelease) printf '200\t0.020000\t\n' ;;
-    */noble-security/InRelease) printf '200\t0.030000\t\n' ;;
-    *) printf '404\t0.040000\tmissing endpoint\n' ;;
+    */noble/InRelease) printf '200\t0.010000\t0\t%s\tvalid\tvalid\tnot-declared\t\n' "$1" ;;
+    */noble-updates/InRelease) printf '200\t0.020000\t0\t%s\tvalid\tvalid\tnot-declared\t\n' "$1" ;;
+    */noble-security/InRelease) printf '200\t0.030000\t0\t%s\tvalid\tvalid\tnot-declared\t\n' "$1" ;;
+    *) printf '404\t0.040000\t0\t%s\tinvalid\tunknown\tunknown\tmissing_endpoint\n' "$1" ;;
     esac
   }
 
   local result_file
   result_file="$(mktemp)"
   _test_mirror "https://fixture.invalid/ubuntu" "$result_file" "noble" >/dev/null 2>&1
-  assert_contains " pass" "$(cat "$result_file")" "mirror tester accepts all three successful endpoints"
+  assert_contains "true|" "$(cat "$result_file")" "mirror tester accepts three compatible signed endpoints"
   rm -f "$result_file"
 
   result_file="$(mktemp)"
   _test_mirror "https://fixture.invalid/ubuntu" "$result_file" "other" >/dev/null 2>&1
-  assert_contains " fail" "$(cat "$result_file")" "mirror tester rejects incomplete endpoint coverage"
+  assert_contains "false|" "$(cat "$result_file")" "mirror tester rejects incompatible endpoint coverage"
   rm -f "$result_file"
+}
+test_catalog_and_release_metadata() {
+  local code output body cache_entry user_entry mode
+  body="${_TEST_ROOT}/InRelease.fixture"
+  cat >"$body" <<EOF
+Origin: Ubuntu
+Label: Ubuntu
+Suite: noble-updates
+Codename: noble
+Date: $(date -u -R)
+Valid-Until: $(date -u -d '+2 days' -R)
+EOF
+
+  output="$(_validate_release_metadata "$body" "noble" "noble-updates")"
+  assert_contains "valid|ok|valid-until" "$output" "Release metadata accepts a matching fresh Ubuntu suite"
+
+  sed 's/^Origin: Ubuntu$/Origin: Example/' "$body" >"${body}.bad-origin"
+  code=0
+  _validate_release_metadata "${body}.bad-origin" "noble" "noble-updates" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Release metadata rejects a non-Ubuntu origin"
+
+  code=0
+  _validate_release_metadata "$body" "jammy" "noble-updates" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Release metadata rejects a mismatched codename"
+
+  sed "s/^Date:.*/Date: $(date -u -d '9 days ago' -R)/" "$body" >"${body}.stale"
+  output="$(_validate_release_metadata "${body}.stale" "noble" "noble-updates" 2>/dev/null || true)"
+  assert_contains "invalid|stale_release_metadata|stale" "$output" "Release metadata older than seven days is rejected"
+
+  sed "s/^Valid-Until:.*/Valid-Until: $(date -u -d '1 day ago' -R)/" "$body" >"${body}.expired"
+  output="$(_validate_release_metadata "${body}.expired" "noble" "noble-updates" 2>/dev/null || true)"
+  assert_contains "invalid|expired_release_metadata|expired" "$output" "expired Valid-Until metadata is rejected"
+
+  assert_equal "https://example.com/ubuntu" "$(_validate_mirror_url "https://example.com/ubuntu/")" "mirror URL normalization strips trailing slash"
+  code=0
+  _validate_mirror_url "https://user@example.com/ubuntu" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "mirror URL validator rejects embedded credentials"
+  code=0
+  _validate_mirror_url "https://example.com/ubuntu?mirror=other" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "mirror URL validator rejects query strings"
+  code=0
+  _validate_mirror_url "https://example.com/not-ubuntu" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "mirror URL validator rejects unsupported archive roots"
+
+  NO_CATALOG_NETWORK=true
+  mkdir -p "$(dirname "$CATALOG_CACHE_FILE")"
+  cache_entry="fixture-index|auto|Fixture|https://index-fixture.example/ubuntu|ubuntu-index|false|true"
+  printf '# power-apt-boost-catalog-v1\n# fetched_at=%s\n%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$cache_entry" >"$CATALOG_CACHE_FILE"
+  chmod 0600 "$CATALOG_CACHE_FILE"
+  _load_mirror_catalog
+  assert_equal "local-cache" "$CATALOG_CACHE_STATE" "offline catalog load uses a valid local cache"
+  assert_contains "https://index-fixture.example/ubuntu" "${_CATALOG_URLS[*]}" "valid cached dynamic mirror is loaded"
+  assert_contains "ubuntu-index" "$CATALOG_SOURCE" "catalog provenance reports the Ubuntu mirror index"
+
+  printf '# power-apt-boost-catalog-v999\n%s\n' "$cache_entry" >"$CATALOG_CACHE_FILE"
+  _load_mirror_catalog
+  assert_equal "invalid-cache" "$CATALOG_CACHE_STATE" "catalog cache schema mismatch is rejected"
+  assert_equal "0" "$((${#_CATALOG_URLS[@]} - 28))" "invalid cached records are not loaded"
+
+  printf '# power-apt-boost-catalog-v1\n# fetched_at=%s\n%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$cache_entry" >"$CATALOG_CACHE_FILE"
+  chmod 0600 "$CATALOG_CACHE_FILE"
+  NO_CATALOG_NETWORK=false
+  REFRESH_CATALOG=true
+  _download_catalog_file() { return 1; }
+  _load_mirror_catalog
+  unset -f _download_catalog_file
+  assert_equal "stale-fallback" "$CATALOG_CACHE_STATE" "catalog discovery failure falls back to last known-good cache"
+  assert_contains "https://index-fixture.example/ubuntu" "${_CATALOG_URLS[*]}" "stale fallback keeps valid cached mirrors"
+
+  REFRESH_CATALOG=true
+  _download_catalog_file() {
+    printf '%s\n' "https://fresh-fixture.example/ubuntu" "https://fresh-fixture.example/not-ubuntu" "https://fresh-fixture.example/ubuntu" >"$1"
+  }
+  _load_mirror_catalog
+  unset -f _download_catalog_file
+  assert_equal "refreshed" "$CATALOG_CACHE_STATE" "successful index discovery atomically refreshes the catalog cache"
+  assert_contains "https://fresh-fixture.example/ubuntu" "${_CATALOG_URLS[*]}" "valid discovered mirror is added"
+  assert_equal "false" "${_CATALOG_OFFICIAL[-1]}" "discovered mirror is not mislabelled as an officially verified host"
+  mode="$(stat -c '%a' "$CATALOG_CACHE_FILE")"
+  assert_equal "600" "$mode" "mirror catalog cache is private to root"
+  assert_contains "ubuntu-index" "$CATALOG_SOURCE" "fresh discovery is reflected in catalog provenance"
+
+  _catalog_add_entry "user-fixture" "auto" "Fixture" "https://custom-fixture.example/ubuntu" "user" false true
+  _write_user_mirror_catalog
+  mode="$(stat -c '%a' "$USER_MIRRORS_FILE")"
+  assert_equal "600" "$mode" "custom mirror catalog is written with private permissions"
+  _load_mirror_catalog
+  assert_contains "https://custom-fixture.example/ubuntu" "${_CATALOG_URLS[*]}" "custom mirror survives catalog reload"
+  assert_contains "custom-fixture" "$(cat "$USER_MIRRORS_FILE")" "custom mirror is persisted as an app-owned entry"
+
+  NO_CATALOG_NETWORK=true
+  COUNTRY_FILTER=ir
+  _load_mirror_catalog
+  output="$(_get_mirrors)"
+  assert_contains "https://mirror.arvancloud.ir/ubuntu" "$output" "Iran region filter keeps built-in Iranian mirrors"
+  COUNTRY_FILTER=""
+  OFFICIAL_ONLY=true
+  output="$(_get_mirrors)"
+  assert_contains "https://archive.ubuntu.com/ubuntu" "$output" "official-only profile retains official archive"
+  code=0
+  [[ "$output" != *"https://index-fixture.example/ubuntu"* ]] || code=1
+  assert_exit_code 0 "$code" "official-only profile excludes unverified discovery entries"
+  OFFICIAL_ONLY=false
+  NO_CATALOG_NETWORK=false
+}
+
+test_benchmark_selection_and_read_only_safety() {
+  local before after code
+  local original_quiet="$QUIET" original_spinner="$NO_SPINNER" original_workers="$BENCH_WORKERS"
+  QUIET=true
+  NO_SPINNER=true
+  BENCH_WORKERS=2
+  CODENAME=noble
+  _load_mirror_catalog() { CATALOG_SOURCE="fixture"; CATALOG_CACHE_STATE="fixture"; }
+  _get_mirrors() {
+    printf '%s\n' "https://slow-fixture.example/ubuntu" "https://fast-fixture.example/ubuntu" "https://unverified-fixture.example/ubuntu"
+  }
+  _test_mirror() {
+    case "$1" in
+      *slow-fixture*)
+        printf 'true|0.300000|0.300000|200|200|200|0|valid-until|verified\n' >"$2"
+        ;;
+      *fast-fixture*)
+        printf 'true|0.100000|0.100000|200|200|200|0|valid-until|verified\n' >"$2"
+        ;;
+      *unverified-fixture*)
+        printf 'false|0.001000|0.001000|200|200|200|0|valid-until|not-fully-verified|invalid_archive_signature\n' >"$2"
+        ;;
+    esac
+  }
+  before="$(sha256sum "$APT_DEB822_FILE")"
+  _select_mirror >/dev/null 2>&1
+  after="$(sha256sum "$APT_DEB822_FILE")"
+  assert_equal "https://fast-fixture.example/ubuntu" "$SELECTED_MIRROR" "benchmark selects the fastest eligible mirror"
+  assert_equal "$before" "$after" "benchmark does not modify APT configuration"
+  code=0
+  [[ "$SELECTED_MIRROR" != "https://unverified-fixture.example/ubuntu" ]] || code=1
+  assert_exit_code 0 "$code" "an unverified mirror cannot win with a lower latency score"
+  unset -f _load_mirror_catalog _get_mirrors _test_mirror
+  QUIET="$original_quiet"
+  NO_SPINNER="$original_spinner"
+  BENCH_WORKERS="$original_workers"
 }
 
 main() {
@@ -469,6 +614,8 @@ main() {
   test_cli
   test_filesystem_operations
   test_probe_parser_and_list_criteria
+  test_catalog_and_release_metadata
+  test_benchmark_selection_and_read_only_safety
   printf '\nResults: %d passed, %d failed, %d total\n' "$_tests_passed" "$_tests_failed" "$_tests_run"
   [[ "$_tests_failed" -eq 0 ]]
 }

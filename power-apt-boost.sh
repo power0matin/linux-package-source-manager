@@ -405,87 +405,275 @@ detect_ubuntu() {
   msg_verbose "Detected Ubuntu ${VERSION_ID:-} (${CODENAME})"
 }
 
-# ─── Mirror List ──────────────────────────────────────────────────────────────
+# ─── Mirror Catalog ──────────────────────────────────────────────────────────
 
+# Catalog row schema:
+# id|country|region|base_url|source|official|enabled
 _MIRROR_CATALOG=(
-  "ir|Iran|https://ir.archive.ubuntu.com/ubuntu"
-  "ir|Iran|https://mirror.arvancloud.ir/ubuntu"
-  "ir|Iran|https://mirror.iranserver.com/ubuntu"
-  "ir|Iran|https://ubuntu.hostiran.ir/ubuntu"
-  "ir|Iran|https://mirror.hostbaran.com/ubuntu"
-  "ir|Iran|https://mirror.aminidc.com/ubuntu"
-  "ir|Iran|https://archive.ito.gov.ir/ubuntu"
-  "ir|Iran|https://archive.ubuntu.petiak.ir/ubuntu"
-  "ir|Iran|https://mirror.mobinhost.com/ubuntu"
-  "ir|Iran|https://linuxmirrors.ir/ubuntu"
-  "ir|Iran|https://mirror.kubarcloud.com/ubuntu"
-  "global|Global|https://archive.ubuntu.com/ubuntu"
-  "global|Global|https://mirrors.kernel.org/ubuntu"
-  "us|United States|https://us.archive.ubuntu.com/ubuntu"
-  "us|United States|https://mirror.math.princeton.edu/pub/ubuntu"
-  "us|United States|https://mirror.cs.uchicago.edu/ubuntu"
-  "ca|Canada|https://mirror.csclub.uwaterloo.ca/ubuntu"
-  "us|United States|https://mirror.rit.edu/ubuntu"
-  "us|United States|https://mirror.arizona.edu/ubuntu"
-  "gb|United Kingdom|https://uk.archive.ubuntu.com/ubuntu"
-  "de|Germany|https://de.archive.ubuntu.com/ubuntu"
-  "fr|France|https://fr.archive.ubuntu.com/ubuntu"
-  "it|Italy|https://it.archive.ubuntu.com/ubuntu"
-  "nl|Netherlands|https://nl.archive.ubuntu.com/ubuntu"
-  "au|Australia|https://au.archive.ubuntu.com/ubuntu"
-  "jp|Japan|https://jp.archive.ubuntu.com/ubuntu"
-  "kr|South Korea|https://kr.archive.ubuntu.com/ubuntu"
-  "in|India|https://in.archive.ubuntu.com/ubuntu"
-  "br|Brazil|https://br.archive.ubuntu.com/ubuntu"
+  "ir-archive|ir|Iran|https://ir.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "ir-arvancloud|ir|Iran|https://mirror.arvancloud.ir/ubuntu|builtin|false|true"
+  "ir-iranserver|ir|Iran|https://mirror.iranserver.com/ubuntu|builtin|false|true"
+  "ir-hostiran|ir|Iran|https://ubuntu.hostiran.ir/ubuntu|builtin|false|true"
+  "ir-hostbaran|ir|Iran|https://mirror.hostbaran.com/ubuntu|builtin|false|true"
+  "ir-aminidc|ir|Iran|https://mirror.aminidc.com/ubuntu|builtin|false|true"
+  "ir-ito|ir|Iran|https://archive.ito.gov.ir/ubuntu|builtin|false|true"
+  "ir-petiak|ir|Iran|https://archive.ubuntu.petiak.ir/ubuntu|builtin|false|true"
+  "ir-mobinhost|ir|Iran|https://mirror.mobinhost.com/ubuntu|builtin|false|true"
+  "ir-linuxmirrors|ir|Iran|https://linuxmirrors.ir/ubuntu|builtin|false|true"
+  "ir-kubarcloud|ir|Iran|https://mirror.kubarcloud.com/ubuntu|builtin|false|true"
+  "global-archive|global|Global|https://archive.ubuntu.com/ubuntu|builtin|true|true"
+  "global-kernel|global|Global|https://mirrors.kernel.org/ubuntu|builtin|false|true"
+  "us-archive|us|United States|https://us.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "us-princeton|us|United States|https://mirror.math.princeton.edu/pub/ubuntu|builtin|false|true"
+  "us-uchicago|us|United States|https://mirror.cs.uchicago.edu/ubuntu|builtin|false|true"
+  "ca-waterloo|ca|Canada|https://mirror.csclub.uwaterloo.ca/ubuntu|builtin|false|true"
+  "us-rit|us|United States|https://mirror.rit.edu/ubuntu|builtin|false|true"
+  "us-arizona|us|United States|https://mirror.arizona.edu/ubuntu|builtin|false|true"
+  "gb-archive|gb|United Kingdom|https://gb.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "de-archive|de|Germany|https://de.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "fr-archive|fr|France|https://fr.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "it-archive|it|Italy|https://it.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "nl-archive|nl|Netherlands|https://nl.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "au-archive|au|Australia|https://au.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "jp-archive|jp|Japan|https://jp.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "kr-archive|kr|South Korea|https://kr.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "in-archive|in|India|https://in.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "br-archive|br|Brazil|https://br.archive.ubuntu.com/ubuntu|builtin|true|true"
 )
 
+_validate_mirror_url() {
+  local url="${1%/}" path host
+  [[ "$url" != *'|'* && "$url" != *$'\\n'* && "$url" != *$'\\r'* ]] || return 1
+  [[ "$url" != *'@'* && "$url" != *'?'* && "$url" != *'#'* ]] || return 1
+  [[ "$url" =~ ^https?://(\\[[0-9A-Fa-f:]+\\]|[A-Za-z0-9.-]+)(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$ ]] || return 1
+  host="${url#*://}"
+  host="${host%%/*}"
+  [[ "$host" != .* && "$host" != *..* ]] || return 1
+  path="${url#*://}"
+  path="/${path#*/}"
+  [[ "$path" == */ubuntu ]] || return 1
+  [[ "$path" != *"/../"* && "$path" != *"/./"* ]] || return 1
+  printf '%s\\n' "$url"
+}
+
+_catalog_entry_valid() {
+  local id="$1" country="$2" region="$3" url="$4" source="$5" official="$6" enabled="$7"
+  [[ "$id" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]] || return 1
+  [[ "$country" =~ ^(global|auto|[a-z]{2})$ ]] || return 1
+  [[ -n "$region" && "$region" != *'|'* && "$region" != *$'\\n'* ]] || return 1
+  _validate_mirror_url "$url" >/dev/null || return 1
+  case "$source" in
+    builtin | ubuntu-index | user) ;;
+    *) return 1 ;;
+  esac
+  [[ "$official" == true || "$official" == false ]] || return 1
+  [[ "$enabled" == true || "$enabled" == false ]] || return 1
+  [[ "$source" != user || "$official" == false ]] || return 1
+}
+
+_catalog_add_entry() {
+  local id="$1" country="$2" region="$3" url="$4" source="$5" official="$6" enabled="$7"
+  local normalized existing
+  if ! normalized="$(_validate_mirror_url "$url")" ||
+    ! _catalog_entry_valid "$id" "$country" "$region" "$normalized" "$source" "$official" "$enabled"; then
+    ((CATALOG_INVALID_ENTRIES += 1)) || true
+    return 1
+  fi
+  for existing in "${_CATALOG_URLS[@]}"; do
+    [[ "$existing" != "$normalized" ]] || return 0
+  done
+  _CATALOG_IDS+=("$id")
+  _CATALOG_COUNTRIES+=("$country")
+  _CATALOG_REGIONS+=("$region")
+  _CATALOG_URLS+=("$normalized")
+  _CATALOG_SOURCES+=("$source")
+  _CATALOG_OFFICIAL+=("$official")
+  _CATALOG_ENABLED+=("$enabled")
+}
+
+_catalog_read_file() {
+  local file="$1" expected_source="$2"
+  [[ -f "$file" && -r "$file" ]] || return 0
+  local line id country region url source official enabled extra
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -n "$line" && "$line" != \\#* ]] || continue
+    IFS='|' read -r id country region url source official enabled extra <<<"$line"
+    [[ -z "${extra:-}" && "$source" == "$expected_source" ]] || {
+      ((CATALOG_INVALID_ENTRIES += 1)) || true
+      continue
+    }
+    _catalog_add_entry "$id" "$country" "$region" "$url" "$source" "$official" "$enabled" || true
+  done <"$file"
+}
+
+_download_catalog_file() {
+  local destination="$1"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --connect-timeout "$PROBE_TIMEOUT_CONNECT" --max-time "$TIMEOUT_TOTAL" \\
+      --proto '=https' --proto-redir '=https' -o "$destination" "$MIRROR_INDEX_URL"
+    return $?
+  fi
+  if command -v wget >/dev/null 2>&1; then
+    wget --timeout="$TIMEOUT_TOTAL" --tries=1 --max-redirect=5 -q \\
+      -O "$destination" "$MIRROR_INDEX_URL"
+    return $?
+  fi
+  return 1
+}
+
+_refresh_catalog_cache() {
+  local download_file cache_tmp accepted=0 url host hash id
+  download_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.index.XXXXXX")" || return 1
+  cache_tmp=""
+  if ! _download_catalog_file "$download_file"; then
+    rm -f "$download_file"
+    return 1
+  fi
+
+  local -a discovered=()
+  local -A seen_urls=()
+  while IFS= read -r url || [[ -n "$url" ]]; do
+    url="$(printf '%s' "$url" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -n "$url" && "$url" != \\#* ]] || continue
+    if ! url="$(_validate_mirror_url "$url")"; then
+      ((CATALOG_INVALID_ENTRIES += 1)) || true
+      continue
+    fi
+    [[ -z "${seen_urls[$url]+x}" ]] || continue
+    seen_urls["$url"]=1
+    host="${url#*://}"
+    host="${host%%/*}"
+    host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
+    hash="$(printf '%s' "$url" | sha256sum | cut -c1-10)"
+    id="ubuntu-index-${host:0:32}-${hash}"
+    discovered+=("$id|auto|Ubuntu-selected|$url|ubuntu-index|true|true")
+    ((accepted += 1))
+  done <"$download_file"
+  rm -f "$download_file"
+  ((accepted > 0)) || return 1
+
+  if ! mkdir -p "$(dirname "$CATALOG_CACHE_FILE")"; then return 1; fi
+  chmod 0700 "$(dirname "$CATALOG_CACHE_FILE")" 2>/dev/null || true
+  cache_tmp="$(mktemp "${CATALOG_CACHE_FILE}.tmp.XXXXXX")" || return 1
+  {
+    printf '# power-apt-boost-catalog-v%s\\n' "$MIRROR_CATALOG_SCHEMA"
+    printf '# fetched_at=%s\\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    printf '%s\\n' "${discovered[@]}"
+  } >"$cache_tmp" || {
+    rm -f "$cache_tmp"
+    return 1
+  }
+  chmod 0600 "$cache_tmp" || {
+    rm -f "$cache_tmp"
+    return 1
+  }
+  mv -f -- "$cache_tmp" "$CATALOG_CACHE_FILE" || {
+    rm -f "$cache_tmp"
+    return 1
+  }
+  CATALOG_CACHE_STATE="refreshed"
+  CATALOG_LAST_REFRESH="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  return 0
+}
+
+_load_mirror_catalog() {
+  _CATALOG_IDS=()
+  _CATALOG_COUNTRIES=()
+  _CATALOG_REGIONS=()
+  _CATALOG_URLS=()
+  _CATALOG_SOURCES=()
+  _CATALOG_OFFICIAL=()
+  _CATALOG_ENABLED=()
+  CATALOG_INVALID_ENTRIES=0
+  CATALOG_SOURCE="built-in"
+  CATALOG_CACHE_STATE="missing"
+  CATALOG_LAST_REFRESH=""
+
+  local entry id country region url source official enabled
+  for entry in "${_MIRROR_CATALOG[@]}"; do
+    IFS='|' read -r id country region url source official enabled <<<"$entry"
+    _catalog_add_entry "$id" "$country" "$region" "$url" "$source" "$official" "$enabled" || true
+  done
+
+  if [[ -f "$USER_MIRRORS_FILE" ]]; then
+    local before_user_count="${#_CATALOG_IDS[@]}"
+    _catalog_read_file "$USER_MIRRORS_FILE" "user"
+    if (("${#_CATALOG_IDS[@]}" > before_user_count)); then
+      CATALOG_SOURCE="built-in+user"
+    fi
+  fi
+
+  local cache_age=999999999 now cache_mtime cache_timestamp=""
+  if [[ -f "$CATALOG_CACHE_FILE" ]]; then
+    cache_mtime="$(stat -c '%Y' "$CATALOG_CACHE_FILE" 2>/dev/null || printf '0')"
+    now="$(date +%s)"
+    cache_age=$((now - cache_mtime))
+    ((cache_age >= 0)) || cache_age=999999999
+    cache_timestamp="$(sed -n 's/^# fetched_at=//p' "$CATALOG_CACHE_FILE" | head -1)"
+  fi
+
+  if [[ "$REFRESH_CATALOG" == true || ! -f "$CATALOG_CACHE_FILE" || "$cache_age" -gt "$CATALOG_CACHE_TTL" ]]; then
+    if [[ -z "$COUNTRY_FILTER" ]] && _refresh_catalog_cache; then
+      :
+    elif [[ -f "$CATALOG_CACHE_FILE" ]]; then
+      CATALOG_CACHE_STATE="stale-fallback"
+      CATALOG_LAST_REFRESH="$cache_timestamp"
+      warn "Ubuntu mirror discovery failed; using the last known-good catalog cache."
+    else
+      CATALOG_CACHE_STATE="unavailable"
+      warn "Ubuntu mirror discovery is unavailable; using the built-in and user mirror catalog."
+    fi
+  elif [[ -f "$CATALOG_CACHE_FILE" ]]; then
+    CATALOG_CACHE_STATE="fresh-cache"
+    CATALOG_LAST_REFRESH="$cache_timestamp"
+  fi
+
+  if [[ -f "$CATALOG_CACHE_FILE" ]]; then
+    local before_dynamic_count="${#_CATALOG_IDS[@]}"
+    _catalog_read_file "$CATALOG_CACHE_FILE" "ubuntu-index"
+    if (("${#_CATALOG_IDS[@]}" > before_dynamic_count)); then
+      [[ "$CATALOG_SOURCE" == built-in ]] && CATALOG_SOURCE="built-in+ubuntu-index"
+      [[ "$CATALOG_SOURCE" == built-in+user ]] && CATALOG_SOURCE="built-in+user+ubuntu-index"
+    fi
+  fi
+  CATALOG_SOURCE="schema-v${MIRROR_CATALOG_SCHEMA}:${CATALOG_SOURCE}"
+}
+
 _get_mirrors() {
-  local mirrors=()
-  local entry country mirror_url
+  _load_mirror_catalog
+  local -a mirrors=()
+  local i found_country=false existing
   local country_lower
   country_lower="$(printf '%s' "$COUNTRY_FILTER" | tr '[:upper:]' '[:lower:]')"
 
-  if [[ -n "$country_lower" ]]; then
-    local found_country=false
-    for entry in "${_MIRROR_CATALOG[@]}"; do
-      IFS='|' read -r country _ mirror_url <<<"$entry"
-      if [[ "$country" == "$country_lower" ]]; then
-        found_country=true
-        mirrors+=("$mirror_url")
-      fi
-    done
-    [[ "$found_country" == true ]] || die "Unsupported country code: $COUNTRY_FILTER" "$EXIT_USAGE"
-  else
-    for entry in "${_MIRROR_CATALOG[@]}"; do
-      IFS='|' read -r country _ mirror_url <<<"$entry"
-      mirrors+=("$mirror_url")
-    done
+  for ((i = 0; i < ${#_CATALOG_URLS[@]}; i++)); do
+    [[ "${_CATALOG_ENABLED[$i]}" == true ]] || continue
+    if [[ "$OFFICIAL_ONLY" == true && "${_CATALOG_OFFICIAL[$i]}" != true ]]; then continue; fi
+    if [[ -n "$country_lower" && "${_CATALOG_COUNTRIES[$i]}" != "$country_lower" ]]; then continue; fi
+    mirrors+=("${_CATALOG_URLS[$i]}")
+    [[ "${_CATALOG_COUNTRIES[$i]}" != "$country_lower" ]] || found_country=true
+  done
+
+  if [[ -n "$country_lower" && "$found_country" != true ]]; then
+    die "No enabled mirrors are available for country code: $COUNTRY_FILTER" "$EXIT_USAGE"
   fi
 
   if [[ -n "$FORCE_MIRROR" ]]; then
-    mirrors=("$FORCE_MIRROR" "${mirrors[@]}")
-  fi
-  printf '%s\n' "${mirrors[@]}"
-}
-
-list_mirrors() {
-  detect_ubuntu
-  _print_section_header "AVAILABLE MIRRORS"
-  local mirror_url result_file result_line rtime rstatus
-  while IFS= read -r mirror_url; do
-    result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.list.XXXXXX")"
-    _tmp_dirs+=("$result_file")
-    _test_mirror "$mirror_url" "$result_file" "$CODENAME"
-    result_line="$(cat "$result_file" 2>/dev/null || true)"
-    rm -f "$result_file" 2>/dev/null || true
-    rtime="${result_line%% *}"
-    rstatus="${result_line#* }"
-    if [[ "$rstatus" == "pass" ]]; then
-      printf '  %b%-8s%b %s (%ss)\n' "$COLOR_GREEN" "OK" "$COLOR_RESET" "$mirror_url" "$rtime" >&2
-    else
-      printf '  %b%-8s%b %s\n' "$COLOR_RED" "FAIL" "$COLOR_RESET" "$mirror_url" >&2
+    local forced_url
+    forced_url="$(_validate_mirror_url "$FORCE_MIRROR")" || die "Invalid mirror URL: $FORCE_MIRROR" "$EXIT_USAGE"
+    local found_forced=false
+    for existing in "${mirrors[@]}"; do
+      [[ "$existing" != "$forced_url" ]] || found_forced=true
+    done
+    if [[ "$found_forced" != true ]]; then
+      if [[ "$OFFICIAL_ONLY" == true ]]; then
+        die "The manually supplied mirror is not verified as official." "$EXIT_USAGE"
+      fi
+      mirrors=("$forced_url" "${mirrors[@]}")
     fi
-  done < <(_get_mirrors)
+  fi
+
+  printf '%s\\n' "${mirrors[@]}"
 }
 
 # ─── HTTP Probing ─────────────────────────────────────────────────────────────

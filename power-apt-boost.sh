@@ -588,6 +588,103 @@ _refresh_catalog_cache() {
   return 0
 }
 
+_load_mirror_catalog() {
+  _CATALOG_IDS=()
+  _CATALOG_COUNTRIES=()
+  _CATALOG_REGIONS=()
+  _CATALOG_URLS=()
+  _CATALOG_SOURCES=()
+  _CATALOG_OFFICIAL=()
+  _CATALOG_ENABLED=()
+  CATALOG_INVALID_ENTRIES=0
+  CATALOG_SOURCE="built-in"
+  CATALOG_CACHE_STATE="missing"
+  CATALOG_LAST_REFRESH=""
+
+  local entry id country region url source official enabled
+  for entry in "${_MIRROR_CATALOG[@]}"; do
+    IFS='|' read -r id country region url source official enabled <<<"$entry"
+    _catalog_add_entry "$id" "$country" "$region" "$url" "$source" "$official" "$enabled" || true
+  done
+
+  if [[ -f "$USER_MIRRORS_FILE" ]]; then
+    local before_user_count="${#_CATALOG_IDS[@]}"
+    _catalog_read_file "$USER_MIRRORS_FILE" "user"
+    if (("${#_CATALOG_IDS[@]}" > before_user_count)); then
+      CATALOG_SOURCE="built-in+user"
+    fi
+  fi
+
+  local cache_age=999999999 now cache_mtime cache_timestamp=""
+  if [[ -f "$CATALOG_CACHE_FILE" ]]; then
+    cache_mtime="$(stat -c '%Y' "$CATALOG_CACHE_FILE" 2>/dev/null || printf '0')"
+    now="$(date +%s)"
+    cache_age=$((now - cache_mtime))
+    ((cache_age >= 0)) || cache_age=999999999
+    cache_timestamp="$(sed -n 's/^# fetched_at=//p' "$CATALOG_CACHE_FILE" | head -1)"
+  fi
+
+  if [[ "$REFRESH_CATALOG" == true || ! -f "$CATALOG_CACHE_FILE" || "$cache_age" -gt "$CATALOG_CACHE_TTL" ]]; then
+    if [[ -z "$COUNTRY_FILTER" ]] && _refresh_catalog_cache; then
+      :
+    elif [[ -f "$CATALOG_CACHE_FILE" ]]; then
+      CATALOG_CACHE_STATE="stale-fallback"
+      CATALOG_LAST_REFRESH="$cache_timestamp"
+      warn "Ubuntu mirror discovery failed; using the last known-good catalog cache."
+    else
+      CATALOG_CACHE_STATE="unavailable"
+      warn "Ubuntu mirror discovery is unavailable; using the built-in and user mirror catalog."
+    fi
+  elif [[ -f "$CATALOG_CACHE_FILE" ]]; then
+    CATALOG_CACHE_STATE="fresh-cache"
+    CATALOG_LAST_REFRESH="$cache_timestamp"
+  fi
+
+  if [[ -f "$CATALOG_CACHE_FILE" ]]; then
+    local before_dynamic_count="${#_CATALOG_IDS[@]}"
+    _catalog_read_file "$CATALOG_CACHE_FILE" "ubuntu-index"
+    if (("${#_CATALOG_IDS[@]}" > before_dynamic_count)); then
+      [[ "$CATALOG_SOURCE" == built-in ]] && CATALOG_SOURCE="built-in+ubuntu-index"
+      [[ "$CATALOG_SOURCE" == built-in+user ]] && CATALOG_SOURCE="built-in+user+ubuntu-index"
+    fi
+  elif [[ "$CATALOG_CACHE_STATE" == discovered-uncached ]]; then
+    CATALOG_SOURCE="built-in+ubuntu-index"
+  fi
+  CATALOG_SOURCE="schema-v${MIRROR_CATALOG_SCHEMA}:${CATALOG_SOURCE}"
+}
+
+_get_mirrors() {
+  local -a mirrors=()
+  local i found_country=false existing country_lower
+  country_lower="$(printf '%s' "$COUNTRY_FILTER" | tr '[:upper:]' '[:lower:]')"
+
+  for ((i = 0; i < ${#_CATALOG_URLS[@]}; i++)); do
+    [[ "${_CATALOG_ENABLED[$i]}" == true ]] || continue
+    if [[ "$OFFICIAL_ONLY" == true && "${_CATALOG_OFFICIAL[$i]}" != true ]]; then continue; fi
+    if [[ -n "$country_lower" && "${_CATALOG_COUNTRIES[$i]}" != "$country_lower" ]]; then continue; fi
+    mirrors+=("${_CATALOG_URLS[$i]}")
+    [[ "${_CATALOG_COUNTRIES[$i]}" != "$country_lower" ]] || found_country=true
+  done
+
+  if [[ -n "$country_lower" && "$found_country" != true ]]; then
+    die "No enabled mirrors are available for country code: $COUNTRY_FILTER" "$EXIT_USAGE"
+  fi
+
+  if [[ -n "$FORCE_MIRROR" ]]; then
+    local forced_url
+    forced_url="$(_validate_mirror_url "$FORCE_MIRROR")" || die "Invalid mirror URL: $FORCE_MIRROR" "$EXIT_USAGE"
+    local found_forced=false
+    for existing in "${mirrors[@]}"; do
+      [[ "$existing" != "$forced_url" ]] || found_forced=true
+    done
+    if [[ "$found_forced" != true ]]; then
+      [[ "$OFFICIAL_ONLY" != true ]] || die "The manually supplied mirror is not verified as official." "$EXIT_USAGE"
+      mirrors=("$forced_url" "${mirrors[@]}")
+    fi
+  fi
+  printf '%s\n' "${mirrors[@]}"
+}
+
 list_mirrors() {
   detect_ubuntu
   _print_section_header "AVAILABLE MIRRORS"

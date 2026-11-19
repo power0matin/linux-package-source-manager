@@ -422,6 +422,9 @@ ATOMIC
   assert_exit_code 1 "$unsupported_arch_status" "unsupported architecture does not default to standard archive"
   unset -f dpkg
 
+  NO_CATALOG_NETWORK=true
+  _load_mirror_catalog
+  NO_CATALOG_NETWORK=false
   dpkg() { printf 'arm64\n'; }
   export -f dpkg
   local ports_mode=1 ports_mirrors
@@ -431,10 +434,6 @@ ATOMIC
   assert_contains "https://ports.ubuntu.com/ubuntu-ports" "$ports_mirrors" "ports catalog is available for non-x86 architecture"
   unset -f dpkg
 
-
-  NO_CATALOG_NETWORK=true
-  _load_mirror_catalog
-  NO_CATALOG_NETWORK=false
   COUNTRY_FILTER=ir
   local iran_mirrors
   iran_mirrors="$(_get_mirrors)"
@@ -460,7 +459,6 @@ SOURCES
   assert_equal "1" "$APT_SOURCE_THIRD_PARTY" "APT inventory classifies third-party sources"
   assert_equal "1" "$APT_SOURCE_DUPLICATES" "APT inventory detects duplicate URI/suite records"
   rm -f "${APT_SOURCES_DIR}/inventory-thirdparty.list" "${APT_SOURCES_DIR}/inventory-duplicate.sources"
-
 
   NO_SPINNER=true
   _start_spinner "test"

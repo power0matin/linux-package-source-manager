@@ -913,10 +913,10 @@ APTCONF
 
 _apt_target_path() {
   case "$1" in
-sources.list) printf '%s\n' "$APT_SOURCES_FILE" ;;
-sources.list.d) printf '%s\n' "$APT_SOURCES_DIR" ;;
-apt.conf.d) printf '%s\n' "$APT_CONF_DIR" ;;
-*) return 1 ;;
+  sources.list) printf '%s\n' "$APT_SOURCES_FILE" ;;
+  sources.list.d) printf '%s\n' "$APT_SOURCES_DIR" ;;
+  apt.conf.d) printf '%s\n' "$APT_CONF_DIR" ;;
+  *) return 1 ;;
   esac
 }
 
@@ -1493,107 +1493,107 @@ EOF
 _parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -h | --help)
-        _print_help
-        exit "$EXIT_OK"
-        ;;
-      -v | --version)
-        printf '%s v%s\n' "$APP_NAME" "$APP_VERSION"
-        exit "$EXIT_OK"
-        ;;
-      -m | --mirror)
-        [[ -n "${2:-}" ]] || die "Option $1 requires a URL argument." "$EXIT_USAGE"
-        FORCE_MIRROR="${2%/}"
-        ACTION_REQUESTED=true
-        shift 2
-        ;;
-      -r | --restore)
-        RESTORE=true
-        shift
-        ;;
-      --restore-path)
-        [[ -n "${2:-}" ]] || die "Option $1 requires a backup path." "$EXIT_USAGE"
-        RESTORE_PATH="$2"
-        RESTORE=true
-        shift 2
-        ;;
-      --dry-run)
-        DRY_RUN=true
-        ACTION_REQUESTED=true
-        shift
-        ;;
-      --skip-update)
-        SKIP_UPDATE=true
-        ACTION_REQUESTED=true
-        shift
-        ;;
-      --list)
-        LIST_REQUESTED=true
-        shift
-        ;;
-      --menu)
-        MENU_REQUESTED=true
-        shift
-        ;;
-      --status)
-        STATUS_REQUESTED=true
-        shift
-        ;;
-      --doctor)
-        DOCTOR_REQUESTED=true
-        shift
-        ;;
-      -y | --yes)
-        YES=true
-        shift
-        ;;
-      --json)
-        JSON_OUTPUT=true
-        QUIET=true
-        NO_SPINNER=true
-        shift
-        ;;
-      --verbose)
-        VERBOSE=true
-        shift
-        ;;
-      --quiet)
-        QUIET=true
-        shift
-        ;;
-      --no-spinner)
-        NO_SPINNER=true
-        shift
-        ;;
-      --timeout)
-        [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires a positive integer." "$EXIT_USAGE"
-        (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
-        TIMEOUT_TOTAL="$2"
-        shift 2
-        ;;
-      --country)
-        [[ "${2:-}" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
-        COUNTRY_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
-        shift 2
-        ;;
-      --ipv6)
-        USE_IPV6=true
-        shift
-        ;;
-      --log-file)
-        [[ -n "${2:-}" ]] || die "Option $1 requires a file path." "$EXIT_USAGE"
-        LOG_FILE="$2"
-        LOG_ENABLED=true
-        shift 2
-        ;;
-      -*)
-        error "Unknown option: $1. Run --help for usage."
-        exit "$EXIT_USAGE"
-        ;;
-      *)
-        error "Unexpected argument: $1. Run --help for usage."
-        exit "$EXIT_USAGE"
-        ;;
+    -h | --help)
+      _print_help
+      exit "$EXIT_OK"
+      ;;
+    -v | --version)
+      printf '%s v%s\n' "$APP_NAME" "$APP_VERSION"
+      exit "$EXIT_OK"
+      ;;
+    -m | --mirror)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a URL argument." "$EXIT_USAGE"
+      FORCE_MIRROR="${2%/}"
+      ACTION_REQUESTED=true
+      shift 2
+      ;;
+    -r | --restore)
+      RESTORE=true
+      shift
+      ;;
+    --restore-path)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a backup path." "$EXIT_USAGE"
+      RESTORE_PATH="$2"
+      RESTORE=true
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      ACTION_REQUESTED=true
+      shift
+      ;;
+    --skip-update)
+      SKIP_UPDATE=true
+      ACTION_REQUESTED=true
+      shift
+      ;;
+    --list)
+      LIST_REQUESTED=true
+      shift
+      ;;
+    --menu)
+      MENU_REQUESTED=true
+      shift
+      ;;
+    --status)
+      STATUS_REQUESTED=true
+      shift
+      ;;
+    --doctor)
+      DOCTOR_REQUESTED=true
+      shift
+      ;;
+    -y | --yes)
+      YES=true
+      shift
+      ;;
+    --json)
+      JSON_OUTPUT=true
+      QUIET=true
+      NO_SPINNER=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --no-spinner)
+      NO_SPINNER=true
+      shift
+      ;;
+    --timeout)
+      [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires a positive integer." "$EXIT_USAGE"
+      (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
+      TIMEOUT_TOTAL="$2"
+      shift 2
+      ;;
+    --country)
+      [[ "${2:-}" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
+      COUNTRY_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+      shift 2
+      ;;
+    --ipv6)
+      USE_IPV6=true
+      shift
+      ;;
+    --log-file)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a file path." "$EXIT_USAGE"
+      LOG_FILE="$2"
+      LOG_ENABLED=true
+      shift 2
+      ;;
+    -*)
+      error "Unknown option: $1. Run --help for usage."
+      exit "$EXIT_USAGE"
+      ;;
+    *)
+      error "Unexpected argument: $1. Run --help for usage."
+      exit "$EXIT_USAGE"
+      ;;
     esac
   done
 
@@ -1879,11 +1879,11 @@ _menu_apt() {
   while true; do
     choice="$(
       _menu_choose "APT Management" "Choose an action" \\
-        "apply_best" "Find and apply the fastest mirror" \\
-        "apply_custom" "Test and apply a custom mirror" \\
-        "list" "List and test available mirrors" \\
-        "back" "Back to main menu"
-    )" || return 0
+      "apply_best" "Find and apply the fastest mirror" \\
+      "apply_custom" "Test and apply a custom mirror" \\
+      "list" "List and test available mirrors" \\
+      "back" "Back to main menu"
+  )" || return 0
     case "$choice" in
     apply_best)
       FORCE_MIRROR=""
@@ -1948,10 +1948,10 @@ _menu_diagnostics() {
   local choice
   choice="$(
     _menu_choose "Diagnostics" "Choose a report" \\
-      "status" "System status" \\
-      "doctor" "Run local health checks" \\
-      "back" "Back to main menu"
-  )" || return 0
+    "status" "System status" \\
+    "doctor" "Run local health checks" \\
+    "back" "Back to main menu"
+)" || return 0
   case "$choice" in
   status)
     _status_report
@@ -1979,12 +1979,12 @@ _menu_settings() {
   while true; do
     choice="$(
       _menu_choose "Settings" "Settings apply to this session only" \\
-        "timeout" "Probe timeout: ${TIMEOUT_TOTAL}s" \\
-        "country" "Country filter: ${COUNTRY_FILTER:-all}" \\
-        "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \\
-        "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \\
-        "back" "Back to main menu"
-    )" || return 0
+      "timeout" "Probe timeout: ${TIMEOUT_TOTAL}s" \\
+      "country" "Country filter: ${COUNTRY_FILTER:-all}" \\
+      "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \\
+      "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \\
+      "back" "Back to main menu"
+  )" || return 0
     case "$choice" in
     timeout)
       value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
@@ -2025,14 +2025,14 @@ _menu_main() {
     local choice
     choice="$(
       _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \\
-        "overview" "Overview" \\
-        "apt" "APT management" \\
-        "benchmark" "Mirror benchmark" \\
-        "backups" "Backup and Restore" \\
-        "diagnostics" "Diagnostics" \\
-        "settings" "Settings" \\
-        "quit" "Exit"
-    )" || return 0
+      "overview" "Overview" \\
+      "apt" "APT management" \\
+      "benchmark" "Mirror benchmark" \\
+      "backups" "Backup and Restore" \\
+      "diagnostics" "Diagnostics" \\
+      "settings" "Settings" \\
+      "quit" "Exit"
+  )" || return 0
     case "$choice" in
     overview) _menu_overview ;;
     apt) _menu_apt ;;

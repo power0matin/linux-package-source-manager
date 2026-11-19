@@ -1290,10 +1290,10 @@ APTCONF
 
 _apt_target_path() {
   case "$1" in
-sources.list) printf '%s\n' "$APT_SOURCES_FILE" ;;
-sources.list.d) printf '%s\n' "$APT_SOURCES_DIR" ;;
-apt.conf.d) printf '%s\n' "$APT_CONF_DIR" ;;
-*) return 1 ;;
+  sources.list) printf '%s\n' "$APT_SOURCES_FILE" ;;
+  sources.list.d) printf '%s\n' "$APT_SOURCES_DIR" ;;
+  apt.conf.d) printf '%s\n' "$APT_CONF_DIR" ;;
+  *) return 1 ;;
   esac
 }
 
@@ -1904,156 +1904,156 @@ EOF
 _parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -h | --help)
-        _print_help
-        exit "$EXIT_OK"
-        ;;
-      -v | --version)
-        printf '%s v%s\n' "$APP_NAME" "$APP_VERSION"
-        exit "$EXIT_OK"
-        ;;
-      -m | --mirror)
-        [[ -n "${2:-}" ]] || die "Option $1 requires a URL argument." "$EXIT_USAGE"
-        FORCE_MIRROR="${2%/}"
-        ACTION_REQUESTED=true
-        shift 2
-        ;;
-      -r | --restore)
-        RESTORE=true
-        shift
-        ;;
-      --restore-path)
-        [[ -n "${2:-}" ]] || die "Option $1 requires a backup path." "$EXIT_USAGE"
-        RESTORE_PATH="$2"
-        RESTORE=true
-        shift 2
-        ;;
-      --dry-run)
-        DRY_RUN=true
-        ACTION_REQUESTED=true
-        shift
-        ;;
-      --skip-update)
-        SKIP_UPDATE=true
-        ACTION_REQUESTED=true
-        shift
-        ;;
-      --list)
-        LIST_REQUESTED=true
-        shift
-        ;;
-      --refresh-catalog)
-        REFRESH_CATALOG=true
-        LIST_REQUESTED=true
-        shift
-        ;;
-      --official-only)
-        OFFICIAL_ONLY=true
-        shift
-        ;;
-      --workers)
-        [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires an integer from 1 to $MAX_WORKERS_LIMIT." "$EXIT_USAGE"
-        (($2 >= 1 && $2 <= MAX_WORKERS_LIMIT)) || die "Option $1 must be between 1 and $MAX_WORKERS_LIMIT." "$EXIT_USAGE"
-        BENCH_WORKERS="$2"
-        shift 2
-        ;;
-      --retries)
-        [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires an integer from 0 to 3." "$EXIT_USAGE"
-        (($2 >= 0 && $2 <= 3)) || die "Option $1 must be between 0 and 3." "$EXIT_USAGE"
-        PROBE_RETRIES="$2"
-        shift 2
-        ;;
-      --add-mirror)
-        [[ -n "${2:-}" ]] || die "Option $1 requires a mirror URL." "$EXIT_USAGE"
-        MIRROR_MANAGEMENT_ACTION="add"
-        MIRROR_MANAGEMENT_VALUE="$2"
-        MIRROR_MANAGEMENT_REQUESTED=true
-        shift 2
-        ;;
-      --remove-mirror)
-        [[ -n "${2:-}" ]] || die "Option $1 requires a mirror ID." "$EXIT_USAGE"
-        MIRROR_MANAGEMENT_ACTION="remove"
-        MIRROR_MANAGEMENT_VALUE="$2"
-        MIRROR_MANAGEMENT_REQUESTED=true
-        shift 2
-        ;;
-      --disable-mirror)
-        [[ -n "${2:-}" ]] || die "Option $1 requires a mirror ID." "$EXIT_USAGE"
-        MIRROR_MANAGEMENT_ACTION="disable"
-        MIRROR_MANAGEMENT_VALUE="$2"
-        MIRROR_MANAGEMENT_REQUESTED=true
-        shift 2
-        ;;
-      --enable-mirror)
-        [[ -n "${2:-}" ]] || die "Option $1 requires a mirror ID." "$EXIT_USAGE"
-        MIRROR_MANAGEMENT_ACTION="enable"
-        MIRROR_MANAGEMENT_VALUE="$2"
-        MIRROR_MANAGEMENT_REQUESTED=true
-        shift 2
-        ;;
-      --menu)
-        MENU_REQUESTED=true
-        shift
-        ;;
-      --status)
-        STATUS_REQUESTED=true
-        shift
-        ;;
-      --doctor)
-        DOCTOR_REQUESTED=true
-        shift
-        ;;
-      -y | --yes)
-        YES=true
-        shift
-        ;;
-      --json)
-        JSON_OUTPUT=true
-        QUIET=true
-        NO_SPINNER=true
-        shift
-        ;;
-      --verbose)
-        VERBOSE=true
-        shift
-        ;;
-      --quiet)
-        QUIET=true
-        shift
-        ;;
-      --no-spinner)
-        NO_SPINNER=true
-        shift
-        ;;
-      --timeout)
-        [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires a positive integer." "$EXIT_USAGE"
-        (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
-        TIMEOUT_TOTAL="$2"
-        shift 2
-        ;;
-      --country)
-        [[ "${2:-}" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
-        COUNTRY_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
-        shift 2
-        ;;
-      --ipv6)
-        USE_IPV6=true
-        shift
-        ;;
-      --log-file)
-        [[ -n "${2:-}" ]] || die "Option $1 requires a file path." "$EXIT_USAGE"
-        LOG_FILE="$2"
-        LOG_ENABLED=true
-        shift 2
-        ;;
-      -*)
-        error "Unknown option: $1. Run --help for usage."
-        exit "$EXIT_USAGE"
-        ;;
-      *)
-        error "Unexpected argument: $1. Run --help for usage."
-        exit "$EXIT_USAGE"
-        ;;
+    -h | --help)
+      _print_help
+      exit "$EXIT_OK"
+      ;;
+    -v | --version)
+      printf '%s v%s\n' "$APP_NAME" "$APP_VERSION"
+      exit "$EXIT_OK"
+      ;;
+    -m | --mirror)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a URL argument." "$EXIT_USAGE"
+      FORCE_MIRROR="${2%/}"
+      ACTION_REQUESTED=true
+      shift 2
+      ;;
+    -r | --restore)
+      RESTORE=true
+      shift
+      ;;
+    --restore-path)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a backup path." "$EXIT_USAGE"
+      RESTORE_PATH="$2"
+      RESTORE=true
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      ACTION_REQUESTED=true
+      shift
+      ;;
+    --skip-update)
+      SKIP_UPDATE=true
+      ACTION_REQUESTED=true
+      shift
+      ;;
+    --list)
+      LIST_REQUESTED=true
+      shift
+      ;;
+    --refresh-catalog)
+      REFRESH_CATALOG=true
+      LIST_REQUESTED=true
+      shift
+      ;;
+    --official-only)
+      OFFICIAL_ONLY=true
+      shift
+      ;;
+    --workers)
+      [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires an integer from 1 to $MAX_WORKERS_LIMIT." "$EXIT_USAGE"
+      (($2 >= 1 && $2 <= MAX_WORKERS_LIMIT)) || die "Option $1 must be between 1 and $MAX_WORKERS_LIMIT." "$EXIT_USAGE"
+      BENCH_WORKERS="$2"
+      shift 2
+      ;;
+    --retries)
+      [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires an integer from 0 to 3." "$EXIT_USAGE"
+      (($2 >= 0 && $2 <= 3)) || die "Option $1 must be between 0 and 3." "$EXIT_USAGE"
+      PROBE_RETRIES="$2"
+      shift 2
+      ;;
+    --add-mirror)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a mirror URL." "$EXIT_USAGE"
+      MIRROR_MANAGEMENT_ACTION="add"
+      MIRROR_MANAGEMENT_VALUE="$2"
+      MIRROR_MANAGEMENT_REQUESTED=true
+      shift 2
+      ;;
+    --remove-mirror)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a mirror ID." "$EXIT_USAGE"
+      MIRROR_MANAGEMENT_ACTION="remove"
+      MIRROR_MANAGEMENT_VALUE="$2"
+      MIRROR_MANAGEMENT_REQUESTED=true
+      shift 2
+      ;;
+    --disable-mirror)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a mirror ID." "$EXIT_USAGE"
+      MIRROR_MANAGEMENT_ACTION="disable"
+      MIRROR_MANAGEMENT_VALUE="$2"
+      MIRROR_MANAGEMENT_REQUESTED=true
+      shift 2
+      ;;
+    --enable-mirror)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a mirror ID." "$EXIT_USAGE"
+      MIRROR_MANAGEMENT_ACTION="enable"
+      MIRROR_MANAGEMENT_VALUE="$2"
+      MIRROR_MANAGEMENT_REQUESTED=true
+      shift 2
+      ;;
+    --menu)
+      MENU_REQUESTED=true
+      shift
+      ;;
+    --status)
+      STATUS_REQUESTED=true
+      shift
+      ;;
+    --doctor)
+      DOCTOR_REQUESTED=true
+      shift
+      ;;
+    -y | --yes)
+      YES=true
+      shift
+      ;;
+    --json)
+      JSON_OUTPUT=true
+      QUIET=true
+      NO_SPINNER=true
+      shift
+      ;;
+    --verbose)
+      VERBOSE=true
+      shift
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --no-spinner)
+      NO_SPINNER=true
+      shift
+      ;;
+    --timeout)
+      [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires a positive integer." "$EXIT_USAGE"
+      (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
+      TIMEOUT_TOTAL="$2"
+      shift 2
+      ;;
+    --country)
+      [[ "${2:-}" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
+      COUNTRY_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+      shift 2
+      ;;
+    --ipv6)
+      USE_IPV6=true
+      shift
+      ;;
+    --log-file)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a file path." "$EXIT_USAGE"
+      LOG_FILE="$2"
+      LOG_ENABLED=true
+      shift 2
+      ;;
+    -*)
+      error "Unknown option: $1. Run --help for usage."
+      exit "$EXIT_USAGE"
+      ;;
+    *)
+      error "Unexpected argument: $1. Run --help for usage."
+      exit "$EXIT_USAGE"
+      ;;
     esac
   done
 
@@ -2510,42 +2510,42 @@ _menu_manage_mirrors() {
     )" || return 0
 
     case "$choice" in
-list)
-listing=""
-for i in "${!_CATALOG_IDS[@]}"; do
-[[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
-listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"$'\n'
-done
-[[ -n "$listing" ]] || listing="No custom mirrors have been saved."
-_menu_message "Custom mirrors" "$listing"
-;;
-add)
-value="$(_menu_input "Add custom mirror" "Ubuntu mirror base URL (must serve signed InRelease files)" "https://")" || continue
-MIRROR_MANAGEMENT_ACTION="add"
-MIRROR_MANAGEMENT_VALUE="$value"
-rc=0
-_run_mirror_management || rc=$?
-[[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Add operation finished with exit code $rc."
-;;
-disable | enable | remove)
-listing=""
-for i in "${!_CATALOG_IDS[@]}"; do
-[[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
-listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"$'\n'
-done
-[[ -n "$listing" ]] || {
-_menu_message "Custom mirrors" "There are no saved custom mirrors to change."
-continue
-}
-_menu_message "Saved custom mirror IDs" "$listing"
-value="$(_menu_input "Custom mirror ID" "Enter the exact ID shown above" "")" || continue
-MIRROR_MANAGEMENT_ACTION="$choice"
-MIRROR_MANAGEMENT_VALUE="$value"
-rc=0
-_run_mirror_management || rc=$?
-[[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Operation finished with exit code $rc."
-;;
-back) return 0 ;;
+    list)
+      listing=""
+      for i in "${!_CATALOG_IDS[@]}"; do
+        [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
+        listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"$'\n'
+      done
+      [[ -n "$listing" ]] || listing="No custom mirrors have been saved."
+      _menu_message "Custom mirrors" "$listing"
+      ;;
+    add)
+      value="$(_menu_input "Add custom mirror" "Ubuntu mirror base URL (must serve signed InRelease files)" "https://")" || continue
+      MIRROR_MANAGEMENT_ACTION="add"
+      MIRROR_MANAGEMENT_VALUE="$value"
+      rc=0
+      _run_mirror_management || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Add operation finished with exit code $rc."
+      ;;
+    disable | enable | remove)
+      listing=""
+      for i in "${!_CATALOG_IDS[@]}"; do
+        [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
+        listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"$'\n'
+      done
+      [[ -n "$listing" ]] || {
+        _menu_message "Custom mirrors" "There are no saved custom mirrors to change."
+        continue
+      }
+      _menu_message "Saved custom mirror IDs" "$listing"
+      value="$(_menu_input "Custom mirror ID" "Enter the exact ID shown above" "")" || continue
+      MIRROR_MANAGEMENT_ACTION="$choice"
+      MIRROR_MANAGEMENT_VALUE="$value"
+      rc=0
+      _run_mirror_management || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Operation finished with exit code $rc."
+      ;;
+    back) return 0 ;;
     esac
 
     old_network_setting="$NO_CATALOG_NETWORK"
@@ -2631,7 +2631,7 @@ _menu_diagnostics() {
   local choice
   choice="$(
     _menu_choose "Diagnostics" "Choose a report" \
-    "status" "System status" \
+      "status" "System status" \
     "doctor" "Run local health checks" \
     "back" "Back to main menu"
   )" || return 0
@@ -2673,55 +2673,55 @@ _menu_settings() {
         "back" "Back to main menu"
     )" || return 0
     case "$choice" in
-      timeout)
-        value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
-        if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 300)); then
-          TIMEOUT_TOTAL="$value"
-        else
-          _menu_message "Invalid timeout" "Enter a whole number from 1 to 300."
-        fi
-        ;;
-      country)
-        value="$(_menu_input "Country filter" "Enter a supported two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
-        value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
-        if [[ -z "$value" ]]; then
-          COUNTRY_FILTER=""
-        elif [[ "$value" =~ ^[a-z]{2}$ ]] && _country_code_supported "$value"; then
-          COUNTRY_FILTER="$value"
-        else
-          _menu_message "Unsupported country" "Choose a country code present in the built-in mirror catalog."
-        fi
-        ;;
-      workers)
-        value="$(_menu_input "Benchmark workers" "Enter a value from 1 to $MAX_WORKERS_LIMIT" "$BENCH_WORKERS")" || continue
-        if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= MAX_WORKERS_LIMIT)); then
-          BENCH_WORKERS="$value"
-        else
-          _menu_message "Invalid worker count" "Enter a whole number from 1 to $MAX_WORKERS_LIMIT."
-        fi
-        ;;
-      retries)
-        value="$(_menu_input "Probe retries" "Enter a value from 0 to 3" "$PROBE_RETRIES")" || continue
-        if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 0 && value <= 3)); then
-          PROBE_RETRIES="$value"
-        else
-          _menu_message "Invalid retry count" "Enter a whole number from 0 to 3."
-        fi
-        ;;
-      official)
-        [[ "$OFFICIAL_ONLY" == true ]] && OFFICIAL_ONLY=false || OFFICIAL_ONLY=true
-        ;;
-      refresh)
-        REFRESH_CATALOG=true
-        _menu_message "Catalog refresh" "The Ubuntu mirror catalog will be refreshed the next time you list or benchmark mirrors."
-        ;;
-      ipv6)
-        [[ "$USE_IPV6" == true ]] && USE_IPV6=false || USE_IPV6=true
-        ;;
-      spinner)
-        [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
-        ;;
-      back) return 0 ;;
+    timeout)
+      value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
+      if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 300)); then
+        TIMEOUT_TOTAL="$value"
+      else
+        _menu_message "Invalid timeout" "Enter a whole number from 1 to 300."
+      fi
+      ;;
+    country)
+      value="$(_menu_input "Country filter" "Enter a supported two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
+      value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+      if [[ -z "$value" ]]; then
+        COUNTRY_FILTER=""
+      elif [[ "$value" =~ ^[a-z]{2}$ ]] && _country_code_supported "$value"; then
+        COUNTRY_FILTER="$value"
+      else
+        _menu_message "Unsupported country" "Choose a country code present in the built-in mirror catalog."
+      fi
+      ;;
+    workers)
+      value="$(_menu_input "Benchmark workers" "Enter a value from 1 to $MAX_WORKERS_LIMIT" "$BENCH_WORKERS")" || continue
+      if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= MAX_WORKERS_LIMIT)); then
+        BENCH_WORKERS="$value"
+      else
+        _menu_message "Invalid worker count" "Enter a whole number from 1 to $MAX_WORKERS_LIMIT."
+      fi
+      ;;
+    retries)
+      value="$(_menu_input "Probe retries" "Enter a value from 0 to 3" "$PROBE_RETRIES")" || continue
+      if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 0 && value <= 3)); then
+        PROBE_RETRIES="$value"
+      else
+        _menu_message "Invalid retry count" "Enter a whole number from 0 to 3."
+      fi
+      ;;
+    official)
+      [[ "$OFFICIAL_ONLY" == true ]] && OFFICIAL_ONLY=false || OFFICIAL_ONLY=true
+      ;;
+    refresh)
+      REFRESH_CATALOG=true
+      _menu_message "Catalog refresh" "The Ubuntu mirror catalog will be refreshed the next time you list or benchmark mirrors."
+      ;;
+    ipv6)
+      [[ "$USE_IPV6" == true ]] && USE_IPV6=false || USE_IPV6=true
+      ;;
+    spinner)
+      [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
+      ;;
+    back) return 0 ;;
     esac
   done
 }

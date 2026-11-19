@@ -519,6 +519,75 @@ _download_catalog_file() {
   return 1
 }
 
+_refresh_catalog_cache() {
+  local download_file cache_tmp accepted=0 url host hash id row
+  local -a discovered=()
+  local -A seen_urls=()
+  download_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.index.XXXXXX")" || return 1
+  if ! _download_catalog_file "$download_file"; then
+    rm -f "$download_file"
+    return 1
+  fi
+
+  while IFS= read -r url || [[ -n "$url" ]]; do
+    url="$(printf '%s' "$url" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -n "$url" && "$url" != \#* ]] || continue
+    if ! url="$(_validate_mirror_url "$url")"; then
+      ((CATALOG_INVALID_ENTRIES += 1)) || true
+      continue
+    fi
+    [[ -z "${seen_urls[$url]+x}" ]] || continue
+    seen_urls["$url"]=1
+    host="${url#*://}"
+    host="${host%%/*}"
+    host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
+    hash="$(printf '%s' "$url" | sha256sum | cut -c1-10)"
+    id="ubuntu-index-${host:0:32}-${hash}"
+    discovered+=("$id|auto|Ubuntu-selected|$url|ubuntu-index|true|true")
+    ((accepted += 1))
+  done <"$download_file"
+  rm -f "$download_file"
+  ((accepted > 0)) || return 1
+
+  for row in "${discovered[@]}"; do
+    IFS='|' read -r id country region url source official enabled <<<"$row"
+    _catalog_add_entry "$id" "$country" "$region" "$url" "$source" "$official" "$enabled" || true
+  done
+
+  if ! mkdir -p "$(dirname "$CATALOG_CACHE_FILE")"; then
+    CATALOG_CACHE_STATE="discovered-uncached"
+    CATALOG_LAST_REFRESH="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    return 0
+  fi
+  chmod 0700 "$(dirname "$CATALOG_CACHE_FILE")" 2>/dev/null || true
+  cache_tmp="$(mktemp "${CATALOG_CACHE_FILE}.tmp.XXXXXX")" || {
+    CATALOG_CACHE_STATE="discovered-uncached"
+    return 0
+  }
+  {
+    printf '# power-apt-boost-catalog-v%s\n' "$MIRROR_CATALOG_SCHEMA"
+    printf '# fetched_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    printf '%s\n' "${discovered[@]}"
+  } >"$cache_tmp" || {
+    rm -f "$cache_tmp"
+    CATALOG_CACHE_STATE="discovered-uncached"
+    return 0
+  }
+  chmod 0600 "$cache_tmp" || {
+    rm -f "$cache_tmp"
+    CATALOG_CACHE_STATE="discovered-uncached"
+    return 0
+  }
+  mv -f -- "$cache_tmp" "$CATALOG_CACHE_FILE" || {
+    rm -f "$cache_tmp"
+    CATALOG_CACHE_STATE="discovered-uncached"
+    return 0
+  }
+  CATALOG_CACHE_STATE="refreshed"
+  CATALOG_LAST_REFRESH="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  return 0
+}
+
 list_mirrors() {
   detect_ubuntu
   _print_section_header "AVAILABLE MIRRORS"

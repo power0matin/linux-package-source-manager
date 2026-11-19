@@ -1269,7 +1269,7 @@ _apt_architecture() {
   if command -v dpkg >/dev/null 2>&1; then
     architecture="$(dpkg --print-architecture 2>/dev/null || true)"
   fi
-  printf '%s\n' "\${architecture:-unknown}"
+  printf '%s\n' "${architecture:-unknown}"
 }
 
 _uses_ports_archive() {
@@ -1281,9 +1281,9 @@ _uses_ports_archive() {
 
 _is_official_ubuntu_uri() {
   local uri="$1" host
-  host="\${uri#*://}"
-  host="\${host%%/*}"
-  host="\${host%%:*}"
+  host="${uri#*://}"
+  host="${host%%/*}"
+  host="${host%%:*}"
   [[ "$host" == "ubuntu.com" || "$host" == *.ubuntu.com || "$host" == "canonical.com" || "$host" == *.canonical.com ]]
 }
 
@@ -1291,16 +1291,16 @@ _validate_proxy_url() {
   local url="$1" authority suffix port
   [[ "$url" != *'@'* && "$url" != *'?'* && "$url" != *'#'* && "$url" != *$'\n'* && "$url" != *$'\r'* ]] || return 1
   [[ "$url" =~ ^https?://([A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(:[0-9]{1,5})?$ ]] || return 1
-  authority="\${url#*://}"
+  authority="${url#*://}"
   if [[ "$authority" == \[* ]]; then
-    suffix="\${authority#*]}"
+    suffix="${authority#*]}"
     if [[ -n "$suffix" ]]; then
       [[ "$suffix" =~ ^:([0-9]{1,5})$ ]] || return 1
-      port="\${BASH_REMATCH[1]}"
+      port="${BASH_REMATCH[1]}"
       ((port >= 1 && port <= 65535)) || return 1
     fi
   elif [[ "$authority" == *:* ]]; then
-    port="\${authority##*:}"
+    port="${authority##*:}"
     [[ "$port" =~ ^[0-9]{1,5}$ ]] || return 1
     ((port >= 1 && port <= 65535)) || return 1
   fi
@@ -1346,6 +1346,7 @@ _apt_source_records() {
       {
         line = $0
         sub(/[[:space:]]*#.*/, "", line)
+        sub(/^[[:space:]]+/, "", line)
         n = split(line, fields, /[[:space:]]+/)
         if (fields[1] != "deb" && fields[1] != "deb-src") next
         i = 2
@@ -1378,7 +1379,7 @@ _collect_source_inventory() {
         ((APT_SOURCE_THIRD_PARTY += 1)) || true
       fi
       key="$uri|$suite"
-      if [[ -n "\${seen[$key]:-}" ]]; then
+      if [[ -n "${seen[$key]:-}" ]]; then
         ((APT_SOURCE_DUPLICATES += 1)) || true
       else
         seen[$key]=1
@@ -1389,16 +1390,9 @@ _collect_source_inventory() {
 
 _write_apt_sources() {
   local mirror_url="$1"
-  local has_third_party=false security_url
+  local has_third_party=false security_url managed_mirror="" existing_uri existing_suite existing_count=0
   if [[ ! -f "$KEYRING_PATH" ]]; then
     warn "Keyring not found at $KEYRING_PATH; APT signature validation may fail."
-  fi
-
-  # Never replace a file that is not clearly owned by this tool.
-  if [[ -f "$APT_DEB822_FILE" ]] && ! grep -q '^# Power APT Boost' "$APT_DEB822_FILE"; then
-    error "Refusing to overwrite unmanaged Deb822 sources: $APT_DEB822_FILE."
-    error "Move or review the existing Ubuntu source file manually; no source file was changed."
-    return 1
   fi
 
   if _uses_ports_archive; then
@@ -1415,12 +1409,55 @@ _write_apt_sources() {
     security_url="https://security.ubuntu.com/ubuntu"
   fi
 
+  if [[ -f "$APT_DEB822_FILE" ]]; then
+    if grep -q '^# Power APT Boost' "$APT_DEB822_FILE"; then
+      managed_mirror="$(sed -n 's/^# Mirror: //p' "$APT_DEB822_FILE" | head -1)"
+      if [[ -z "$managed_mirror" ]]; then
+        error "Managed Ubuntu source file has no recorded mirror URL; refusing to replace it."
+        return 1
+      fi
+      while IFS='|' read -r existing_uri existing_suite; do
+        [[ -n "$existing_uri" && -n "$existing_suite" ]] || continue
+        ((existing_count += 1))
+        case "$existing_uri|$existing_suite" in
+        "$managed_mirror|$CODENAME" | "$managed_mirror|$CODENAME-updates" | "$managed_mirror|$CODENAME-backports" | "$managed_mirror|$CODENAME-security" | "$security_url|$CODENAME-security") ;;
+        *)
+          error "Managed Ubuntu source file contains an unexpected repository entry: $existing_uri ($existing_suite)."
+          error "Move the extra repository to its own .sources file; no source file was changed."
+          return 1
+          ;;
+        esac
+      done < <(_apt_source_records "$APT_DEB822_FILE")
+      if ((existing_count == 0)); then
+        error "Managed Ubuntu source file cannot be parsed safely; refusing to replace it."
+        return 1
+      fi
+    else
+      while IFS='|' read -r existing_uri existing_suite; do
+        [[ -n "$existing_uri" && -n "$existing_suite" ]] || continue
+        ((existing_count += 1))
+        if ! _is_official_ubuntu_uri "$existing_uri"; then
+          error "Refusing to overwrite unmanaged third-party Deb822 source: $existing_uri ($existing_suite)."
+          return 1
+        fi
+      done < <(_apt_source_records "$APT_DEB822_FILE")
+      if [[ -s "$APT_DEB822_FILE" && "$existing_count" -eq 0 ]]; then
+        error "Refusing to overwrite an unmanaged Deb822 file that cannot be classified safely."
+        return 1
+      fi
+    fi
+  fi
+
   if [[ -f "$APT_SOURCES_FILE" ]]; then
-    if grep -v '^\\s*$' "$APT_SOURCES_FILE" 2>/dev/null |
-      grep -v '^\\s*#' |
-      grep -v 'archive.ubuntu.com' |
-      grep -v 'security.ubuntu.com' |
-      grep -q . 2>/dev/null; then
+    local legacy_uri legacy_suite legacy_count=0
+    while IFS='|' read -r legacy_uri legacy_suite; do
+      [[ -n "$legacy_uri" && -n "$legacy_suite" ]] || continue
+      ((legacy_count += 1))
+      if ! _is_official_ubuntu_uri "$legacy_uri"; then
+        has_third_party=true
+      fi
+    done < <(_apt_source_records "$APT_SOURCES_FILE")
+    if [[ -s "$APT_SOURCES_FILE" && "$legacy_count" -eq 0 ]]; then
       has_third_party=true
     fi
   fi
@@ -1448,7 +1485,7 @@ SOURCES
 
   if [[ -f "$APT_SOURCES_FILE" ]]; then
     if [[ "$has_third_party" == true ]]; then
-      warn "Third-party repositories detected in sources.list; preserving the file."
+      warn "Third-party or unclassified repositories detected in sources.list; preserving the file."
     elif ! rm -f -- "$APT_SOURCES_FILE"; then
       error "Could not remove legacy Ubuntu-only sources.list."
       return 1
@@ -1471,8 +1508,7 @@ _write_apt_config() {
     proxy_config='Acquire::http::Proxy "DIRECT";
 Acquire::https::Proxy "DIRECT";'
   elif [[ -n "$APT_PROXY" ]]; then
-    proxy_config="Acquire::http::Proxy \\"$APT_PROXY\\";
-Acquire::https::Proxy \\"$APT_PROXY\\";"
+    proxy_config="$(printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";' "$APT_PROXY" "$APT_PROXY")"
   fi
   _atomic_write "$APT_CONF_FILE" 0644 <<APTCONF
 # Power APT Boost — APT network optimization
@@ -1490,12 +1526,15 @@ APTCONF
 _verify_apt_configuration() {
   [[ -s "$APT_DEB822_FILE" && -f "$APT_CONF_FILE" ]] || return 1
   grep -Fq "URIs: $SELECTED_MIRROR" "$APT_DEB822_FILE" || return 1
-  grep -Fq "Acquire::Retries \\"$APT_RETRIES\\";" "$APT_CONF_FILE" || return 1
-  apt-get \\
-    -o "Dir::Etc::sourcelist=$APT_SOURCES_FILE" \\
-    -o "Dir::Etc::sourceparts=$APT_SOURCES_DIR" \\
-    -o "Dir::Etc::main=$APT_ETC_DIR/apt.conf" \\
-    -o "Dir::Etc::parts=$APT_CONF_DIR" \\
+  grep -Fq "Suites: $CODENAME $CODENAME-updates $CODENAME-backports" "$APT_DEB822_FILE" || return 1
+  grep -Fq "Suites: $CODENAME-security" "$APT_DEB822_FILE" || return 1
+  grep -Fq "Signed-By: $KEYRING_PATH" "$APT_DEB822_FILE" || return 1
+  grep -Fq "Acquire::Retries \"$APT_RETRIES\";" "$APT_CONF_FILE" || return 1
+  apt-get \
+    -o "Dir::Etc::sourcelist=$APT_SOURCES_FILE" \
+    -o "Dir::Etc::sourceparts=$APT_SOURCES_DIR" \
+    -o "Dir::Etc::main=$APT_ETC_DIR/apt.conf" \
+    -o "Dir::Etc::parts=$APT_CONF_DIR" \
     --print-uris update >/dev/null 2>&1
 }
 
@@ -1940,7 +1979,7 @@ _doctor_collect() {
     _doctor_add_check "signature_policy" "error" "Archive signature verification prerequisites are unavailable"
   fi
 
-  local list_dir="\${_SYSTEM_ROOT}/var/lib/apt/lists" release_file now mtime stale_metadata=false release_count=0
+  local list_dir="${_SYSTEM_ROOT}/var/lib/apt/lists" release_file now mtime stale_metadata=false release_count=0
   now="$(date +%s)"
   if [[ -d "$list_dir" ]]; then
     while IFS= read -r release_file; do
@@ -1973,7 +2012,7 @@ _doctor_collect() {
     else
       _doctor_add_check "dns" "warning" "Could not resolve security.ubuntu.com"
     fi
-    local tls_url="https://security.ubuntu.com/ubuntu/dists/\${REPORT_CODENAME}-security/InRelease"
+    local tls_url="https://security.ubuntu.com/ubuntu/dists/${REPORT_CODENAME}-security/InRelease"
     if command -v curl >/dev/null 2>&1 && curl --fail --silent --show-error --connect-timeout 5 --max-time 12 --output /dev/null "$tls_url" 2>/dev/null; then
       _doctor_add_check "tls" "ok" "HTTPS request to the Ubuntu security archive succeeded"
     elif command -v wget >/dev/null 2>&1 && wget --quiet --spider --timeout=12 "$tls_url" >/dev/null 2>&1; then
@@ -2869,7 +2908,7 @@ _run_prune_backups() {
   local -a valid_backups=()
   listing="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn || true)"
   while IFS= read -r line; do
-    path="\${line#*$'\t'}"
+    path="${line#*$'\t'}"
     [[ -n "$path" && "$(dirname "$path")" == "$BACKUP_BASE" && ! -L "$path" ]] || continue
     [[ -f "$path/manifest" && ! -L "$path/manifest" && -f "$path/apt-config.tar" && ! -L "$path/apt-config.tar" && -f "$path/archive.sha256" && ! -L "$path/archive.sha256" ]] || continue
     grep -qx 'format=1' "$path/manifest" || continue
@@ -2888,7 +2927,7 @@ _run_prune_backups() {
   _acquire_mutation_lock
   local i
   for ((i = PRUNE_BACKUPS_KEEP; i < valid_count; i++)); do
-    path="\${valid_backups[$i]}"
+    path="${valid_backups[$i]}"
     [[ "$(dirname "$path")" == "$BACKUP_BASE" && ! -L "$path" ]] || return "$EXIT_RESTORE"
     rm -rf -- "$path" || {
       error "Could not remove verified backup snapshot: $path"

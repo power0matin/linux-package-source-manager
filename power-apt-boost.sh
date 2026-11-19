@@ -1162,6 +1162,7 @@ _json_quote() {
 
   for ((i = 0; i < ${#input}; i++)); do
     char="${input:i:1}"
+    # shellcheck disable=SC1003
     printf -v byte_code '%d' "'$char"
     case "$byte_code" in
       34) output+='\"' ;;
@@ -1305,19 +1306,19 @@ _print_json() {
   _collect_status
   local checks_json
   checks_json="$(_report_checks_json)"
-  printf '{\\n'
-  printf '  "schema_version": 1,\\n'
-  printf '  "version": %s,\\n' "$(_json_quote "$APP_VERSION")"
-  printf '  "command": %s,\\n' "$(_json_quote "$REPORT_COMMAND")"
-  printf '  "status": %s,\\n' "$(_json_quote "$REPORT_STATUS")"
-  printf '  "timestamp": %s,\\n' "$(_json_quote "$(date -u '+%Y-%m-%dT%H:%M:%SZ')")"
-  printf '  "system": {"id": %s, "pretty_name": %s, "version_id": %s, "codename": %s},\\n' "$(_json_quote "$REPORT_OS_ID")" "$(_json_quote "$REPORT_OS_PRETTY")" "$(_json_quote "$REPORT_VERSION_ID")" "$(_json_quote "$REPORT_CODENAME")"
-  printf '  "apt": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "current_mirror": %s},\\n' "$(_json_quote "$REPORT_SOURCES_LIST")" "$(_json_quote "$REPORT_DEB822")" "$(_json_quote "$REPORT_MANAGED_CONFIG")" "$(_json_quote "$REPORT_CURRENT_MIRROR")"
-  printf '  "backups": {"accessible": %s, "count": %s, "latest": %s},\\n' "$REPORT_BACKUP_ACCESSIBLE" "$REPORT_BACKUP_COUNT" "$(_json_quote "$REPORT_LATEST_BACKUP")"
-  printf '  "operation": {"mirror": %s, "response_time_seconds": %s, "dry_run": %s, "skip_update": %s},\\n' "$(_json_quote "$SELECTED_MIRROR")" "$(_json_quote "$SELECTED_TIME")" "$DRY_RUN" "$SKIP_UPDATE"
-  printf '  "paths": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "backup_root": %s},\\n' "$(_json_quote "$APT_SOURCES_FILE")" "$(_json_quote "$APT_DEB822_FILE")" "$(_json_quote "$APT_CONF_FILE")" "$(_json_quote "$BACKUP_BASE")"
-  printf '  "checks": %s\\n' "$checks_json"
-  printf '}\\n'
+  printf '{\n'
+  printf '  "schema_version": 1,\n'
+  printf '  "version": %s,\n' "$(_json_quote "$APP_VERSION")"
+  printf '  "command": %s,\n' "$(_json_quote "$REPORT_COMMAND")"
+  printf '  "status": %s,\n' "$(_json_quote "$REPORT_STATUS")"
+  printf '  "timestamp": %s,\n' "$(_json_quote "$(date -u '+%Y-%m-%dT%H:%M:%SZ')")"
+  printf '  "system": {"id": %s, "pretty_name": %s, "version_id": %s, "codename": %s},\n' "$(_json_quote "$REPORT_OS_ID")" "$(_json_quote "$REPORT_OS_PRETTY")" "$(_json_quote "$REPORT_VERSION_ID")" "$(_json_quote "$REPORT_CODENAME")"
+  printf '  "apt": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "current_mirror": %s},\n' "$(_json_quote "$REPORT_SOURCES_LIST")" "$(_json_quote "$REPORT_DEB822")" "$(_json_quote "$REPORT_MANAGED_CONFIG")" "$(_json_quote "$REPORT_CURRENT_MIRROR")"
+  printf '  "backups": {"accessible": %s, "count": %s, "latest": %s},\n' "$REPORT_BACKUP_ACCESSIBLE" "$REPORT_BACKUP_COUNT" "$(_json_quote "$REPORT_LATEST_BACKUP")"
+  printf '  "operation": {"mirror": %s, "response_time_seconds": %s, "dry_run": %s, "skip_update": %s},\n' "$(_json_quote "$SELECTED_MIRROR")" "$(_json_quote "$SELECTED_TIME")" "$DRY_RUN" "$SKIP_UPDATE"
+  printf '  "paths": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "backup_root": %s},\n' "$(_json_quote "$APT_SOURCES_FILE")" "$(_json_quote "$APT_DEB822_FILE")" "$(_json_quote "$APT_CONF_FILE")" "$(_json_quote "$BACKUP_BASE")"
+  printf '  "checks": %s\n' "$checks_json"
+  printf '}\n'
 }
 
 _status_report() {
@@ -1744,8 +1745,7 @@ _menu_message() {
   else
     printf '\n%s\n%s\n' "$title" "$message" >&2
     printf 'Press Enter to continue: ' >&2
-    local ignored=""
-    IFS= read -r ignored || true
+    IFS= read -r _ || true
   fi
 }
 
@@ -2024,7 +2024,7 @@ _menu_main() {
       "backups" "Backup and Restore" \\
       "diagnostics" "Diagnostics" \\
       "settings" "Settings" \\
-      "exit" "Exit")" || return 0
+      "quit" "Exit")" || return 0
     case "$choice" in
       overview) _menu_overview ;;
       apt) _menu_apt ;;
@@ -2032,7 +2032,7 @@ _menu_main() {
       backups) _menu_backups ;;
       diagnostics) _menu_diagnostics ;;
       settings) _menu_settings ;;
-      exit) return 0 ;;
+      quit) return 0 ;;
     esac
   done
 }

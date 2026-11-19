@@ -680,7 +680,7 @@ _get_mirrors() {
   local i found_country=false existing country_lower
   country_lower="$(printf '%s' "$COUNTRY_FILTER" | tr '[:upper:]' '[:lower:]')"
 
-  for ((i = 0; i < ${#_CATALOG_URLS[@]}; i++)); do
+  for i in "${!_CATALOG_URLS[@]}"; do
     [[ "${_CATALOG_ENABLED[$i]}" == true ]] || continue
     if [[ "$OFFICIAL_ONLY" == true && "${_CATALOG_OFFICIAL[$i]}" != true ]]; then continue; fi
     if [[ -n "$country_lower" && "${_CATALOG_COUNTRIES[$i]}" != "$country_lower" ]]; then continue; fi
@@ -710,7 +710,7 @@ _get_mirrors() {
 
 _catalog_metadata_for_url() {
   local requested_url="$1" i
-  for ((i = 0; i < ${#_CATALOG_URLS[@]}; i++)); do
+  for i in "${!_CATALOG_URLS[@]}"; do
     if [[ "${_CATALOG_URLS[$i]}" == "$requested_url" ]]; then
       printf '%s\t%s\t%s\t%s\n' "${_CATALOG_IDS[$i]}" "${_CATALOG_SOURCES[$i]}" "${_CATALOG_OFFICIAL[$i]}" "${_CATALOG_COUNTRIES[$i]}"
       return 0
@@ -2257,7 +2257,7 @@ _write_user_mirror_catalog() {
   chmod 0700 "$(dirname "$USER_MIRRORS_FILE")" 2>/dev/null || true
   {
     printf '# power-apt-boost custom mirror catalog v1\n'
-    for ((i = 0; i < ${#_CATALOG_IDS[@]}; i++)); do
+    for i in "${!_CATALOG_IDS[@]}"; do
       [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
       printf '%s|%s|%s|%s|user|false|%s\n' \
         "${_CATALOG_IDS[$i]}" "${_CATALOG_COUNTRIES[$i]}" "${_CATALOG_REGIONS[$i]}" \
@@ -2291,7 +2291,7 @@ _run_mirror_management() {
         error "Invalid Ubuntu mirror URL: $MIRROR_MANAGEMENT_VALUE"
         return "$EXIT_USAGE"
       }
-      for ((i = 0; i < ${#_CATALOG_URLS[@]}; i++)); do
+      for i in "${!_CATALOG_URLS[@]}"; do
         [[ "${_CATALOG_URLS[$i]}" != "$requested_url" ]] || {
           error "This mirror URL already exists in the catalog as ${_CATALOG_IDS[$i]}."
           return "$EXIT_USAGE"
@@ -2322,7 +2322,7 @@ _run_mirror_management() {
       ;;
     remove | disable | enable)
       mirror_id="$MIRROR_MANAGEMENT_VALUE"
-      for ((i = 0; i < ${#_CATALOG_IDS[@]}; i++)); do
+      for i in "${!_CATALOG_IDS[@]}"; do
         if [[ "${_CATALOG_IDS[$i]}" == "$mirror_id" && "${_CATALOG_SOURCES[$i]}" == user ]]; then
           target_index="$i"
           break
@@ -2347,7 +2347,7 @@ _run_mirror_management() {
 
       if [[ "$MIRROR_MANAGEMENT_ACTION" == remove ]]; then
         local -a ids=() countries=() regions=() urls=() sources=() officials=() enabled=()
-        for ((i = 0; i < ${#_CATALOG_IDS[@]}; i++)); do
+        for i in "${!_CATALOG_IDS[@]}"; do
           ((i == target_index)) && continue
           ids+=("${_CATALOG_IDS[$i]}")
           countries+=("${_CATALOG_COUNTRIES[$i]}")
@@ -2509,7 +2509,7 @@ _menu_manage_mirrors() {
     case "$choice" in
       list)
         listing=""
-        for ((i = 0; i < ${#_CATALOG_IDS[@]}; i++)); do
+        for i in "${!_CATALOG_IDS[@]}"; do
           [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
           listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"
   local choice rc

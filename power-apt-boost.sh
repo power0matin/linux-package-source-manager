@@ -100,6 +100,8 @@ BENCH_WORKERS="$DEFAULT_BENCH_WORKERS"
 PROBE_RETRIES=1
 OFFICIAL_ONLY=false
 REFRESH_CATALOG=false
+NO_CATALOG_NETWORK=false
+MIRROR_MANAGEMENT_REQUESTED=false
 MIRROR_MANAGEMENT_ACTION=""
 MIRROR_MANAGEMENT_VALUE=""
 CATALOG_SOURCE="built-in"
@@ -624,7 +626,14 @@ _load_mirror_catalog() {
     cache_timestamp="$(sed -n 's/^# fetched_at=//p' "$CATALOG_CACHE_FILE" | head -1)"
   fi
 
-  if [[ "$REFRESH_CATALOG" == true || ! -f "$CATALOG_CACHE_FILE" || "$cache_age" -gt "$CATALOG_CACHE_TTL" ]]; then
+  if [[ "$NO_CATALOG_NETWORK" == true ]]; then
+    if [[ -f "$CATALOG_CACHE_FILE" ]]; then
+      CATALOG_CACHE_STATE="local-cache"
+      CATALOG_LAST_REFRESH="$cache_timestamp"
+    else
+      CATALOG_CACHE_STATE="network-disabled"
+    fi
+  elif [[ "$REFRESH_CATALOG" == true || ! -f "$CATALOG_CACHE_FILE" || "$cache_age" -gt "$CATALOG_CACHE_TTL" ]]; then
     if [[ -z "$COUNTRY_FILTER" ]] && _refresh_catalog_cache; then
       :
     elif [[ -f "$CATALOG_CACHE_FILE" ]]; then
@@ -1695,6 +1704,8 @@ _print_json() {
   printf '  "apt": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "current_mirror": %s},\n' "$(_json_quote "$REPORT_SOURCES_LIST")" "$(_json_quote "$REPORT_DEB822")" "$(_json_quote "$REPORT_MANAGED_CONFIG")" "$(_json_quote "$REPORT_CURRENT_MIRROR")"
   printf '  "backups": {"accessible": %s, "count": %s, "latest": %s},\n' "$REPORT_BACKUP_ACCESSIBLE" "$REPORT_BACKUP_COUNT" "$(_json_quote "$REPORT_LATEST_BACKUP")"
   printf '  "operation": {"mirror": %s, "response_time_seconds": %s, "dry_run": %s, "skip_update": %s},\n' "$(_json_quote "$SELECTED_MIRROR")" "$(_json_quote "$SELECTED_TIME")" "$DRY_RUN" "$SKIP_UPDATE"
+  printf '  "catalog": {"source": %s, "cache_state": %s, "last_refresh": %s, "invalid_entries": %s},\n' "$(_json_quote "$CATALOG_SOURCE")" "$(_json_quote "$CATALOG_CACHE_STATE")" "$(_json_quote "$CATALOG_LAST_REFRESH")" "$CATALOG_INVALID_ENTRIES"
+  printf '  "benchmark": {"workers": %s, "retries": %s, "official_only": %s, "country_filter": %s},\n' "$BENCH_WORKERS" "$PROBE_RETRIES" "$OFFICIAL_ONLY" "$(_json_quote "$COUNTRY_FILTER")"
   printf '  "paths": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "backup_root": %s},\n' "$(_json_quote "$APT_SOURCES_FILE")" "$(_json_quote "$APT_DEB822_FILE")" "$(_json_quote "$APT_CONF_FILE")" "$(_json_quote "$BACKUP_BASE")"
   printf '  "checks": %s\n' "$checks_json"
   printf '}\n'

@@ -1883,132 +1883,185 @@ EOF
 _parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-    -h | --help)
-      _print_help
-      exit "$EXIT_OK"
-      ;;
-    -v | --version)
-      printf '%s v%s\n' "$APP_NAME" "$APP_VERSION"
-      exit "$EXIT_OK"
-      ;;
-    -m | --mirror)
-      [[ -n "${2:-}" ]] || die "Option $1 requires a URL argument." "$EXIT_USAGE"
-      FORCE_MIRROR="${2%/}"
-      ACTION_REQUESTED=true
-      shift 2
-      ;;
-    -r | --restore)
-      RESTORE=true
-      shift
-      ;;
-    --restore-path)
-      [[ -n "${2:-}" ]] || die "Option $1 requires a backup path." "$EXIT_USAGE"
-      RESTORE_PATH="$2"
-      RESTORE=true
-      shift 2
-      ;;
-    --dry-run)
-      DRY_RUN=true
-      ACTION_REQUESTED=true
-      shift
-      ;;
-    --skip-update)
-      SKIP_UPDATE=true
-      ACTION_REQUESTED=true
-      shift
-      ;;
-    --list)
-      LIST_REQUESTED=true
-      shift
-      ;;
-    --menu)
-      MENU_REQUESTED=true
-      shift
-      ;;
-    --status)
-      STATUS_REQUESTED=true
-      shift
-      ;;
-    --doctor)
-      DOCTOR_REQUESTED=true
-      shift
-      ;;
-    -y | --yes)
-      YES=true
-      shift
-      ;;
-    --json)
-      JSON_OUTPUT=true
-      QUIET=true
-      NO_SPINNER=true
-      shift
-      ;;
-    --verbose)
-      VERBOSE=true
-      shift
-      ;;
-    --quiet)
-      QUIET=true
-      shift
-      ;;
-    --no-spinner)
-      NO_SPINNER=true
-      shift
-      ;;
-    --timeout)
-      [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires a positive integer." "$EXIT_USAGE"
-      (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
-      TIMEOUT_TOTAL="$2"
-      shift 2
-      ;;
-    --country)
-      [[ "${2:-}" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
-      COUNTRY_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
-      shift 2
-      ;;
-    --ipv6)
-      USE_IPV6=true
-      shift
-      ;;
-    --log-file)
-      [[ -n "${2:-}" ]] || die "Option $1 requires a file path." "$EXIT_USAGE"
-      LOG_FILE="$2"
-      LOG_ENABLED=true
-      shift 2
-      ;;
-    -*)
-      error "Unknown option: $1. Run --help for usage."
-      exit "$EXIT_USAGE"
-      ;;
-    *)
-      error "Unexpected argument: $1. Run --help for usage."
-      exit "$EXIT_USAGE"
-      ;;
+      -h | --help)
+        _print_help
+        exit "$EXIT_OK"
+        ;;
+      -v | --version)
+        printf '%s v%s\n' "$APP_NAME" "$APP_VERSION"
+        exit "$EXIT_OK"
+        ;;
+      -m | --mirror)
+        [[ -n "${2:-}" ]] || die "Option $1 requires a URL argument." "$EXIT_USAGE"
+        FORCE_MIRROR="${2%/}"
+        ACTION_REQUESTED=true
+        shift 2
+        ;;
+      -r | --restore)
+        RESTORE=true
+        shift
+        ;;
+      --restore-path)
+        [[ -n "${2:-}" ]] || die "Option $1 requires a backup path." "$EXIT_USAGE"
+        RESTORE_PATH="$2"
+        RESTORE=true
+        shift 2
+        ;;
+      --dry-run)
+        DRY_RUN=true
+        ACTION_REQUESTED=true
+        shift
+        ;;
+      --skip-update)
+        SKIP_UPDATE=true
+        ACTION_REQUESTED=true
+        shift
+        ;;
+      --list)
+        LIST_REQUESTED=true
+        shift
+        ;;
+      --refresh-catalog)
+        REFRESH_CATALOG=true
+        LIST_REQUESTED=true
+        shift
+        ;;
+      --official-only)
+        OFFICIAL_ONLY=true
+        shift
+        ;;
+      --workers)
+        [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires an integer from 1 to $MAX_WORKERS_LIMIT." "$EXIT_USAGE"
+        (($2 >= 1 && $2 <= MAX_WORKERS_LIMIT)) || die "Option $1 must be between 1 and $MAX_WORKERS_LIMIT." "$EXIT_USAGE"
+        BENCH_WORKERS="$2"
+        shift 2
+        ;;
+      --retries)
+        [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires an integer from 0 to 3." "$EXIT_USAGE"
+        (($2 >= 0 && $2 <= 3)) || die "Option $1 must be between 0 and 3." "$EXIT_USAGE"
+        PROBE_RETRIES="$2"
+        shift 2
+        ;;
+      --add-mirror)
+        [[ -n "${2:-}" ]] || die "Option $1 requires a mirror URL." "$EXIT_USAGE"
+        MIRROR_MANAGEMENT_ACTION="add"
+        MIRROR_MANAGEMENT_VALUE="$2"
+        MIRROR_MANAGEMENT_REQUESTED=true
+        shift 2
+        ;;
+      --remove-mirror)
+        [[ -n "${2:-}" ]] || die "Option $1 requires a mirror ID." "$EXIT_USAGE"
+        MIRROR_MANAGEMENT_ACTION="remove"
+        MIRROR_MANAGEMENT_VALUE="$2"
+        MIRROR_MANAGEMENT_REQUESTED=true
+        shift 2
+        ;;
+      --disable-mirror)
+        [[ -n "${2:-}" ]] || die "Option $1 requires a mirror ID." "$EXIT_USAGE"
+        MIRROR_MANAGEMENT_ACTION="disable"
+        MIRROR_MANAGEMENT_VALUE="$2"
+        MIRROR_MANAGEMENT_REQUESTED=true
+        shift 2
+        ;;
+      --enable-mirror)
+        [[ -n "${2:-}" ]] || die "Option $1 requires a mirror ID." "$EXIT_USAGE"
+        MIRROR_MANAGEMENT_ACTION="enable"
+        MIRROR_MANAGEMENT_VALUE="$2"
+        MIRROR_MANAGEMENT_REQUESTED=true
+        shift 2
+        ;;
+      --menu)
+        MENU_REQUESTED=true
+        shift
+        ;;
+      --status)
+        STATUS_REQUESTED=true
+        shift
+        ;;
+      --doctor)
+        DOCTOR_REQUESTED=true
+        shift
+        ;;
+      -y | --yes)
+        YES=true
+        shift
+        ;;
+      --json)
+        JSON_OUTPUT=true
+        QUIET=true
+        NO_SPINNER=true
+        shift
+        ;;
+      --verbose)
+        VERBOSE=true
+        shift
+        ;;
+      --quiet)
+        QUIET=true
+        shift
+        ;;
+      --no-spinner)
+        NO_SPINNER=true
+        shift
+        ;;
+      --timeout)
+        [[ "${2:-}" =~ ^[0-9]+$ ]] || die "Option $1 requires a positive integer." "$EXIT_USAGE"
+        (($2 >= 1 && $2 <= 300)) || die "Option $1 must be between 1 and 300 seconds." "$EXIT_USAGE"
+        TIMEOUT_TOTAL="$2"
+        shift 2
+        ;;
+      --country)
+        [[ "${2:-}" =~ ^[A-Za-z]{2}$ ]] || die "Option $1 requires a two-letter country code." "$EXIT_USAGE"
+        COUNTRY_FILTER="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+        shift 2
+        ;;
+      --ipv6)
+        USE_IPV6=true
+        shift
+        ;;
+      --log-file)
+        [[ -n "${2:-}" ]] || die "Option $1 requires a file path." "$EXIT_USAGE"
+        LOG_FILE="$2"
+        LOG_ENABLED=true
+        shift 2
+        ;;
+      -*)
+        error "Unknown option: $1. Run --help for usage."
+        exit "$EXIT_USAGE"
+        ;;
+      *)
+        error "Unexpected argument: $1. Run --help for usage."
+        exit "$EXIT_USAGE"
+        ;;
     esac
   done
 
   local mode_count=0
-  if [[ "$MENU_REQUESTED" == true ]]; then ((mode_count += 1)); fi
-  if [[ "$STATUS_REQUESTED" == true ]]; then ((mode_count += 1)); fi
-  if [[ "$DOCTOR_REQUESTED" == true ]]; then ((mode_count += 1)); fi
-  if [[ "$LIST_REQUESTED" == true ]]; then ((mode_count += 1)); fi
-  if [[ "$RESTORE" == true ]]; then ((mode_count += 1)); fi
-  ((mode_count <= 1)) || die "Choose only one command mode: menu, status, doctor, list or restore." "$EXIT_USAGE"
+  [[ "$MENU_REQUESTED" != true ]] || ((mode_count += 1))
+  [[ "$STATUS_REQUESTED" != true ]] || ((mode_count += 1))
+  [[ "$DOCTOR_REQUESTED" != true ]] || ((mode_count += 1))
+  [[ "$LIST_REQUESTED" != true ]] || ((mode_count += 1))
+  [[ "$RESTORE" != true ]] || ((mode_count += 1))
+  [[ "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || ((mode_count += 1))
+  ((mode_count <= 1)) || die "Choose only one command mode: menu, status, doctor, list, restore or mirror management." "$EXIT_USAGE"
 
   if [[ "$MENU_REQUESTED" == true ]]; then
-    [[ "$YES" != true && "$JSON_OUTPUT" != true && "$ACTION_REQUESTED" != true ]] || die "--menu cannot be combined with apply, --yes or --json options." "$EXIT_USAGE"
+    [[ "$YES" != true && "$JSON_OUTPUT" != true && "$ACTION_REQUESTED" != true && "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true ]] || die "--menu cannot be combined with CLI operation flags." "$EXIT_USAGE"
   fi
   if [[ "$STATUS_REQUESTED" == true || "$DOCTOR_REQUESTED" == true ]]; then
-    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" ]] || die "--status and --doctor are read-only commands." "$EXIT_USAGE"
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true && "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || die "--status and --doctor are read-only commands and cannot be combined with operation flags." "$EXIT_USAGE"
   fi
   if [[ "$LIST_REQUESTED" == true ]]; then
-    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" ]] || die "--list cannot be combined with apply options." "$EXIT_USAGE"
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || die "--list cannot be combined with apply or mirror-management options." "$EXIT_USAGE"
   fi
   if [[ "$RESTORE" == true ]]; then
-    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" ]] || die "--restore cannot be combined with dry-run, skip-update or mirror selection." "$EXIT_USAGE"
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || die "--restore cannot be combined with apply or mirror-management options." "$EXIT_USAGE"
+  fi
+  if [[ "$MIRROR_MANAGEMENT_REQUESTED" == true ]]; then
+    [[ "$JSON_OUTPUT" != true ]] || die "Mirror management does not support --json." "$EXIT_USAGE"
+    [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && "$RESTORE" != true && "$LIST_REQUESTED" != true && -z "$FORCE_MIRROR" ]] || die "Mirror management cannot be combined with other operations." "$EXIT_USAGE"
   fi
 }
-
 _is_interactive() {
   [[ -t 0 && -t 1 ]]
 }
@@ -2177,6 +2230,138 @@ _catalog_url_is_official() {
     fi
   done
   return 1
+}
+
+_write_user_mirror_catalog() {
+  local i
+  mkdir -p "$(dirname "$USER_MIRRORS_FILE")" || return 1
+  chmod 0700 "$(dirname "$USER_MIRRORS_FILE")" 2>/dev/null || true
+  {
+    printf '# power-apt-boost custom mirror catalog v1\n'
+    for ((i = 0; i < ${#_CATALOG_IDS[@]}; i++)); do
+      [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
+      printf '%s|%s|%s|%s|user|false|%s\n' \
+        "${_CATALOG_IDS[$i]}" "${_CATALOG_COUNTRIES[$i]}" "${_CATALOG_REGIONS[$i]}" \
+        "${_CATALOG_URLS[$i]}" "${_CATALOG_ENABLED[$i]}"
+    done
+  } | _atomic_write "$USER_MIRRORS_FILE" 0600
+}
+
+_run_mirror_management() {
+  if [[ "$YES" != true ]] && ! _is_interactive; then
+    error "Non-interactive custom mirror changes require --yes."
+    return "$EXIT_USAGE"
+  fi
+  if [[ "$(id -u)" -ne 0 ]]; then
+    error "Custom mirror management must be run as root."
+    return "$EXIT_NOT_ROOT"
+  fi
+  _check_commands
+
+  local mirror_id requested_url result_file result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
+  local i target_index=-1 confirm_status=0 old_network_setting="$NO_CATALOG_NETWORK"
+  NO_CATALOG_NETWORK=true
+  _load_mirror_catalog
+  NO_CATALOG_NETWORK="$old_network_setting"
+
+  case "$MIRROR_MANAGEMENT_ACTION" in
+    add)
+      _check_probe_tool
+      detect_ubuntu
+      requested_url="$(_validate_mirror_url "$MIRROR_MANAGEMENT_VALUE")" || {
+        error "Invalid Ubuntu mirror URL: $MIRROR_MANAGEMENT_VALUE"
+        return "$EXIT_USAGE"
+      }
+      for ((i = 0; i < ${#_CATALOG_URLS[@]}; i++)); do
+        [[ "${_CATALOG_URLS[$i]}" != "$requested_url" ]] || {
+          error "This mirror URL already exists in the catalog as ${_CATALOG_IDS[$i]}."
+          return "$EXIT_USAGE"
+        }
+      done
+      result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.custom.XXXXXX")" || return "$EXIT_GENERAL"
+      _tmp_dirs+=("$result_file")
+      _print_section_header "VERIFYING CUSTOM MIRROR"
+      _test_mirror "$requested_url" "$result_file" "$CODENAME"
+      result_line="$(cat "$result_file" 2>/dev/null || true)"
+      rm -f "$result_file" 2>/dev/null || true
+      IFS='|' read -r eligible score avg_latency main_code updates_code security_code redirects freshness signature reason <<<"$result_line"
+      if [[ "$eligible" != true ]]; then
+        error "Custom mirror rejected: ${reason:-Ubuntu metadata or signature verification failed}."
+        return "$EXIT_NO_MIRROR"
+      fi
+      mirror_id="user-$(printf '%s' "$requested_url" | sha256sum | cut -c1-12)"
+      printf 'Mirror ID: %s\nURL: %s\nAverage latency: %ss\n' "$mirror_id" "$requested_url" "$avg_latency"
+      _confirm_action "Save this verified mirror to the custom catalog?" || confirm_status=$?
+      [[ "$confirm_status" -eq 0 ]] || return "$confirm_status"
+      _acquire_mutation_lock
+      _catalog_add_entry "$mirror_id" "auto" "Custom" "$requested_url" "user" false true || return "$EXIT_GENERAL"
+      _write_user_mirror_catalog || {
+        error "Could not save the custom mirror catalog."
+        return "$EXIT_GENERAL"
+      }
+      info "Saved custom mirror: $mirror_id"
+      ;;
+    remove | disable | enable)
+      mirror_id="$MIRROR_MANAGEMENT_VALUE"
+      for ((i = 0; i < ${#_CATALOG_IDS[@]}; i++)); do
+        if [[ "${_CATALOG_IDS[$i]}" == "$mirror_id" && "${_CATALOG_SOURCES[$i]}" == user ]]; then
+          target_index="$i"
+          break
+        fi
+      done
+      if ((target_index < 0)); then
+        error "Custom mirror ID not found: $mirror_id"
+        return "$EXIT_USAGE"
+      fi
+      if [[ "$MIRROR_MANAGEMENT_ACTION" == disable && "${_CATALOG_ENABLED[$target_index]}" == false ]]; then
+        info "Custom mirror is already disabled: $mirror_id"
+        return 0
+      fi
+      if [[ "$MIRROR_MANAGEMENT_ACTION" == enable && "${_CATALOG_ENABLED[$target_index]}" == true ]]; then
+        info "Custom mirror is already enabled: $mirror_id"
+        return 0
+      fi
+      printf 'Mirror ID: %s\nURL: %s\nAction: %s\n' "$mirror_id" "${_CATALOG_URLS[$target_index]}" "$MIRROR_MANAGEMENT_ACTION"
+      _confirm_action "Apply this custom catalog change?" || confirm_status=$?
+      [[ "$confirm_status" -eq 0 ]] || return "$confirm_status"
+      _acquire_mutation_lock
+
+      if [[ "$MIRROR_MANAGEMENT_ACTION" == remove ]]; then
+        local -a ids=() countries=() regions=() urls=() sources=() officials=() enabled=()
+        for ((i = 0; i < ${#_CATALOG_IDS[@]}; i++)); do
+          ((i == target_index)) && continue
+          ids+=("${_CATALOG_IDS[$i]}")
+          countries+=("${_CATALOG_COUNTRIES[$i]}")
+          regions+=("${_CATALOG_REGIONS[$i]}")
+          urls+=("${_CATALOG_URLS[$i]}")
+          sources+=("${_CATALOG_SOURCES[$i]}")
+          officials+=("${_CATALOG_OFFICIAL[$i]}")
+          enabled+=("${_CATALOG_ENABLED[$i]}")
+        done
+        _CATALOG_IDS=("${ids[@]}")
+        _CATALOG_COUNTRIES=("${countries[@]}")
+        _CATALOG_REGIONS=("${regions[@]}")
+        _CATALOG_URLS=("${urls[@]}")
+        _CATALOG_SOURCES=("${sources[@]}")
+        _CATALOG_OFFICIAL=("${officials[@]}")
+        _CATALOG_ENABLED=("${enabled[@]}")
+      elif [[ "$MIRROR_MANAGEMENT_ACTION" == disable ]]; then
+        _CATALOG_ENABLED[$target_index]=false
+      else
+        _CATALOG_ENABLED[$target_index]=true
+      fi
+
+      _write_user_mirror_catalog || {
+        error "Could not save the custom mirror catalog."
+        return "$EXIT_GENERAL"
+      }
+      info "Custom mirror catalog updated: $mirror_id"
+      ;;
+    *)
+      error "Unknown custom mirror management action."
+      return "$EXIT_USAGE"
+      ;;
+  esac
 }
 
 _run_apply_flow() {

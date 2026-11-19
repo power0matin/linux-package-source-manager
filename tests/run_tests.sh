@@ -467,6 +467,86 @@ ATOMIC
   assert_file_contains "$APT_SOURCES_FILE" "current-state" "checksum failure leaves current files untouched"
 }
 
+test_apt_inventory_and_safe_apply() {
+  mkdir -p "$APT_ETC_DIR" "$APT_SOURCES_DIR" "$APT_CONF_DIR"
+  cat >"$OS_RELEASE_FILE" <<'OS_RELEASE'
+ID=ubuntu
+PRETTY_NAME="Ubuntu 24.04 LTS"
+VERSION_ID="24.04"
+VERSION_CODENAME=noble
+OS_RELEASE
+
+  printf 'deb https://archive.ubuntu.com/ubuntu noble main restricted\n' >"$APT_SOURCES_FILE"
+  printf 'deb https://archive.ubuntu.com/ubuntu noble main restricted\n' >"$APT_SOURCES_DIR/duplicate.list"
+  printf 'deb [arch=amd64 signed-by=/usr/share/keyrings/power-apt-boost-test-missing.gpg] https://ppa.launchpadcontent.net/example/ppa/ubuntu noble main\n' >"$APT_SOURCES_DIR/ppa.list"
+  cat >"$APT_LEGACY_DEB822_FILE" <<'DEB822'
+Types: deb
+URIs: https://alice:super-secret@packages.vendor.example/repository
+Suites: stable
+Components: main
+Enabled: no
+DEB822
+  cat >"$APT_CONF_DIR/80-proxy.conf" <<'APTCONF'
+Acquire::http::Proxy "http://alice:super-secret@proxy.example:3128";
+Acquire::Retries "5";
+Acquire::http::Timeout "45";
+Acquire::ForceIPv4 "true";
+APTCONF
+
+  _collect_status
+  assert_equal "4" "$REPORT_APT_SOURCE_COUNT" "APT inventory counts legacy, list and deb822 source stanzas"
+  assert_equal "4" "$REPORT_APT_SOURCE_FILE_COUNT" "APT inventory enumerates every active source file"
+  assert_equal "1" "$REPORT_APT_SOURCE_DUPLICATES" "APT inventory detects duplicate enabled URI-suite-type entries"
+  assert_equal "IPv4" "$REPORT_APT_NETWORK_IP_FAMILY" "APT inventory reads configured IP family"
+  assert_equal "5" "$REPORT_APT_NETWORK_RETRIES" "APT inventory reads configured retry count"
+  assert_equal "45" "$REPORT_APT_NETWORK_HTTP_TIMEOUT" "APT inventory reads configured HTTP timeout"
+  assert_equal "http://[REDACTED]@proxy.example:3128" "$REPORT_APT_NETWORK_HTTP_PROXY" "APT inventory redacts proxy credentials"
+  assert_contains "packages.vendor.example" "${REPORT_APT_SOURCE_URIS[*]}" "APT inventory includes third-party deb822 source"
+  assert_contains "Missing or unreadable Signed-By keyring" "${REPORT_APT_SOURCE_WARNINGS[*]}" "APT inventory detects missing keyring paths"
+  assert_contains "Duplicate enabled source" "${REPORT_APT_SOURCE_WARNINGS[*]}" "APT inventory records duplicate warnings"
+
+  local status_json="${_TEST_ROOT}/apt-status.json" json_code=0
+  REPORT_COMMAND="status"
+  REPORT_STATUS="ok"
+  _print_json >"$status_json"
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); a=d["apt_inventory"]; assert len(a["sources"]) == 4; assert a["duplicate_count"] == 1; assert a["network"]["http_proxy"] == "http://[REDACTED]@proxy.example:3128"; assert "super-secret" not in json.dumps(d); assert d["system"]["architecture"]' "$status_json" || json_code=$?
+  assert_exit_code 0 "$json_code" "status JSON exposes structured APT inventory without proxy secrets"
+
+  _doctor_collect
+  local doctor_warning=false check_index
+  for ((check_index = 0; check_index < ${#REPORT_CHECK_NAMES[@]}; check_index++)); do
+    if [[ "${REPORT_CHECK_NAMES[$check_index]}" == apt_source_integrity && "${REPORT_CHECK_STATUSES[$check_index]}" == warning ]]; then
+      doctor_warning=true
+    fi
+  done
+  assert_equal "true" "$doctor_warning" "doctor reports source-integrity warnings"
+
+  rm -f "$APT_DEB822_FILE"
+  CODENAME=noble
+  _write_apt_sources "https://archive.ubuntu.com/ubuntu" >/dev/null 2>&1
+  assert_file_contains "$APT_DEB822_FILE" "Types: deb" "apply writes an isolated Power APT Boost deb822 source"
+  assert_file_contains "$APT_LEGACY_DEB822_FILE" "packages.vendor.example" "apply preserves an unmanaged ubuntu.sources file"
+  assert_file_contains "$APT_SOURCES_FILE" "archive.ubuntu.com" "apply preserves legacy sources.list content"
+
+  cat >"$APT_LEGACY_DEB822_FILE" <<'OWNED'
+# Power APT Boost — Ubuntu mirror configuration
+Types: deb
+URIs: https://old-managed.example/ubuntu
+Suites: noble noble-updates noble-security
+Components: main
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+OWNED
+  _write_apt_sources "https://new-managed.example/ubuntu" >/dev/null 2>&1
+  local owned_removal_code=0
+  [[ ! -e "$APT_LEGACY_DEB822_FILE" ]] || owned_removal_code=1
+  assert_exit_code 0 "$owned_removal_code" "apply removes only a single previously managed legacy deb822 stanza"
+
+  printf 'third-party-target\n' >"$APT_DEB822_FILE"
+  local overwrite_code=0
+  _write_apt_sources "https://another-managed.example/ubuntu" >/dev/null 2>&1 || overwrite_code=$?
+  assert_exit_code 1 "$overwrite_code" "apply refuses to overwrite an unmanaged target source file"
+  assert_file_contains "$APT_DEB822_FILE" "third-party-target" "refused source overwrite preserves existing target content"
+}
 test_probe_parser_and_list_criteria() {
   _probe_url_code() {
     case "$1" in
@@ -663,6 +743,7 @@ main() {
   printf '%s\n' '===================================='
   test_cli
   test_filesystem_operations
+  test_apt_inventory_and_safe_apply
   test_probe_parser_and_list_criteria
   test_catalog_and_release_metadata
   test_benchmark_selection_and_read_only_safety

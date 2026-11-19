@@ -1165,8 +1165,8 @@ _json_quote() {
     # shellcheck disable=SC1003
     printf -v byte_code '%d' "'$char"
     case "$byte_code" in
-      34) output+='\"' ;;
-      92) output+='\\' ;;
+      34) output+="\\\"" ;;
+      92) output+="\\\\" ;;
       *)
         if ((byte_code < 32)); then
           printf -v escaped_char '\\u%04x' "$byte_code"

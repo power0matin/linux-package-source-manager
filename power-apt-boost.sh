@@ -685,22 +685,38 @@ _get_mirrors() {
   printf '%s\n' "${mirrors[@]}"
 }
 
+_catalog_metadata_for_url() {
+  local requested_url="$1" i
+  for ((i = 0; i < \${#_CATALOG_URLS[@]}; i++)); do
+    if [[ "\${_CATALOG_URLS[$i]}" == "$requested_url" ]]; then
+      printf '%s\t%s\t%s\t%s\n' "\${_CATALOG_IDS[$i]}" "\${_CATALOG_SOURCES[$i]}" "\${_CATALOG_OFFICIAL[$i]}" "\${_CATALOG_COUNTRIES[$i]}"
+      return 0
+    fi
+  done
+  printf 'manual\tmanual\tfalse\tauto\n'
+}
+
 list_mirrors() {
   detect_ubuntu
+  _load_mirror_catalog
   _print_section_header "AVAILABLE MIRRORS"
-  local mirror_url result_file result_line rtime rstatus
+  local mirror_url result_file result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
+  local meta mirror_id source official country
   while IFS= read -r mirror_url; do
-    result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.list.XXXXXX")"
+    result_file="$(mktemp "\${TMPDIR:-/tmp}/\${APP_SLUG}.list.XXXXXX")"
     _tmp_dirs+=("$result_file")
     _test_mirror "$mirror_url" "$result_file" "$CODENAME"
     result_line="$(cat "$result_file" 2>/dev/null || true)"
     rm -f "$result_file" 2>/dev/null || true
-    rtime="${result_line%% *}"
-    rstatus="${result_line#* }"
-    if [[ "$rstatus" == "pass" ]]; then
-      printf '  %b%-8s%b %s (%ss)\n' "$COLOR_GREEN" "OK" "$COLOR_RESET" "$mirror_url" "$rtime" >&2
+    IFS='|' read -r eligible score avg_latency main_code updates_code security_code redirects freshness signature reason <<<"$result_line"
+    meta="$(_catalog_metadata_for_url "$mirror_url")"
+    IFS=$'\t' read -r mirror_id source official country <<<"$meta"
+    if [[ "$eligible" == true ]]; then
+      printf '  %-24s PASS avg=%ss score=%ss redirects=%s freshness=%s signature=%s source=%s official=%s\n' \
+        "$mirror_id" "$avg_latency" "$score" "$redirects" "$freshness" "$signature" "$source" "$official" >&2
     else
-      printf '  %b%-8s%b %s\n' "$COLOR_RED" "FAIL" "$COLOR_RESET" "$mirror_url" >&2
+      printf '  %-24s REJECTED reason=%s source=%s official=%s\n' \
+        "$mirror_id" "\${reason:-incompatible_release}" "$source" "$official" >&2
     fi
   done < <(_get_mirrors)
 }
@@ -979,122 +995,113 @@ _test_mirror() {
 
 _select_mirror() {
   local mirror_list total_mirrors bench_start bench_end bench_duration
+  local bench_tmpdir idx total i pid result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
+  local best="" best_score="999999" best_avg="" tested=0 passed=0 failed=0
+  local -a mirrors new_pids
+  local -a pids=()
 
+  _load_mirror_catalog
   _print_section_header "MIRROR SELECTION"
-
-  msg "  Ubuntu codename:  ${COLOR_BOLD}${CODENAME}${COLOR_RESET}"
-  echo ""
-
-  mirror_list=$(_get_mirrors)
-  total_mirrors=$(echo "$mirror_list" | wc -l)
-
-  msg "  Mirrors to test:  ${COLOR_BOLD}${total_mirrors}${COLOR_RESET}"
-  msg "  Parallel workers: ${COLOR_BOLD}${MAX_WORKERS}${COLOR_RESET}"
-  echo ""
-
-  bench_start=$(date +%s)
-
-  # ── Create temp dir for result files ─────────────────────────
-  local bench_tmpdir
-  bench_tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/${APP_SLUG}.bench.XXXXXX")
-
-  # ── Read mirror list into array for indexed access ───────────
-  local -a mirrors
+  msg "  Ubuntu codename:  \${COLOR_BOLD}\${CODENAME}\${COLOR_RESET}"
+  mirror_list="$(_get_mirrors)"
   mapfile -t mirrors <<<"$mirror_list"
-  local total=${#mirrors[@]}
+  total="\${#mirrors[@]}"
+  total_mirrors="$total"
+  ((total > 0)) || die "No mirrors are available for the selected catalog profile." "$EXIT_NO_MIRROR"
 
-  _start_spinner "Testing mirrors..."
+  msg "  Mirrors to test:  \${COLOR_BOLD}\${total_mirrors}\${COLOR_RESET}"
+  msg "  Parallel workers: \${COLOR_BOLD}\${BENCH_WORKERS}\${COLOR_RESET}"
+  msg "  Retry policy:     \${COLOR_BOLD}\${PROBE_RETRIES} retries per transient failure\${COLOR_RESET}"
+  msg "  Eligibility: HTTP 200 + Ubuntu suite metadata + valid archive signature"
+  echo ""
 
-  # ── Worker: test one mirror, write result to file ────────────
+  bench_start="$(date +%s)"
+  bench_tmpdir="$(mktemp -d "\${TMPDIR:-/tmp}/\${APP_SLUG}.bench.XXXXXX")"
+  _tmp_dirs+=("$bench_tmpdir")
+  _start_spinner "Testing and verifying Ubuntu mirrors..."
+
   _bench_worker() {
     local idx="$1" url="$2" codename="$3" result_file="$4"
-    _test_mirror "$url" "$result_file" "$codename"
+    _test_mirror "$url" "$result_file" "$codename" >/dev/null 2>&1
   }
 
-  # ── Dispatch mirrors to worker pool ──────────────────────────
-  local idx=0
+  idx=0
   while ((idx < total)); do
-    # Fill up to MAX_WORKERS slots
-    while ((${#_bg_pids[@]} < MAX_WORKERS)) && ((idx < total)); do
-      _bench_worker "$idx" "${mirrors[$idx]}" "$CODENAME" \
-        "${bench_tmpdir}/${idx}.result" &
-      _bg_pids+=($!)
-      ((idx++)) || true
+    while (("\${#pids[@]}" < BENCH_WORKERS)) && ((idx < total)); do
+      _bench_worker "$idx" "\${mirrors[$idx]}" "$CODENAME" "\${bench_tmpdir}/\${idx}.result" &
+      pids+=("$!")
+      ((idx += 1))
     done
 
-    # Wait for at least one worker to finish
-    local new_pids=()
-    local pid
-    for pid in "${_bg_pids[@]}"; do
-      if kill -0 "$pid" 2>/dev/null; then
-        new_pids+=("$pid")
-      else
-        wait "$pid" 2>/dev/null || true
-      fi
-    done
-    _bg_pids=("${new_pids[@]+"${new_pids[@]}"}")
-  done
-
-  # ── Wait for remaining workers ───────────────────────────────
-  for pid in "${_bg_pids[@]}"; do
-    wait "$pid" 2>/dev/null || true
-  done
-  _bg_pids=()
-
-  bench_end=$(date +%s)
-  bench_duration=$((bench_end - bench_start))
-
-  _stop_spinner
-
-  # ── Collect results and find best ────────────────────────────
-  local best="" best_time="999999" tested=0 passed=0 failed=0
-  local i result_line rtime rstatus
-  for ((i = 0; i < total; i++)); do
-    result_line=$(cat "${bench_tmpdir}/${i}.result" 2>/dev/null) || continue
-    ((tested++)) || true
-    rtime="${result_line%% *}"
-    rstatus="${result_line#* }"
-    if [[ "$rstatus" == "pass" ]]; then
-      ((passed++)) || true
-      if awk "BEGIN {exit !($rtime < $best_time)}"; then
-        best="${mirrors[$i]}"
-        best_time="$rtime"
-      fi
-    else
-      ((failed++)) || true
+    if (("\${#pids[@]}" > 0)); then
+      wait -n "\${pids[@]}" 2>/dev/null || true
+      new_pids=()
+      for pid in "\${pids[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+          new_pids+=("$pid")
+        else
+          wait "$pid" 2>/dev/null || true
+        fi
+      done
+      pids=("\${new_pids[@]}")
     fi
   done
 
+  for pid in "\${pids[@]}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+  pids=()
+  _bg_pids=()
+
+  bench_end="$(date +%s)"
+  bench_duration=$((bench_end - bench_start))
+  _stop_spinner
+
+  for ((i = 0; i < total; i++)); do
+    result_line="$(cat "\${bench_tmpdir}/\${i}.result" 2>/dev/null || true)"
+    [[ -n "$result_line" ]] || {
+      ((failed += 1)) || true
+      continue
+    }
+    ((tested += 1)) || true
+    IFS='|' read -r eligible score avg_latency main_code updates_code security_code redirects freshness signature reason <<<"$result_line"
+    if [[ "$eligible" == true ]]; then
+      ((passed += 1)) || true
+      if awk -v candidate="$score" -v current="$best_score" 'BEGIN { exit !(candidate < current) }'; then
+        best="\${mirrors[$i]}"
+        best_score="$score"
+        best_avg="$avg_latency"
+      elif [[ "$score" == "$best_score" && -n "$best" && "\${mirrors[$i]}" < "$best" ]]; then
+        best="\${mirrors[$i]}"
+        best_avg="$avg_latency"
+      fi
+    else
+      ((failed += 1)) || true
+      msg_verbose "Rejected \${mirrors[$i]}: \${reason:-incompatible_release}"
+    fi
+  done
   rm -rf "$bench_tmpdir" 2>/dev/null || true
 
-  # ── Print summary (matches original format exactly) ──────────
-  _print_section_header "RESULTS"
-
-  printf "  ${COLOR_DIM}%-24s${COLOR_RESET} ${COLOR_BOLD}%d${COLOR_RESET}\n" "Mirrors tested:" "$tested"
-  printf "  ${COLOR_DIM}%-24s${COLOR_RESET} ${COLOR_GREEN}%d${COLOR_RESET}\n" "Successful:" "$passed"
-  printf "  ${COLOR_DIM}%-24s${COLOR_RESET} ${COLOR_RED}%d${COLOR_RESET}\n" "Failed:" "$failed"
-  printf "  ${COLOR_DIM}%-24s${COLOR_RESET} ${COLOR_BOLD}%ds${COLOR_RESET}\n" "Total duration:" "$bench_duration"
-  echo ""
-
+  _print_section_header "BENCHMARK RESULTS"
+  printf '  %-26s %d\n' "Mirrors tested:" "$tested"
+  printf '  %-26s %d\n' "Verified and compatible:" "$passed"
+  printf '  %-26s %d\n' "Rejected or unavailable:" "$failed"
+  printf '  %-26s %ds\n' "Total duration:" "$bench_duration"
+  printf '  %-26s %s\n' "Catalog source:" "$CATALOG_SOURCE"
+  printf '  %-26s %s\n' "Catalog cache:" "$CATALOG_CACHE_STATE"
+  printf '  %-26s %s\n' "Official-only profile:" "$OFFICIAL_ONLY"
   if [[ -n "$best" ]]; then
-    printf "  ${COLOR_GREEN}▸ Fastest mirror:${COLOR_RESET} ${COLOR_BOLD}%s${COLOR_RESET}\n" "$best"
-    printf "  ${COLOR_GREEN}▸ Response time:${COLOR_RESET}  ${COLOR_BOLD}%ss${COLOR_RESET} (total probe time)\n" "$best_time"
+    printf '\n  \${COLOR_GREEN}Best compatible mirror:\${COLOR_RESET} %s\n' "$best"
+    printf '  Average latency: %ss | deterministic score: %ss\n' "$best_avg" "$best_score"
   fi
-  echo ""
 
   if [[ -z "$best" ]]; then
-    printf '%b\n' "\n  ${COLOR_RED}${COLOR_BOLD}ERROR:${COLOR_RESET} ${COLOR_RED}No working mirror found.${COLOR_RESET}\n" >&2
-    printf '%b\n' "  ${COLOR_DIM}Possible causes:${COLOR_RESET}\n" >&2
-    printf '%b\n' "    - Firewall blocking Ubuntu repository access\n" >&2
-    printf '%b\n' "    - DNS resolution failure\n" >&2
-    printf '%b\n' "    - Network connectivity issue\n" >&2
-    printf '%b\n' "  ${COLOR_DIM}Fix:${COLOR_RESET} Check your network connection and try again.\n" >&2
-    printf '%b\n' "  Or specify a mirror directly: ${COLOR_CYAN}sudo bash ${_SCRIPT_NAME} --mirror URL${COLOR_RESET}\n" >&2
-    exit "$EXIT_NO_MIRROR"
+    error "No mirror passed the Ubuntu metadata and signature compatibility gates."
+    return "$EXIT_NO_MIRROR"
   fi
 
   SELECTED_MIRROR="$best"
-  SELECTED_TIME="$best_time"
+  SELECTED_TIME="$best_avg"
 }
 
 # ─── Backup ───────────────────────────────────────────────────────────────────

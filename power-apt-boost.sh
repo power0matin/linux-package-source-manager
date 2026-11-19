@@ -2498,55 +2498,58 @@ _menu_manage_mirrors() {
 
   while true; do
     choice="$(
-      _menu_choose "Custom Ubuntu Mirrors" "Manage app-owned custom mirror entries" \\
-        "list" "List saved custom mirrors" \\
-        "add" "Add and verify a mirror URL" \\
-        "disable" "Disable a saved custom mirror" \\
-        "enable" "Enable a saved custom mirror" \\
-        "remove" "Remove a saved custom mirror" \\
+      _menu_choose "Custom Ubuntu Mirrors" "Manage app-owned custom mirror entries" \
+        "list" "List saved custom mirrors" \
+        "add" "Add and verify a mirror URL" \
+        "disable" "Disable a saved custom mirror" \
+        "enable" "Enable a saved custom mirror" \
+        "remove" "Remove a saved custom mirror" \
         "back" "Back"
     )" || return 0
+
     case "$choice" in
       list)
         listing=""
         for i in "${!_CATALOG_IDS[@]}"; do
           [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
-          listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"
-  local choice rc
-  while true; do
-    choice="$(
-      _menu_choose "APT Management" "Choose an action" \\
-      "apply_best" "Find and apply the fastest mirror" \\
-      "apply_custom" "Test and apply a custom mirror" \\
-      "list" "List and test available mirrors" \\
-      "back" "Back to main menu"
-    )" || return 0
-    case "$choice" in
-    apply_best)
-      FORCE_MIRROR=""
-      DRY_RUN=false
-      rc=0
-      _run_apply_flow || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
-      ;;
-    apply_custom)
-      FORCE_MIRROR="$(_menu_input "Custom mirror" "Enter an Ubuntu mirror base URL" "")" || continue
-      [[ "$FORCE_MIRROR" =~ ^https?://[^[:space:]]+$ ]] || {
-        _menu_message "Invalid mirror URL" "Enter an http:// or https:// URL without spaces."
-        continue
-      }
-      FORCE_MIRROR="${FORCE_MIRROR%/}"
-      DRY_RUN=false
-      rc=0
-      _run_apply_flow || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
-      ;;
-    list)
-      _run_list_flow
-      _menu_message "APT mirrors" "Mirror testing completed."
-      ;;
-    back) return 0 ;;
+          listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"$'\n'
+        done
+        [[ -n "$listing" ]] || listing="No custom mirrors have been saved."
+        _menu_message "Custom mirrors" "$listing"
+        ;;
+      add)
+        value="$(_menu_input "Add custom mirror" "Ubuntu mirror base URL (must serve signed InRelease files)" "https://")" || continue
+        MIRROR_MANAGEMENT_ACTION="add"
+        MIRROR_MANAGEMENT_VALUE="$value"
+        rc=0
+        _run_mirror_management || rc=$?
+        [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Add operation finished with exit code $rc."
+        ;;
+      disable | enable | remove)
+        listing=""
+        for i in "${!_CATALOG_IDS[@]}"; do
+          [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
+          listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"$'\n'
+        done
+        [[ -n "$listing" ]] || {
+          _menu_message "Custom mirrors" "There are no saved custom mirrors to change."
+          continue
+        }
+        _menu_message "Saved custom mirror IDs" "$listing"
+        value="$(_menu_input "Custom mirror ID" "Enter the exact ID shown above" "")" || continue
+        MIRROR_MANAGEMENT_ACTION="$choice"
+        MIRROR_MANAGEMENT_VALUE="$value"
+        rc=0
+        _run_mirror_management || rc=$?
+        [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Operation finished with exit code $rc."
+        ;;
+      back) return 0 ;;
     esac
+
+    old_network_setting="$NO_CATALOG_NETWORK"
+    NO_CATALOG_NETWORK=true
+    _load_mirror_catalog
+    NO_CATALOG_NETWORK="$old_network_setting"
   done
 }
 

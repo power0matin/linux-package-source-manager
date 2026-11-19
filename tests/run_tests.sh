@@ -602,21 +602,24 @@ test_benchmark_selection_and_read_only_safety() {
   NO_SPINNER=true
   BENCH_WORKERS=2
   CODENAME=noble
-  _load_mirror_catalog() { CATALOG_SOURCE="fixture"; CATALOG_CACHE_STATE="fixture"; }
+  _load_mirror_catalog() {
+    CATALOG_SOURCE="fixture"
+    CATALOG_CACHE_STATE="fixture"
+  }
   _get_mirrors() {
     printf '%s\n' "https://slow-fixture.example/ubuntu" "https://fast-fixture.example/ubuntu" "https://unverified-fixture.example/ubuntu"
   }
   _test_mirror() {
     case "$1" in
-      *slow-fixture*)
-        printf 'true|0.300000|0.300000|200|200|200|0|valid-until|verified\n' >"$2"
-        ;;
-      *fast-fixture*)
-        printf 'true|0.100000|0.100000|200|200|200|0|valid-until|verified\n' >"$2"
-        ;;
-      *unverified-fixture*)
-        printf 'false|0.001000|0.001000|200|200|200|0|valid-until|not-fully-verified|invalid_archive_signature\n' >"$2"
-        ;;
+    *slow-fixture*)
+      printf 'true|0.300000|0.300000|200|200|200|0|valid-until|verified\n' >"$2"
+      ;;
+    *fast-fixture*)
+      printf 'true|0.100000|0.100000|200|200|200|0|valid-until|verified\n' >"$2"
+      ;;
+    *unverified-fixture*)
+      printf 'false|0.001000|0.001000|200|200|200|0|valid-until|not-fully-verified|invalid_archive_signature\n' >"$2"
+      ;;
     esac
   }
   before="$(sha256sum "$APT_DEB822_FILE")"

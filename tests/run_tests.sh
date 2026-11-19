@@ -183,7 +183,7 @@ test_filesystem_operations() {
   assert_exit_code 10 "$cancel_status" "declining an apply preview returns cancelled"
   assert_equal "$before_cancel" "$after_cancel" "cancel leaves APT configuration content unchanged"
 
-  local escaped_json="$TEST_ROOT/escaped.json"
+  local escaped_json="${_TEST_ROOT}/escaped.json"
   local escaped_value
   escaped_value='quote " slash \\ literal'
   local json_escape_status=0

@@ -696,6 +696,17 @@ _catalog_metadata_for_url() {
   printf 'manual\tmanual\tfalse\tauto\n'
 }
 
+_catalog_metadata_for_url() {
+  local requested_url="$1" i
+  for ((i = 0; i < \${#_CATALOG_URLS[@]}; i++)); do
+    if [[ "\${_CATALOG_URLS[$i]}" == "$requested_url" ]]; then
+      printf '%s\t%s\t%s\t%s\n' "\${_CATALOG_IDS[$i]}" "\${_CATALOG_SOURCES[$i]}" "\${_CATALOG_OFFICIAL[$i]}" "\${_CATALOG_COUNTRIES[$i]}"
+      return 0
+    fi
+  done
+  printf 'manual\tmanual\tfalse\tauto\n'
+}
+
 list_mirrors() {
   detect_ubuntu
   _load_mirror_catalog

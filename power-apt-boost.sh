@@ -2557,11 +2557,11 @@ _menu_apt() {
   local choice rc
   while true; do
     choice="$(
-      _menu_choose "APT Management" "Choose an action" \\
-      "apply_best" "Find and apply the fastest mirror" \\
-      "apply_custom" "Test and apply a custom mirror" \\
-      "list" "List and test available mirrors" \\
-      "manage" "Manage custom mirrors" \\
+      _menu_choose "APT Management" "Choose an action" \
+      "apply_best" "Find and apply the fastest mirror" \
+      "apply_custom" "Test and apply a custom mirror" \
+      "list" "List and test available mirrors" \
+      "manage" "Manage custom mirrors" \
       "back" "Back to main menu"
     )" || return 0
     case "$choice" in
@@ -2629,9 +2629,9 @@ _menu_backups() {
 _menu_diagnostics() {
   local choice
   choice="$(
-    _menu_choose "Diagnostics" "Choose a report" \\
-    "status" "System status" \\
-    "doctor" "Run local health checks" \\
+    _menu_choose "Diagnostics" "Choose a report" \
+    "status" "System status" \
+    "doctor" "Run local health checks" \
     "back" "Back to main menu"
   )" || return 0
   case "$choice" in
@@ -2732,13 +2732,13 @@ _menu_main() {
   while true; do
     local choice
     choice="$(
-      _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \\
-      "overview" "Overview" \\
-      "apt" "APT management" \\
-      "benchmark" "Mirror benchmark" \\
-      "backups" "Backup and Restore" \\
-      "diagnostics" "Diagnostics" \\
-      "settings" "Settings" \\
+      _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \
+      "overview" "Overview" \
+      "apt" "APT management" \
+      "benchmark" "Mirror benchmark" \
+      "backups" "Backup and Restore" \
+      "diagnostics" "Diagnostics" \
+      "settings" "Settings" \
       "quit" "Exit"
     )" || return 0
     case "$choice" in

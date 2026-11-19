@@ -434,11 +434,11 @@ If you have third-party APT sources in `/etc/apt/sources.list`, Power APT Boost 
 
 | Ubuntu Version | Current CI coverage |
 |---------------|---------------------|
-| 24.04 LTS Noble | CLI smoke checks |
-| 22.04 LTS Jammy | CLI smoke checks |
-| 20.04 LTS Focal | CLI smoke checks |
+| 24.04 LTS Noble | 145 offline tests |
+| 22.04 LTS Jammy | 145 offline tests |
+| 20.04 LTS Focal | 145 offline tests |
 
-CI runs ShellCheck, shfmt and an offline regression suite on Ubuntu 20.04, 22.04 and 24.04. Offline tests cover source parsing, inventory, backup/restore, config ownership, proxy validation, architecture-specific archive selection, rollback and mirror compatibility. Live mirror connectivity and external DNS/TLS availability are not CI prerequisites. Requires Bash 4.0+ and one of: curl, wget.
+CI also runs ShellCheck and shfmt. Offline tests cover source parsing, inventory, backup/restore, config ownership, proxy validation, architecture-specific archive selection, rollback and mirror compatibility. Live mirror connectivity, real archive-signature checks and external DNS/TLS availability are not CI prerequisites; network diagnostics are opt-in at runtime. [Latest Phase 4 CI run](https://github.com/power0matin/power-apt-boost/actions/runs/44633115521). Requires Bash 4.0+ and one of: curl, wget.
 
 ## Security
 

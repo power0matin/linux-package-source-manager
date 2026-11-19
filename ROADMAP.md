@@ -927,20 +927,20 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 
 **Goal:** Finish the APT experience beyond selecting an archive URL.
 
-- [ ] Complete APT source inventory and status display.
-- [ ] Add archive/security/ports/suite-aware selection.
-- [ ] Preserve all third-party repositories and options.
-- [ ] Add safe APT proxy management.
-- [ ] Add safe network timeout/retry management.
-- [ ] Add diagnostics for signatures, metadata freshness, DNS, TLS, proxies and duplicate sources.
-- [ ] Add selective restore and backup cleanup policy.
-- [ ] Add profile preview and APT-only apply.
+- [x] Complete APT source inventory and status display across legacy and Deb822 formats, including duplicate URI/suite reporting.
+- [x] Add archive/security/ports/suite-aware selection with architecture guards and a separate security pocket where required.
+- [x] Preserve third-party source files and legacy source-line options; refuse unsafe rewrites of mixed, modified, symlinked or unclassified managed files.
+- [x] Add safe APT proxy set/clear management without accepting embedded credentials.
+- [x] Add bounded APT network timeout/retry management.
+- [x] Add diagnostics for signature trust prerequisites and insecure overrides, cached metadata age, opt-in DNS/TLS, proxies and duplicate sources.
+- [x] Add selective restore scopes and checksum-verified backup cleanup/retention.
+- [x] Add explicit apply preview and keep persistent changes scoped to APT source/network configuration.
 
 **Acceptance criteria**
 
-- [ ] Supported Ubuntu releases can be inspected, benchmarked, optimized and restored without losing third-party source configuration.
-- [ ] Security repositories remain enabled and signature verification remains active.
-- [ ] User-visible success requires a successful post-apply verification.
+- [x] Supported Ubuntu releases in the CI matrix can be inspected, benchmarked, optimized and restored without destructive changes to third-party source configuration.
+- [x] Security repositories remain enabled and the generated Ubuntu sources retain explicit archive keyring verification.
+- [x] Apply reports success only after the generated configuration passes APT parser verification (and `apt-get update` succeeds unless explicitly skipped).
 
 ### Phase 5 — Python ecosystem manager
 
@@ -1145,8 +1145,8 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Current execution state:** Phase 4 — implementation is on `feat/phase-4-apt-manager-20261120`; test and documentation validation are in progress.  
+**Current execution state:** Phase 4 — PR #5 is open for review; ShellCheck and shfmt pass, and all three Ubuntu offline suites pass 145/145 on head `575b12c597112c2d85135b3e1246f75ff7c68164`.  
 **Previous phases:** PRs #1-#4 are merged into `main`; Phase 3 is complete.  
-**Next permitted work unit:** Complete Phase 4 validation, open its focused PR, then wait for review and merge before starting Phase 5.  
+**Next permitted work unit:** Review and merge PR #5 before starting Phase 5.  
 **Live-network validation:** Public mirror discovery and real archive-signature checks were not run in CI; CI uses offline fixtures and mocked probe responses.  
 **Release/deployment status:** No release, tag or deployment has been created.

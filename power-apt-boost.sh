@@ -49,7 +49,7 @@ readonly OS_RELEASE_FILE="${_SYSTEM_ROOT}/etc/os-release"
 readonly APT_LOCK_FILE="${_SYSTEM_ROOT}/run/lock/${APP_SLUG}.lock"
 
 readonly PROBE_TIMEOUT_CONNECT=5
-readonly MIRROR_INDEX_URL="https://mirrors.ubuntu.com/mirrors.txt"
+readonly MIRROR_INDEX_URL="http://mirrors.ubuntu.com/mirrors.txt"
 readonly MIRROR_CATALOG_SCHEMA=1
 readonly CATALOG_CACHE_TTL=86400
 readonly CATALOG_MAX_RELEASE_AGE=604800
@@ -588,6 +588,11 @@ _refresh_catalog_cache() {
   }
   CATALOG_CACHE_STATE="refreshed"
   CATALOG_LAST_REFRESH="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  if [[ "$CATALOG_SOURCE" == "built-in" ]]; then
+    CATALOG_SOURCE="built-in+ubuntu-index"
+  elif [[ "$CATALOG_SOURCE" == "built-in+user" ]]; then
+    CATALOG_SOURCE="built-in+user+ubuntu-index"
+  fi
   return 0
 }
 
@@ -618,41 +623,46 @@ _load_mirror_catalog() {
     fi
   fi
 
-  local cache_age=999999999 now cache_mtime cache_timestamp=""
-  if [[ -f "$CATALOG_CACHE_FILE" ]]; then
+  local cache_age=999999999 now cache_mtime cache_timestamp="" cache_valid=false
+  if [[ -f "$CATALOG_CACHE_FILE" && ! -L "$CATALOG_CACHE_FILE" ]] &&
+    grep -Fqx "# power-apt-boost-catalog-v$MIRROR_CATALOG_SCHEMA" "$CATALOG_CACHE_FILE"; then
+    cache_valid=true
     cache_mtime="$(stat -c '%Y' "$CATALOG_CACHE_FILE" 2>/dev/null || printf '0')"
     now="$(date +%s)"
     cache_age=$((now - cache_mtime))
     ((cache_age >= 0)) || cache_age=999999999
     cache_timestamp="$(sed -n 's/^# fetched_at=//p' "$CATALOG_CACHE_FILE" | head -1)"
+  elif [[ -e "$CATALOG_CACHE_FILE" || -L "$CATALOG_CACHE_FILE" ]]; then
+    CATALOG_CACHE_STATE="invalid-cache"
+    warn "Ignoring an invalid mirror catalog cache; schema or file type is not supported."
   fi
 
   if [[ "$NO_CATALOG_NETWORK" == true ]]; then
-    if [[ -f "$CATALOG_CACHE_FILE" ]]; then
+    if [[ "$cache_valid" == true ]]; then
       CATALOG_CACHE_STATE="local-cache"
       CATALOG_LAST_REFRESH="$cache_timestamp"
     else
-      CATALOG_CACHE_STATE="network-disabled"
+      [[ "$CATALOG_CACHE_STATE" == "invalid-cache" ]] || CATALOG_CACHE_STATE="network-disabled"
     fi
-  elif [[ "$REFRESH_CATALOG" == true || ! -f "$CATALOG_CACHE_FILE" || "$cache_age" -gt "$CATALOG_CACHE_TTL" ]]; then
+  elif [[ "$REFRESH_CATALOG" == true || "$cache_valid" != true || "$cache_age" -gt "$CATALOG_CACHE_TTL" ]]; then
     if [[ -z "$COUNTRY_FILTER" ]] && _refresh_catalog_cache; then
       :
-    elif [[ -f "$CATALOG_CACHE_FILE" ]]; then
+    elif [[ "$cache_valid" == true ]]; then
       CATALOG_CACHE_STATE="stale-fallback"
       CATALOG_LAST_REFRESH="$cache_timestamp"
       warn "Ubuntu mirror discovery failed; using the last known-good catalog cache."
     else
-      CATALOG_CACHE_STATE="unavailable"
+      [[ "$CATALOG_CACHE_STATE" == "invalid-cache" ]] || CATALOG_CACHE_STATE="unavailable"
       warn "Ubuntu mirror discovery is unavailable; using the built-in and user mirror catalog."
     fi
-  elif [[ -f "$CATALOG_CACHE_FILE" ]]; then
+  elif [[ "$cache_valid" == true ]]; then
     CATALOG_CACHE_STATE="fresh-cache"
     CATALOG_LAST_REFRESH="$cache_timestamp"
   fi
 
   REFRESH_CATALOG=false
 
-  if [[ -f "$CATALOG_CACHE_FILE" ]]; then
+  if [[ "$cache_valid" == true ]]; then
     local before_dynamic_count="${#_CATALOG_IDS[@]}"
     _catalog_read_file "$CATALOG_CACHE_FILE" "ubuntu-index"
     if (("${#_CATALOG_IDS[@]}" > before_dynamic_count)); then
@@ -796,7 +806,7 @@ _validate_release_metadata() {
     return 1
   fi
   if ((now - release_epoch > CATALOG_MAX_RELEASE_AGE)); then
-    printf 'invalid|stale_release_metadata\tstale\n'
+    printf 'invalid|stale_release_metadata|stale\n'
     return 1
   fi
 

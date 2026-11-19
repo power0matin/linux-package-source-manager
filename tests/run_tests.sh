@@ -490,6 +490,18 @@ test_probe_parser_and_list_criteria() {
 }
 test_catalog_and_release_metadata() {
   local code output body cache_entry user_entry mode
+  local curl_args_file="${_TEST_ROOT}/catalog-curl.args"
+  curl() {
+    printf '%s\\n' "$@" >"$curl_args_file"
+    return 0
+  }
+  _download_catalog_file "${_TEST_ROOT}/catalog-index.download"
+  unset -f curl
+  assert_contains "--proto" "$(cat "$curl_args_file")" "catalog fetch defines an explicit URL protocol policy"
+  assert_contains "=http,https" "$(cat "$curl_args_file")" "catalog fetch allows Ubuntu's published HTTP index"
+  assert_contains "--proto-redir" "$(cat "$curl_args_file")" "catalog fetch defines a redirect protocol policy"
+  assert_contains "=https" "$(cat "$curl_args_file")" "catalog fetch permits redirects only to HTTPS"
+
   body="${_TEST_ROOT}/InRelease.fixture"
   cat >"$body" <<EOF
 Origin: Ubuntu

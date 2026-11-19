@@ -2408,7 +2408,7 @@ _run_apply_flow() {
     if [[ "$OFFICIAL_ONLY" == true ]] && ! _catalog_url_is_official "$forced_url"; then
       error "The specified mirror is not in the built-in official Ubuntu mirror profile."
       return "$EXIT_USAGE"
-    }
+    fi
 
     _print_section_header "VERIFYING SPECIFIED MIRROR"
     msg "  Mirror: ${COLOR_BOLD}${forced_url}${COLOR_RESET}"

@@ -1842,15 +1842,38 @@ _print_status_report() {
   printf '\n%s\n' "$APP_NAME — System Status"
   printf '%-24s %s\n' "Operating system:" "$REPORT_OS_PRETTY"
   printf '%-24s %s\n' "Ubuntu codename:" "$REPORT_CODENAME"
+  printf '%-24s %s\n' "Architecture:" "$REPORT_APT_ARCH"
+  printf '%-24s %s\n' "Foreign architectures:" "${REPORT_APT_FOREIGN_ARCHES:-none}"
   printf '%-24s %s\n' "Legacy sources.list:" "$REPORT_SOURCES_LIST"
-  printf '%-24s %s\n' "Deb822 ubuntu.sources:" "$REPORT_DEB822"
+  printf '%-24s %s\n' "Deb822 source files:" "$REPORT_APT_SOURCE_FILE_COUNT"
+  printf '%-24s %s\n' "Active source stanzas:" "$REPORT_APT_SOURCE_COUNT"
+  printf '%-24s %s\n' "Duplicate source entries:" "$REPORT_APT_SOURCE_DUPLICATES"
   printf '%-24s %s\n' "Managed APT config:" "$REPORT_MANAGED_CONFIG"
-  printf '%-24s %s\n' "Current mirror:" "${REPORT_CURRENT_MIRROR:-not detected}"
+  printf '%-24s %s\n' "Current Ubuntu mirror:" "${REPORT_CURRENT_MIRROR:-not detected}"
+  printf '%-24s %s\n' "HTTP proxy:" "$REPORT_APT_NETWORK_HTTP_PROXY"
+  printf '%-24s %s\n' "HTTPS proxy:" "$REPORT_APT_NETWORK_HTTPS_PROXY"
+  printf '%-24s %s\n' "APT retries:" "$REPORT_APT_NETWORK_RETRIES"
+  printf '%-24s %s\n' "APT IP family:" "$REPORT_APT_NETWORK_IP_FAMILY"
+  if (($(${#REPORT_APT_SOURCE_FILE[@]} > 0)); then
+    printf '\nAPT source inventory:\n'
+    local i
+    for ((i = 0; i < ${#REPORT_APT_SOURCE_FILE[@]}; i++)); do
+      printf '  [%s] %s\n' "${REPORT_APT_SOURCE_ENABLED[$i]}" "${REPORT_APT_SOURCE_FILE[$i]}"
+      printf '      %s | %s | %s\n' "${REPORT_APT_SOURCE_KIND[$i]}" "${REPORT_APT_SOURCE_URIS[$i]}" "${REPORT_APT_SOURCE_SUITES[$i]}"
+    done
+  fi
+  if (($(${#REPORT_APT_SOURCE_WARNINGS[@]} > 0)); then
+    printf '\nAPT inventory warnings:\n'
+    local warning
+    for warning in "${REPORT_APT_SOURCE_WARNINGS[@]}"; do
+      printf '  - %s\n' "$warning"
+    done
+  fi
   if [[ "$REPORT_BACKUP_ACCESSIBLE" == true ]]; then
-    printf '%-24s %s\n' "Available backups:" "$REPORT_BACKUP_COUNT"
+    printf '\n%-24s %s\n' "Available backups:" "$REPORT_BACKUP_COUNT"
     printf '%-24s %s\n' "Latest backup:" "${REPORT_LATEST_BACKUP:-none}"
   else
-    printf '%-24s %s\n' "Backup directory:" "not accessible (root may be required)"
+    printf '\n%-24s %s\n' "Backup directory:" "not accessible (root may be required)"
   fi
   printf '\n'
 }
@@ -1932,16 +1955,39 @@ _report_checks_json() {
 
 _print_json() {
   _collect_status
-  local checks_json
+  local checks_json sources_json files_json warnings_json separator i file warning
   checks_json="$(_report_checks_json)"
+  sources_json="["
+  separator=""
+  for ((i = 0; i < ${#REPORT_APT_SOURCE_FILE[@]}; i++)); do
+    sources_json+="$separator{\"file\":$(_json_quote "${REPORT_APT_SOURCE_FILE[$i]}"),\"type\":$(_json_quote "${REPORT_APT_SOURCE_TYPE[$i]}"),\"uris\":$(_json_quote "${REPORT_APT_SOURCE_URIS[$i]}"),\"suites\":$(_json_quote "${REPORT_APT_SOURCE_SUITES[$i]}"),\"components\":$(_json_quote "${REPORT_APT_SOURCE_COMPONENTS[$i]}"),\"enabled\":${REPORT_APT_SOURCE_ENABLED[$i]},\"signed_by\":$(_json_quote "${REPORT_APT_SOURCE_SIGNED_BY[$i]}"),\"kind\":$(_json_quote "${REPORT_APT_SOURCE_KIND[$i]}")}"
+    separator=","
+  done
+  sources_json+="]"
+  files_json="["
+  separator=""
+  for file in "${REPORT_APT_SOURCE_FILES[@]}"; do
+    files_json+="$separator$(_json_quote "$file")"
+    separator=","
+  done
+  files_json+="]"
+  warnings_json="["
+  separator=""
+  for warning in "${REPORT_APT_SOURCE_WARNINGS[@]}"; do
+    warnings_json+="$separator$(_json_quote "$warning")"
+    separator=","
+  done
+  warnings_json+="]"
+
   printf '{\n'
   printf '  "schema_version": 1,\n'
   printf '  "version": %s,\n' "$(_json_quote "$APP_VERSION")"
   printf '  "command": %s,\n' "$(_json_quote "$REPORT_COMMAND")"
   printf '  "status": %s,\n' "$(_json_quote "$REPORT_STATUS")"
   printf '  "timestamp": %s,\n' "$(_json_quote "$(date -u '+%Y-%m-%dT%H:%M:%SZ')")"
-  printf '  "system": {"id": %s, "pretty_name": %s, "version_id": %s, "codename": %s},\n' "$(_json_quote "$REPORT_OS_ID")" "$(_json_quote "$REPORT_OS_PRETTY")" "$(_json_quote "$REPORT_VERSION_ID")" "$(_json_quote "$REPORT_CODENAME")"
+  printf '  "system": {"id": %s, "pretty_name": %s, "version_id": %s, "codename": %s, "architecture": %s, "foreign_architectures": %s},\n' "$(_json_quote "$REPORT_OS_ID")" "$(_json_quote "$REPORT_OS_PRETTY")" "$(_json_quote "$REPORT_VERSION_ID")" "$(_json_quote "$REPORT_CODENAME")" "$(_json_quote "$REPORT_APT_ARCH")" "$(_json_quote "$REPORT_APT_FOREIGN_ARCHES")"
   printf '  "apt": {"sources_list": %s, "deb822_sources": %s, "managed_config": %s, "current_mirror": %s},\n' "$(_json_quote "$REPORT_SOURCES_LIST")" "$(_json_quote "$REPORT_DEB822")" "$(_json_quote "$REPORT_MANAGED_CONFIG")" "$(_json_quote "$REPORT_CURRENT_MIRROR")"
+  printf '  "apt_inventory": {"source_file_count": %s, "source_count": %s, "duplicate_count": %s, "source_files": %s, "sources": %s, "warnings": %s, "network": {"http_proxy": %s, "https_proxy": %s, "retries": %s, "http_timeout": %s, "https_timeout": %s, "ip_family": %s}},\n' "$REPORT_APT_SOURCE_FILE_COUNT" "$REPORT_APT_SOURCE_COUNT" "$REPORT_APT_SOURCE_DUPLICATES" "$files_json" "$sources_json" "$warnings_json" "$(_json_quote "$REPORT_APT_NETWORK_HTTP_PROXY")" "$(_json_quote "$REPORT_APT_NETWORK_HTTPS_PROXY")" "$(_json_quote "$REPORT_APT_NETWORK_RETRIES")" "$(_json_quote "$REPORT_APT_NETWORK_HTTP_TIMEOUT")" "$(_json_quote "$REPORT_APT_NETWORK_HTTPS_TIMEOUT")" "$(_json_quote "$REPORT_APT_NETWORK_IP_FAMILY")"
   printf '  "backups": {"accessible": %s, "count": %s, "latest": %s},\n' "$REPORT_BACKUP_ACCESSIBLE" "$REPORT_BACKUP_COUNT" "$(_json_quote "$REPORT_LATEST_BACKUP")"
   printf '  "operation": {"mirror": %s, "response_time_seconds": %s, "dry_run": %s, "skip_update": %s},\n' "$(_json_quote "$SELECTED_MIRROR")" "$(_json_quote "$SELECTED_TIME")" "$DRY_RUN" "$SKIP_UPDATE"
   printf '  "catalog": {"source": %s, "cache_state": %s, "last_refresh": %s, "invalid_entries": %s},\n' "$(_json_quote "$CATALOG_SOURCE")" "$(_json_quote "$CATALOG_CACHE_STATE")" "$(_json_quote "$CATALOG_LAST_REFRESH")" "$CATALOG_INVALID_ENTRIES"
@@ -2351,13 +2397,30 @@ _confirm_action() {
 }
 
 _print_apply_preview() {
+  _collect_status
   _print_section_header "CHANGE PREVIEW"
   printf 'Selected mirror: %s\n' "$SELECTED_MIRROR"
-  printf 'APT source file: %s\n' "$APT_DEB822_FILE"
+  printf 'Managed APT source file: %s\n' "$APT_DEB822_FILE"
   printf 'APT network config: %s\n' "$APT_CONF_FILE"
   printf 'Backup root: %s\n' "$BACKUP_BASE"
+  printf 'Existing APT source files discovered: %s\n' "$REPORT_APT_SOURCE_FILE_COUNT"
+  printf 'Existing source files and third-party stanzas: preserved\n'
+  if [[ -f "$APT_LEGACY_DEB822_FILE" ]]; then
+    if _apt_legacy_managed_source_is_owned "$APT_LEGACY_DEB822_FILE"; then
+      printf 'Legacy Power APT Boost source: previous single managed stanza will be replaced\n'
+    else
+      printf 'Existing ubuntu.sources: preserved as unmanaged configuration\n'
+    fi
+  fi
   if [[ -f "$APT_SOURCES_FILE" ]]; then
-    printf 'Legacy sources.list: may be removed if it contains only Ubuntu archive entries (%s)\n' "$APT_SOURCES_FILE"
+    printf 'Existing sources.list: preserved; any Ubuntu source entries remain enabled\n'
+  fi
+  if ((${#REPORT_APT_SOURCE_WARNINGS[@]} > 0)); then
+    printf '\nExisting source warnings:\n'
+    local warning
+    for warning in "${REPORT_APT_SOURCE_WARNINGS[@]}"; do
+      printf '  - %s\n' "$warning"
+    done
   fi
   if [[ "$SKIP_UPDATE" == true ]]; then
     printf 'APT update: skipped; existing package lists and archive cache are preserved\n'

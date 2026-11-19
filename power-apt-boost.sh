@@ -543,7 +543,7 @@ _refresh_catalog_cache() {
     host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
     hash="$(printf '%s' "$url" | sha256sum | cut -c1-10)"
     id="ubuntu-index-${host:0:32}-${hash}"
-    discovered+=("$id|auto|Ubuntu-selected|$url|ubuntu-index|true|true")
+    discovered+=("$id|auto|Ubuntu-selected|$url|ubuntu-index|false|true")
     ((accepted += 1))
   done <"$download_file"
   rm -f "$download_file"
@@ -1041,6 +1041,7 @@ _select_mirror() {
     while (("${#pids[@]}" < BENCH_WORKERS)) && ((idx < total)); do
       _bench_worker "$idx" "${mirrors[$idx]}" "$CODENAME" "${bench_tmpdir}/${idx}.result" &
       pids+=("$!")
+      _bg_pids+=("$!")
       ((idx += 1))
     done
 
@@ -1055,6 +1056,7 @@ _select_mirror() {
         fi
       done
       pids=("${new_pids[@]}")
+      _bg_pids=("${new_pids[@]}")
     fi
   done
 

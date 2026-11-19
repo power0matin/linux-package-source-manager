@@ -897,10 +897,10 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 
 **Acceptance criteria**
 
-- [x] Piped execution never blocks on menu input.
-- [x] Every destructive operation shows the exact scope and files before apply.
-- [x] Cancel leaves the system unchanged.
-- [x] Menu and CLI produce equivalent operation results.
+- [ ] Piped execution never blocks on menu input.
+- [ ] Every destructive operation shows the exact scope and files before apply.
+- [ ] Cancel leaves the system unchanged.
+- [ ] Menu and CLI produce equivalent operation results.
 
 ### Phase 3 — Mirror catalog and benchmark engine
 
@@ -1145,6 +1145,6 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Current execution state:** Phase 1 — implementation prepared in a pull request; CI and review pending.  
-**Next permitted work unit:** Complete Phase 1 acceptance and merge its PR before starting Phase 2.  
+**Current execution state:** Phase 2 — implementation prepared on `feat/phase-2-interactive-menu-20261119`; PR and CI review pending.  
+**Next permitted work unit:** Complete Phase 2 acceptance and merge its PR before starting Phase 3.  
 **Release/deployment status:** No release or deployment is implied by this document.

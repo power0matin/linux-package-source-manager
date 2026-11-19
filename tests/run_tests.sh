@@ -186,6 +186,7 @@ test_filesystem_operations() {
   local escaped_json="$TEST_ROOT/escaped.json"
   local escaped_value
   escaped_value='quote " slash \\ literal'
+  local json_escape_status=0
   python3 - "$escaped_json" "$escaped_value" <<'PY' || json_escape_status=$?
 import json
 import sys

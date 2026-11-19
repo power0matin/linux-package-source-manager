@@ -649,6 +649,8 @@ _load_mirror_catalog() {
     CATALOG_LAST_REFRESH="$cache_timestamp"
   fi
 
+  REFRESH_CATALOG=false
+
   if [[ -f "$CATALOG_CACHE_FILE" ]]; then
     local before_dynamic_count="${#_CATALOG_IDS[@]}"
     _catalog_read_file "$CATALOG_CACHE_FILE" "ubuntu-index"
@@ -2048,7 +2050,7 @@ _parse_args() {
     [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || die "--restore cannot be combined with apply or mirror-management options." "$EXIT_USAGE"
   fi
   if [[ "$MIRROR_MANAGEMENT_REQUESTED" == true ]]; then
-    [[ "$JSON_OUTPUT" != true ]] || die "Mirror management does not support --json." "$EXIT_USAGE"
+    [[ "$JSON_OUTPUT" != true && "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true ]] || die "Mirror management cannot be combined with --json, --official-only or --refresh-catalog." "$EXIT_USAGE"
     [[ "$ACTION_REQUESTED" != true && "$SKIP_UPDATE" != true && "$RESTORE" != true && "$LIST_REQUESTED" != true && -z "$FORCE_MIRROR" ]] || die "Mirror management cannot be combined with other operations." "$EXIT_USAGE"
   fi
 }
@@ -2628,44 +2630,70 @@ _menu_settings() {
   local choice value
   while true; do
     choice="$(
-      _menu_choose "Settings" "Settings apply to this session only" \\
-      "timeout" "Probe timeout: ${TIMEOUT_TOTAL}s" \\
-      "country" "Country filter: ${COUNTRY_FILTER:-all}" \\
-      "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \\
-      "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \\
-      "back" "Back to main menu"
+      _menu_choose "Settings" "Settings apply to this session only" \
+        "timeout" "Probe timeout: ${TIMEOUT_TOTAL}s" \
+        "country" "Country filter: ${COUNTRY_FILTER:-all}" \
+        "workers" "Benchmark workers: ${BENCH_WORKERS}" \
+        "retries" "Probe retries: ${PROBE_RETRIES}" \
+        "official" "Official-only profile: $([[ "$OFFICIAL_ONLY" == true ]] && echo enabled || echo disabled)" \
+        "refresh" "Refresh Ubuntu mirror catalog on next run" \
+        "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \
+        "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \
+        "back" "Back to main menu"
     )" || return 0
     case "$choice" in
-    timeout)
-      value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
-      if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 300)); then
-        TIMEOUT_TOTAL="$value"
-      else
-        _menu_message "Invalid timeout" "Enter a whole number from 1 to 300."
-      fi
-      ;;
-    country)
-      value="$(_menu_input "Country filter" "Enter a supported two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
-      value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
-      if [[ -z "$value" ]]; then
-        COUNTRY_FILTER=""
-      elif [[ "$value" =~ ^[a-z]{2}$ ]] && _country_code_supported "$value"; then
-        COUNTRY_FILTER="$value"
-      else
-        _menu_message "Unsupported country" "Choose a country code present in the built-in mirror catalog."
-      fi
-      ;;
-    ipv6)
-      [[ "$USE_IPV6" == true ]] && USE_IPV6=false || USE_IPV6=true
-      ;;
-    spinner)
-      [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
-      ;;
-    back) return 0 ;;
+      timeout)
+        value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
+        if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 300)); then
+          TIMEOUT_TOTAL="$value"
+        else
+          _menu_message "Invalid timeout" "Enter a whole number from 1 to 300."
+        fi
+        ;;
+      country)
+        value="$(_menu_input "Country filter" "Enter a supported two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
+        value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+        if [[ -z "$value" ]]; then
+          COUNTRY_FILTER=""
+        elif [[ "$value" =~ ^[a-z]{2}$ ]] && _country_code_supported "$value"; then
+          COUNTRY_FILTER="$value"
+        else
+          _menu_message "Unsupported country" "Choose a country code present in the built-in mirror catalog."
+        fi
+        ;;
+      workers)
+        value="$(_menu_input "Benchmark workers" "Enter a value from 1 to $MAX_WORKERS_LIMIT" "$BENCH_WORKERS")" || continue
+        if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= MAX_WORKERS_LIMIT)); then
+          BENCH_WORKERS="$value"
+        else
+          _menu_message "Invalid worker count" "Enter a whole number from 1 to $MAX_WORKERS_LIMIT."
+        fi
+        ;;
+      retries)
+        value="$(_menu_input "Probe retries" "Enter a value from 0 to 3" "$PROBE_RETRIES")" || continue
+        if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 0 && value <= 3)); then
+          PROBE_RETRIES="$value"
+        else
+          _menu_message "Invalid retry count" "Enter a whole number from 0 to 3."
+        fi
+        ;;
+      official)
+        [[ "$OFFICIAL_ONLY" == true ]] && OFFICIAL_ONLY=false || OFFICIAL_ONLY=true
+        ;;
+      refresh)
+        REFRESH_CATALOG=true
+        _menu_message "Catalog refresh" "The Ubuntu mirror catalog will be refreshed the next time you list or benchmark mirrors."
+        ;;
+      ipv6)
+        [[ "$USE_IPV6" == true ]] && USE_IPV6=false || USE_IPV6=true
+        ;;
+      spinner)
+        [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
+        ;;
+      back) return 0 ;;
     esac
   done
 }
-
 _menu_main() {
   if ! _is_interactive; then
     error "The interactive menu requires a TTY. Use --help for non-interactive commands."
@@ -2714,6 +2742,13 @@ main() {
     _doctor_report
     [[ "$REPORT_STATUS" != "error" ]] || exit "$EXIT_GENERAL"
     exit "$EXIT_OK"
+  fi
+
+  if [[ "$MIRROR_MANAGEMENT_REQUESTED" == true ]]; then
+    local mirror_management_status=0
+    _run_mirror_management || mirror_management_status=$?
+    [[ "$mirror_management_status" -eq "$EXIT_CANCELLED" ]] && mirror_management_status="$EXIT_OK"
+    exit "$mirror_management_status"
   fi
 
   if [[ "$LIST_REQUESTED" == true ]]; then

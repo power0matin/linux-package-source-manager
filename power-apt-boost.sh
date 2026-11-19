@@ -2471,7 +2471,28 @@ _menu_overview() {
   fi
 }
 
-_menu_apt() {
+_menu_manage_mirrors() {
+  local choice value rc old_network_setting="$NO_CATALOG_NETWORK" i listing
+  NO_CATALOG_NETWORK=true
+  _load_mirror_catalog
+  NO_CATALOG_NETWORK="$old_network_setting"
+
+  while true; do
+    choice="$(
+      _menu_choose "Custom Ubuntu Mirrors" "Manage app-owned custom mirror entries" \\
+        "list" "List saved custom mirrors" \\
+        "add" "Add and verify a mirror URL" \\
+        "disable" "Disable a saved custom mirror" \\
+        "enable" "Enable a saved custom mirror" \\
+        "remove" "Remove a saved custom mirror" \\
+        "back" "Back"
+    )" || return 0
+    case "$choice" in
+      list)
+        listing=""
+        for ((i = 0; i < ${#_CATALOG_IDS[@]}; i++)); do
+          [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
+          listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"
   local choice rc
   while true; do
     choice="$(
@@ -2505,6 +2526,508 @@ _menu_apt() {
       _run_list_flow
       _menu_message "APT mirrors" "Mirror testing completed."
       ;;
+    back) return 0 ;;
+    esac
+  done
+}
+
+_menu_benchmark() {
+  _run_benchmark_only
+  _menu_message "Benchmark" "Benchmark completed. No system configuration was changed."
+}
+
+_menu_backups() {
+  if [[ "$(id -u)" -ne 0 ]]; then
+    _menu_message "Backup and Restore" "Run the menu as root to inspect protected system backups."
+    return 0
+  fi
+  local listing
+  listing="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn || true)"
+  if [[ -z "$listing" ]]; then
+    _menu_message "Backup and Restore" "No Power APT Boost backup snapshots were found."
+    return 0
+  fi
+  local -a args=()
+  local line path
+  while IFS= read -r line; do
+    path="${line#*$'\t'}"
+    args+=("$path" "${path##*/}")
+  done <<<"$listing"
+  local selected rc
+  selected="$(_menu_choose "Backup and Restore" "Select a snapshot to restore" "${args[@]}" "back" "Back")" || return 0
+  [[ "$selected" == back ]] && return 0
+  RESTORE_PATH="$selected"
+  rc=0
+  _run_restore_flow || rc=$?
+  [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Restore result" "Restore finished with exit code $rc."
+}
+
+_menu_diagnostics() {
+  local choice
+  choice="$(
+    _menu_choose "Diagnostics" "Choose a report" \\
+    "status" "System status" \\
+    "doctor" "Run local health checks" \\
+    "back" "Back to main menu"
+  )" || return 0
+  case "$choice" in
+  status)
+    _status_report
+    [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Status report completed."
+    ;;
+  doctor)
+    _doctor_report
+    [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Health checks completed."
+    ;;
+  back) return 0 ;;
+  esac
+}
+
+_country_code_supported() {
+  local requested="$1" entry country mirror_url
+  for entry in "${_MIRROR_CATALOG[@]}"; do
+    IFS='|' read -r country _ mirror_url <<<"$entry"
+    [[ "$country" != "$requested" ]] || return 0
+  done
+  return 1
+}
+
+_menu_settings() {
+  local choice value
+  while true; do
+    choice="$(
+      _menu_choose "Settings" "Settings apply to this session only" \\
+      "timeout" "Probe timeout: ${TIMEOUT_TOTAL}s" \\
+      "country" "Country filter: ${COUNTRY_FILTER:-all}" \\
+      "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \\
+      "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \\
+      "back" "Back to main menu"
+    )" || return 0
+    case "$choice" in
+    timeout)
+      value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
+      if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 300)); then
+        TIMEOUT_TOTAL="$value"
+      else
+        _menu_message "Invalid timeout" "Enter a whole number from 1 to 300."
+      fi
+      ;;
+    country)
+      value="$(_menu_input "Country filter" "Enter a supported two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
+      value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+      if [[ -z "$value" ]]; then
+        COUNTRY_FILTER=""
+      elif [[ "$value" =~ ^[a-z]{2}$ ]] && _country_code_supported "$value"; then
+        COUNTRY_FILTER="$value"
+      else
+        _menu_message "Unsupported country" "Choose a country code present in the built-in mirror catalog."
+      fi
+      ;;
+    ipv6)
+      [[ "$USE_IPV6" == true ]] && USE_IPV6=false || USE_IPV6=true
+      ;;
+    spinner)
+      [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
+      ;;
+    back) return 0 ;;
+    esac
+  done
+}
+
+_menu_main() {
+  if ! _is_interactive; then
+    error "The interactive menu requires a TTY. Use --help for non-interactive commands."
+    return "$EXIT_USAGE"
+  fi
+  while true; do
+    local choice
+    choice="$(
+      _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \\
+      "overview" "Overview" \\
+      "apt" "APT management" \\
+      "benchmark" "Mirror benchmark" \\
+      "backups" "Backup and Restore" \\
+      "diagnostics" "Diagnostics" \\
+      "settings" "Settings" \\
+      "quit" "Exit"
+    )" || return 0
+    case "$choice" in
+    overview) _menu_overview ;;
+    apt) _menu_apt ;;
+    benchmark) _menu_benchmark ;;
+    backups) _menu_backups ;;
+    diagnostics) _menu_diagnostics ;;
+    settings) _menu_settings ;;
+    quit) return 0 ;;
+    esac
+  done
+}
+
+main() {
+  _setup_colors
+  _parse_args "$@"
+
+  if [[ "$LOG_ENABLED" == true ]]; then
+    mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+    : >"$LOG_FILE"
+    _log_to_file "Session started: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  fi
+
+  if [[ "$STATUS_REQUESTED" == true ]]; then
+    _status_report
+    exit "$EXIT_OK"
+  fi
+
+  if [[ "$DOCTOR_REQUESTED" == true ]]; then
+    _doctor_report
+    [[ "$REPORT_STATUS" != "error" ]] || exit "$EXIT_GENERAL"
+    exit "$EXIT_OK"
+  fi
+
+  if [[ "$LIST_REQUESTED" == true ]]; then
+    local list_status=0
+    _run_list_flow || list_status=$?
+    exit "$list_status"
+  fi
+
+  if [[ "$RESTORE" == true ]]; then
+    local restore_status=0
+    _run_restore_flow || restore_status=$?
+    [[ "$restore_status" -eq "$EXIT_CANCELLED" ]] && restore_status="$EXIT_OK"
+    exit "$restore_status"
+  fi
+
+  if [[ "$MENU_REQUESTED" == true ]]; then
+    local menu_status=0
+    _menu_main || menu_status=$?
+    exit "$menu_status"
+  fi
+
+  if [[ "$ACTION_REQUESTED" != true && "$YES" != true && "$DRY_RUN" != true ]]; then
+    if _is_interactive; then
+      _menu_main
+      exit $?
+    fi
+    error "No command was selected. A non-interactive apply requires --yes; use --status, --doctor or --dry-run for read-only checks."
+    exit "$EXIT_USAGE"
+  fi
+
+  local apply_status=0
+  _run_apply_flow || apply_status=$?
+  [[ "$apply_status" -eq "$EXIT_CANCELLED" ]] && apply_status="$EXIT_OK"
+  exit "$apply_status"
+}
+if [[ "${POWER_APT_BOOST_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi
+\n'
+        done
+        [[ -n "$listing" ]] || listing="No custom mirrors have been saved."
+        _menu_message "Custom mirrors" "$listing"
+        ;;
+      add)
+        value="$(_menu_input "Add custom mirror" "Ubuntu mirror base URL (must serve signed InRelease files)" "https://")" || continue
+        MIRROR_MANAGEMENT_ACTION="add"
+        MIRROR_MANAGEMENT_VALUE="$value"
+        rc=0
+        _run_mirror_management || rc=$?
+        [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Add operation finished with exit code $rc."
+        old_network_setting="$NO_CATALOG_NETWORK"
+        NO_CATALOG_NETWORK=true
+        _load_mirror_catalog
+        NO_CATALOG_NETWORK="$old_network_setting"
+        ;;
+      disable | enable | remove)
+        listing=""
+        for ((i = 0; i < ${#_CATALOG_IDS[@]}; i++)); do
+          [[ "${_CATALOG_SOURCES[$i]}" == user ]] || continue
+          listing+="${_CATALOG_IDS[$i]} | ${_CATALOG_ENABLED[$i]} | ${_CATALOG_URLS[$i]}"
+  local choice rc
+  while true; do
+    choice="$(
+      _menu_choose "APT Management" "Choose an action" \\
+      "apply_best" "Find and apply the fastest mirror" \\
+      "apply_custom" "Test and apply a custom mirror" \\
+      "list" "List and test available mirrors" \\
+      "back" "Back to main menu"
+    )" || return 0
+    case "$choice" in
+    apply_best)
+      FORCE_MIRROR=""
+      DRY_RUN=false
+      rc=0
+      _run_apply_flow || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      ;;
+    apply_custom)
+      FORCE_MIRROR="$(_menu_input "Custom mirror" "Enter an Ubuntu mirror base URL" "")" || continue
+      [[ "$FORCE_MIRROR" =~ ^https?://[^[:space:]]+$ ]] || {
+        _menu_message "Invalid mirror URL" "Enter an http:// or https:// URL without spaces."
+        continue
+      }
+      FORCE_MIRROR="${FORCE_MIRROR%/}"
+      DRY_RUN=false
+      rc=0
+      _run_apply_flow || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      ;;
+    list)
+      _run_list_flow
+      _menu_message "APT mirrors" "Mirror testing completed."
+      ;;
+    back) return 0 ;;
+    esac
+  done
+}
+
+_menu_benchmark() {
+  _run_benchmark_only
+  _menu_message "Benchmark" "Benchmark completed. No system configuration was changed."
+}
+
+_menu_backups() {
+  if [[ "$(id -u)" -ne 0 ]]; then
+    _menu_message "Backup and Restore" "Run the menu as root to inspect protected system backups."
+    return 0
+  fi
+  local listing
+  listing="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn || true)"
+  if [[ -z "$listing" ]]; then
+    _menu_message "Backup and Restore" "No Power APT Boost backup snapshots were found."
+    return 0
+  fi
+  local -a args=()
+  local line path
+  while IFS= read -r line; do
+    path="${line#*$'\t'}"
+    args+=("$path" "${path##*/}")
+  done <<<"$listing"
+  local selected rc
+  selected="$(_menu_choose "Backup and Restore" "Select a snapshot to restore" "${args[@]}" "back" "Back")" || return 0
+  [[ "$selected" == back ]] && return 0
+  RESTORE_PATH="$selected"
+  rc=0
+  _run_restore_flow || rc=$?
+  [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Restore result" "Restore finished with exit code $rc."
+}
+
+_menu_diagnostics() {
+  local choice
+  choice="$(
+    _menu_choose "Diagnostics" "Choose a report" \\
+    "status" "System status" \\
+    "doctor" "Run local health checks" \\
+    "back" "Back to main menu"
+  )" || return 0
+  case "$choice" in
+  status)
+    _status_report
+    [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Status report completed."
+    ;;
+  doctor)
+    _doctor_report
+    [[ "$JSON_OUTPUT" == true ]] || _menu_message "Diagnostics" "Health checks completed."
+    ;;
+  back) return 0 ;;
+  esac
+}
+
+_country_code_supported() {
+  local requested="$1" entry country mirror_url
+  for entry in "${_MIRROR_CATALOG[@]}"; do
+    IFS='|' read -r country _ mirror_url <<<"$entry"
+    [[ "$country" != "$requested" ]] || return 0
+  done
+  return 1
+}
+
+_menu_settings() {
+  local choice value
+  while true; do
+    choice="$(
+      _menu_choose "Settings" "Settings apply to this session only" \\
+      "timeout" "Probe timeout: ${TIMEOUT_TOTAL}s" \\
+      "country" "Country filter: ${COUNTRY_FILTER:-all}" \\
+      "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \\
+      "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \\
+      "back" "Back to main menu"
+    )" || return 0
+    case "$choice" in
+    timeout)
+      value="$(_menu_input "Probe timeout" "Enter timeout in seconds (1-300)" "$TIMEOUT_TOTAL")" || continue
+      if [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 300)); then
+        TIMEOUT_TOTAL="$value"
+      else
+        _menu_message "Invalid timeout" "Enter a whole number from 1 to 300."
+      fi
+      ;;
+    country)
+      value="$(_menu_input "Country filter" "Enter a supported two-letter country code, or leave empty for all" "$COUNTRY_FILTER")" || continue
+      value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+      if [[ -z "$value" ]]; then
+        COUNTRY_FILTER=""
+      elif [[ "$value" =~ ^[a-z]{2}$ ]] && _country_code_supported "$value"; then
+        COUNTRY_FILTER="$value"
+      else
+        _menu_message "Unsupported country" "Choose a country code present in the built-in mirror catalog."
+      fi
+      ;;
+    ipv6)
+      [[ "$USE_IPV6" == true ]] && USE_IPV6=false || USE_IPV6=true
+      ;;
+    spinner)
+      [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
+      ;;
+    back) return 0 ;;
+    esac
+  done
+}
+
+_menu_main() {
+  if ! _is_interactive; then
+    error "The interactive menu requires a TTY. Use --help for non-interactive commands."
+    return "$EXIT_USAGE"
+  fi
+  while true; do
+    local choice
+    choice="$(
+      _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \\
+      "overview" "Overview" \\
+      "apt" "APT management" \\
+      "benchmark" "Mirror benchmark" \\
+      "backups" "Backup and Restore" \\
+      "diagnostics" "Diagnostics" \\
+      "settings" "Settings" \\
+      "quit" "Exit"
+    )" || return 0
+    case "$choice" in
+    overview) _menu_overview ;;
+    apt) _menu_apt ;;
+    benchmark) _menu_benchmark ;;
+    backups) _menu_backups ;;
+    diagnostics) _menu_diagnostics ;;
+    settings) _menu_settings ;;
+    quit) return 0 ;;
+    esac
+  done
+}
+
+main() {
+  _setup_colors
+  _parse_args "$@"
+
+  if [[ "$LOG_ENABLED" == true ]]; then
+    mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+    : >"$LOG_FILE"
+    _log_to_file "Session started: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  fi
+
+  if [[ "$STATUS_REQUESTED" == true ]]; then
+    _status_report
+    exit "$EXIT_OK"
+  fi
+
+  if [[ "$DOCTOR_REQUESTED" == true ]]; then
+    _doctor_report
+    [[ "$REPORT_STATUS" != "error" ]] || exit "$EXIT_GENERAL"
+    exit "$EXIT_OK"
+  fi
+
+  if [[ "$LIST_REQUESTED" == true ]]; then
+    local list_status=0
+    _run_list_flow || list_status=$?
+    exit "$list_status"
+  fi
+
+  if [[ "$RESTORE" == true ]]; then
+    local restore_status=0
+    _run_restore_flow || restore_status=$?
+    [[ "$restore_status" -eq "$EXIT_CANCELLED" ]] && restore_status="$EXIT_OK"
+    exit "$restore_status"
+  fi
+
+  if [[ "$MENU_REQUESTED" == true ]]; then
+    local menu_status=0
+    _menu_main || menu_status=$?
+    exit "$menu_status"
+  fi
+
+  if [[ "$ACTION_REQUESTED" != true && "$YES" != true && "$DRY_RUN" != true ]]; then
+    if _is_interactive; then
+      _menu_main
+      exit $?
+    fi
+    error "No command was selected. A non-interactive apply requires --yes; use --status, --doctor or --dry-run for read-only checks."
+    exit "$EXIT_USAGE"
+  fi
+
+  local apply_status=0
+  _run_apply_flow || apply_status=$?
+  [[ "$apply_status" -eq "$EXIT_CANCELLED" ]] && apply_status="$EXIT_OK"
+  exit "$apply_status"
+}
+if [[ "${POWER_APT_BOOST_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi
+\n'
+        done
+        [[ -n "$listing" ]] || {
+          _menu_message "Custom mirrors" "There are no saved custom mirrors to change."
+          continue
+        }
+        _menu_message "Saved custom mirror IDs" "$listing"
+        value="$(_menu_input "Custom mirror ID" "Enter the exact ID shown above" "")" || continue
+        MIRROR_MANAGEMENT_ACTION="$choice"
+        MIRROR_MANAGEMENT_VALUE="$value"
+        rc=0
+        _run_mirror_management || rc=$?
+        [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Operation finished with exit code $rc."
+        old_network_setting="$NO_CATALOG_NETWORK"
+        NO_CATALOG_NETWORK=true
+        _load_mirror_catalog
+        NO_CATALOG_NETWORK="$old_network_setting"
+        ;;
+      back) return 0 ;;
+    esac
+  done
+}
+
+_menu_apt() {
+  local choice rc
+  while true; do
+    choice="$(
+      _menu_choose "APT Management" "Choose an action" \\
+      "apply_best" "Find and apply the fastest mirror" \\
+      "apply_custom" "Test and apply a custom mirror" \\
+      "list" "List and test available mirrors" \\
+      "manage" "Manage custom mirrors" \\
+      "back" "Back to main menu"
+    )" || return 0
+    case "$choice" in
+    apply_best)
+      FORCE_MIRROR=""
+      DRY_RUN=false
+      rc=0
+      _run_apply_flow || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      ;;
+    apply_custom)
+      FORCE_MIRROR="$(_menu_input "Custom mirror" "Enter an Ubuntu mirror base URL" "")" || continue
+      [[ "$FORCE_MIRROR" =~ ^https?://[^[:space:]]+$ ]] || {
+        _menu_message "Invalid mirror URL" "Enter an http:// or https:// URL without spaces."
+        continue
+      }
+      FORCE_MIRROR="${FORCE_MIRROR%/}"
+      DRY_RUN=false
+      rc=0
+      _run_apply_flow || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      ;;
+    list)
+      _run_list_flow
+      _menu_message "APT mirrors" "Mirror testing completed."
+      ;;
+    manage) _menu_manage_mirrors ;;
     back) return 0 ;;
     esac
   done

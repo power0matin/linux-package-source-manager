@@ -489,6 +489,36 @@ _catalog_add_entry() {
   _CATALOG_ENABLED+=("$enabled")
 }
 
+_catalog_read_file() {
+  local file="$1" expected_source="$2"
+  [[ -f "$file" && -r "$file" ]] || return 0
+  local line id country region url source official enabled extra
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -n "$line" && "$line" != \#* ]] || continue
+    IFS='|' read -r id country region url source official enabled extra <<<"$line"
+    if [[ -n "${extra:-}" || "$source" != "$expected_source" ]]; then
+      ((CATALOG_INVALID_ENTRIES += 1)) || true
+      continue
+    fi
+    _catalog_add_entry "$id" "$country" "$region" "$url" "$source" "$official" "$enabled" || true
+  done <"$file"
+}
+
+_download_catalog_file() {
+  local destination="$1"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --connect-timeout "$PROBE_TIMEOUT_CONNECT" --max-time "$TIMEOUT_TOTAL" \
+      --proto '=https' --proto-redir '=https' -o "$destination" "$MIRROR_INDEX_URL"
+    return $?
+  fi
+  if command -v wget >/dev/null 2>&1; then
+    wget --timeout="$TIMEOUT_TOTAL" --tries=1 --max-redirect=5 -q \
+      -O "$destination" "$MIRROR_INDEX_URL"
+    return $?
+  fi
+  return 1
+}
+
 list_mirrors() {
   detect_ubuntu
   _print_section_header "AVAILABLE MIRRORS"

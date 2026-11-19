@@ -408,64 +408,85 @@ detect_ubuntu() {
 # ─── Mirror List ──────────────────────────────────────────────────────────────
 
 _MIRROR_CATALOG=(
-  "ir|Iran|https://ir.archive.ubuntu.com/ubuntu"
-  "ir|Iran|https://mirror.arvancloud.ir/ubuntu"
-  "ir|Iran|https://mirror.iranserver.com/ubuntu"
-  "ir|Iran|https://ubuntu.hostiran.ir/ubuntu"
-  "ir|Iran|https://mirror.hostbaran.com/ubuntu"
-  "ir|Iran|https://mirror.aminidc.com/ubuntu"
-  "ir|Iran|https://archive.ito.gov.ir/ubuntu"
-  "ir|Iran|https://archive.ubuntu.petiak.ir/ubuntu"
-  "ir|Iran|https://mirror.mobinhost.com/ubuntu"
-  "ir|Iran|https://linuxmirrors.ir/ubuntu"
-  "ir|Iran|https://mirror.kubarcloud.com/ubuntu"
-  "global|Global|https://archive.ubuntu.com/ubuntu"
-  "global|Global|https://mirrors.kernel.org/ubuntu"
-  "us|United States|https://us.archive.ubuntu.com/ubuntu"
-  "us|United States|https://mirror.math.princeton.edu/pub/ubuntu"
-  "us|United States|https://mirror.cs.uchicago.edu/ubuntu"
-  "ca|Canada|https://mirror.csclub.uwaterloo.ca/ubuntu"
-  "us|United States|https://mirror.rit.edu/ubuntu"
-  "us|United States|https://mirror.arizona.edu/ubuntu"
-  "gb|United Kingdom|https://uk.archive.ubuntu.com/ubuntu"
-  "de|Germany|https://de.archive.ubuntu.com/ubuntu"
-  "fr|France|https://fr.archive.ubuntu.com/ubuntu"
-  "it|Italy|https://it.archive.ubuntu.com/ubuntu"
-  "nl|Netherlands|https://nl.archive.ubuntu.com/ubuntu"
-  "au|Australia|https://au.archive.ubuntu.com/ubuntu"
-  "jp|Japan|https://jp.archive.ubuntu.com/ubuntu"
-  "kr|South Korea|https://kr.archive.ubuntu.com/ubuntu"
-  "in|India|https://in.archive.ubuntu.com/ubuntu"
-  "br|Brazil|https://br.archive.ubuntu.com/ubuntu"
+  "ir-archive|ir|Iran|https://ir.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "ir-arvancloud|ir|Iran|https://mirror.arvancloud.ir/ubuntu|builtin|false|true"
+  "ir-iranserver|ir|Iran|https://mirror.iranserver.com/ubuntu|builtin|false|true"
+  "ir-hostiran|ir|Iran|https://ubuntu.hostiran.ir/ubuntu|builtin|false|true"
+  "ir-hostbaran|ir|Iran|https://mirror.hostbaran.com/ubuntu|builtin|false|true"
+  "ir-aminidc|ir|Iran|https://mirror.aminidc.com/ubuntu|builtin|false|true"
+  "ir-ito|ir|Iran|https://archive.ito.gov.ir/ubuntu|builtin|false|true"
+  "ir-petiak|ir|Iran|https://archive.ubuntu.petiak.ir/ubuntu|builtin|false|true"
+  "ir-mobinhost|ir|Iran|https://mirror.mobinhost.com/ubuntu|builtin|false|true"
+  "ir-linuxmirrors|ir|Iran|https://linuxmirrors.ir/ubuntu|builtin|false|true"
+  "ir-kubarcloud|ir|Iran|https://mirror.kubarcloud.com/ubuntu|builtin|false|true"
+  "global-archive|global|Global|https://archive.ubuntu.com/ubuntu|builtin|true|true"
+  "global-kernel|global|Global|https://mirrors.kernel.org/ubuntu|builtin|false|true"
+  "us-archive|us|United States|https://us.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "us-princeton|us|United States|https://mirror.math.princeton.edu/pub/ubuntu|builtin|false|true"
+  "us-uchicago|us|United States|https://mirror.cs.uchicago.edu/ubuntu|builtin|false|true"
+  "ca-waterloo|ca|Canada|https://mirror.csclub.uwaterloo.ca/ubuntu|builtin|false|true"
+  "us-rit|us|United States|https://mirror.rit.edu/ubuntu|builtin|false|true"
+  "us-arizona|us|United States|https://mirror.arizona.edu/ubuntu|builtin|false|true"
+  "gb-archive|gb|United Kingdom|https://gb.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "de-archive|de|Germany|https://de.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "fr-archive|fr|France|https://fr.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "it-archive|it|Italy|https://it.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "nl-archive|nl|Netherlands|https://nl.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "au-archive|au|Australia|https://au.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "jp-archive|jp|Japan|https://jp.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "kr-archive|kr|South Korea|https://kr.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "in-archive|in|India|https://in.archive.ubuntu.com/ubuntu|builtin|true|true"
+  "br-archive|br|Brazil|https://br.archive.ubuntu.com/ubuntu|builtin|true|true"
 )
 
-_get_mirrors() {
-  local mirrors=()
-  local entry country mirror_url
-  local country_lower
-  country_lower="$(printf '%s' "$COUNTRY_FILTER" | tr '[:upper:]' '[:lower:]')"
+_validate_mirror_url() {
+  local url="$${1%/}" authority path
+  [[ "$url" != *'|'* && "$url" != *$'\n'* && "$url" != *$'\r'* ]] || return 1
+  [[ "$url" != *'@'* && "$url" != *'?'* && "$url" != *'#'* ]] || return 1
+  [[ "$url" =~ ^https?://(\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]+)(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$ ]] || return 1
+  authority="$${url#*://}"
+  authority="$${authority%%/*}"
+  [[ -n "$authority" && "$authority" != .* && "$authority" != *..* ]] || return 1
+  path="/$${url#*://}"
+  path="/$${path#*/}"
+  [[ "$path" == */ubuntu ]] || return 1
+  [[ "$path" != *"/../"* && "$path" != *"/./"* ]] || return 1
+  printf '%s\n' "$url"
+}
 
-  if [[ -n "$country_lower" ]]; then
-    local found_country=false
-    for entry in "${_MIRROR_CATALOG[@]}"; do
-      IFS='|' read -r country _ mirror_url <<<"$entry"
-      if [[ "$country" == "$country_lower" ]]; then
-        found_country=true
-        mirrors+=("$mirror_url")
-      fi
-    done
-    [[ "$found_country" == true ]] || die "Unsupported country code: $COUNTRY_FILTER" "$EXIT_USAGE"
-  else
-    for entry in "${_MIRROR_CATALOG[@]}"; do
-      IFS='|' read -r country _ mirror_url <<<"$entry"
-      mirrors+=("$mirror_url")
-    done
-  fi
+_catalog_entry_valid() {
+  local id="$1" country="$2" region="$3" url="$4" source="$5" official="$6" enabled="$7"
+  [[ "$id" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]] || return 1
+  [[ "$country" =~ ^(global|auto|[a-z]{2})$ ]] || return 1
+  [[ -n "$region" && "$region" != *'|'* && "$region" != *$'\n'* ]] || return 1
+  _validate_mirror_url "$url" >/dev/null || return 1
+  case "$source" in
+    builtin | ubuntu-index | user) ;;
+    *) return 1 ;;
+  esac
+  [[ "$official" == true || "$official" == false ]] || return 1
+  [[ "$enabled" == true || "$enabled" == false ]] || return 1
+  [[ "$source" != user || "$official" == false ]] || return 1
+}
 
-  if [[ -n "$FORCE_MIRROR" ]]; then
-    mirrors=("$FORCE_MIRROR" "${mirrors[@]}")
+_catalog_add_entry() {
+  local id="$1" country="$2" region="$3" url="$4" source="$5" official="$6" enabled="$7"
+  local normalized existing
+  if ! normalized="$(_validate_mirror_url "$url")" ||
+    ! _catalog_entry_valid "$id" "$country" "$region" "$normalized" "$source" "$official" "$enabled"; then
+    ((CATALOG_INVALID_ENTRIES += 1)) || true
+    return 1
   fi
-  printf '%s\n' "${mirrors[@]}"
+  for existing in "$${_CATALOG_URLS[@]}"; do
+    [[ "$existing" != "$normalized" ]] || return 0
+  done
+  _CATALOG_IDS+=("$id")
+  _CATALOG_COUNTRIES+=("$country")
+  _CATALOG_REGIONS+=("$region")
+  _CATALOG_URLS+=("$normalized")
+  _CATALOG_SOURCES+=("$source")
+  _CATALOG_OFFICIAL+=("$official")
+  _CATALOG_ENABLED+=("$enabled")
 }
 
 list_mirrors() {

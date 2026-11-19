@@ -83,6 +83,9 @@ test_cli() {
   assert_contains "--menu" "$(bash "$SCRIPT" --help 2>&1)" "help documents interactive menu"
   assert_contains "--doctor" "$(bash "$SCRIPT" --help 2>&1)" "help documents doctor command"
   assert_contains "--yes" "$(bash "$SCRIPT" --help 2>&1)" "help documents explicit non-interactive confirmation"
+  assert_contains "--refresh-catalog" "$(bash "$SCRIPT" --help 2>&1)" "help documents mirror index refresh"
+  assert_contains "--official-only" "$(bash "$SCRIPT" --help 2>&1)" "help documents official-only benchmark profile"
+  assert_contains "--add-mirror" "$(bash "$SCRIPT" --help 2>&1)" "help documents custom mirror management"
 
   code=0
   bash "$SCRIPT" </dev/null >/dev/null 2>&1 || code=$?
@@ -143,6 +146,26 @@ test_cli() {
   code=0
   bash "$SCRIPT" --country usa >/dev/null 2>&1 || code=$?
   assert_exit_code 2 "$code" "invalid country code is rejected"
+
+  code=0
+  bash "$SCRIPT" --workers 0 >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "worker count below the limit is rejected"
+
+  code=0
+  bash "$SCRIPT" --workers 9 >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "worker count above the limit is rejected"
+
+  code=0
+  bash "$SCRIPT" --retries 4 >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "retry count above the limit is rejected"
+
+  code=0
+  bash "$SCRIPT" --status --official-only >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "read-only status rejects benchmark profile flags"
+
+  code=0
+  bash "$SCRIPT" --disable-mirror >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "custom mirror management requires a mirror ID"
 }
 
 test_filesystem_operations() {
@@ -521,7 +544,9 @@ EOF
   printf '# power-apt-boost-catalog-v999\n%s\n' "$cache_entry" >"$CATALOG_CACHE_FILE"
   _load_mirror_catalog
   assert_equal "invalid-cache" "$CATALOG_CACHE_STATE" "catalog cache schema mismatch is rejected"
-  assert_equal "0" "$((${#_CATALOG_URLS[@]} - 28))" "invalid cached records are not loaded"
+  code=0
+  [[ " ${_CATALOG_URLS[*]} " != *" https://index-fixture.example/ubuntu "* ]] || code=1
+  assert_exit_code 0 "$code" "invalid cached records are not loaded"
 
   printf '# power-apt-boost-catalog-v1\n# fetched_at=%s\n%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$cache_entry" >"$CATALOG_CACHE_FILE"
   chmod 0600 "$CATALOG_CACHE_FILE"

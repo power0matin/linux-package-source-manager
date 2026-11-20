@@ -2538,7 +2538,7 @@ _python_apply_pip() {
       fi
       error "pip read-back failed; the prior scoped value was restored where possible."
       return "$EXIT_GENERAL"
-    }
+    fi
     _python_snapshot_mark_after "$snapshot" pip "" "$url"
     mkdir -p "$(dirname "$state")" || return "$EXIT_BACKUP"
     temp="$(mktemp "$(dirname "$state")/.pip-state.XXXXXXXX")" || return "$EXIT_BACKUP"

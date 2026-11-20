@@ -2747,12 +2747,14 @@ PY
 }
 
 _docker_require_backup_base() {
-  [[ "$DOCKER_BACKUP_BASE" == /* && ! -L "$BACKUP_BASE" && ! -L "$DOCKER_BACKUP_BASE" ]] || {
+  [[ "$BACKUP_BASE" == /* && "$DOCKER_BACKUP_BASE" == /* && ! -L "$BACKUP_BASE" && ! -L "$DOCKER_BACKUP_BASE" ]] || {
     error "Refusing a symlinked Docker backup directory."
     return "$EXIT_BACKUP"
   }
+  [[ ! -e "$BACKUP_BASE" || -d "$BACKUP_BASE" ]] || return "$EXIT_BACKUP"
   mkdir -p "$DOCKER_BACKUP_BASE" || return "$EXIT_BACKUP"
-  chmod 0700 "$BACKUP_BASE" "$DOCKER_BACKUP_BASE" || return "$EXIT_BACKUP"
+  chmod 0700 "$DOCKER_BACKUP_BASE" || return "$EXIT_BACKUP"
+  [[ "$(realpath -e -- "$BACKUP_BASE" 2>/dev/null)" == "$BACKUP_BASE" ]] || return "$EXIT_BACKUP"
   [[ "$(realpath -e -- "$DOCKER_BACKUP_BASE" 2>/dev/null)" == "$DOCKER_BACKUP_BASE" ]] || return "$EXIT_BACKUP"
 }
 
@@ -3035,11 +3037,6 @@ _docker_reset_mirror() {
     _docker_require_root || exit $?
     _docker_validate_config_path || exit $?
     _docker_require_backup_base || exit $?
-    [[ -f "$DOCKER_STATE_FILE" && ! -L "$DOCKER_STATE_FILE" ]] || {
-      error "No app-managed Docker mirror configuration exists to reset."
-      exit "$EXIT_USAGE"
-    }
-    snapshot="$(cat "$DOCKER_STATE_FILE")"
     lock_dir="$(dirname "$DOCKER_LOCK_FILE")"
     mkdir -p "$lock_dir" || exit "$EXIT_GENERAL"
     exec 9>"$DOCKER_LOCK_FILE"
@@ -3047,27 +3044,42 @@ _docker_reset_mirror() {
       error "Another Docker configuration operation is in progress."
       exit "$EXIT_GENERAL"
     }
+    [[ -f "$DOCKER_STATE_FILE" && ! -L "$DOCKER_STATE_FILE" ]] || {
+      error "No app-managed Docker mirror configuration exists to reset."
+      exit "$EXIT_USAGE"
+    }
+    snapshot="$(cat "$DOCKER_STATE_FILE")"
     _docker_restore_snapshot_unlocked "$snapshot"
   )
 }
 
 _docker_restart_daemon() {
-  _docker_require_root || return $?
-  command -v systemctl >/dev/null 2>&1 || {
-    error "systemctl is not available; Docker was not restarted."
-    return "$EXIT_GENERAL"
-  }
-  systemctl is-active --quiet docker || {
-    error "Docker service is not active; refusing to start or restart it implicitly."
-    return "$EXIT_GENERAL"
-  }
-  _confirm_action "RESTART Docker now? Running workloads may be interrupted. This is separate from daemon.json configuration." || return "$EXIT_CANCELLED"
-  if systemctl restart docker; then
-    info "Docker daemon restart completed."
-  else
-    error "Docker daemon restart failed. Inspect systemctl status docker and journalctl -u docker."
-    return "$EXIT_GENERAL"
-  fi
+  (
+    local lock_dir
+    _docker_require_root || exit $?
+    command -v systemctl >/dev/null 2>&1 || {
+      error "systemctl is not available; Docker was not restarted."
+      exit "$EXIT_GENERAL"
+    }
+    lock_dir="$(dirname "$DOCKER_LOCK_FILE")"
+    mkdir -p "$lock_dir" || exit "$EXIT_GENERAL"
+    exec 9>"$DOCKER_LOCK_FILE"
+    flock -n 9 || {
+      error "Another Docker configuration or restart operation is in progress."
+      exit "$EXIT_GENERAL"
+    }
+    systemctl is-active --quiet docker || {
+      error "Docker service is not active; refusing to start or restart it implicitly."
+      exit "$EXIT_GENERAL"
+    }
+    _confirm_action "RESTART Docker now? Running workloads may be interrupted. This is separate from daemon.json configuration." || exit $?
+    if systemctl restart docker; then
+      info "Docker daemon restart completed."
+    else
+      error "Docker daemon restart failed. Inspect systemctl status docker and journalctl -u docker."
+      exit "$EXIT_GENERAL"
+    fi
+  )
 }
 
 _docker_status_report() {

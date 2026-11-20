@@ -79,6 +79,7 @@ This policy covers the `power-apt-boost.sh` script and its direct behavior. The 
 ## Docker Engine and OCI registry operations
 
 - Docker Engine APT repositories and OCI image registry mirrors are reported separately. Docker repository inspection is read-only and does not write APT source files or run APT commands.
+- The Docker configuration manager targets the rootful Linux daemon at `/etc/docker/daemon.json`; rootless Docker and Docker Desktop are outside scope. Rootless Docker uses a per-user configuration path.
 - Registry probes send an unauthenticated HTTPS `GET /v2/` request. Only an HTTP 200 or 401 response carrying `Docker-Distribution-API-Version: registry/2.0` is accepted. Redirects must remain HTTPS and credential-free. The probe does not obtain tokens, send credentials, pull images or download layers.
 - A Registry V2 probe confirms protocol compatibility only. It cannot establish that an endpoint is configured as a Docker Hub pull-through cache or validate its cache policy.
 - Mirror URLs accepted for configuration are HTTPS origins only; embedded credentials, URL paths, query strings and fragments are rejected. Status output shows registry origins only.

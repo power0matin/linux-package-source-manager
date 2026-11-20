@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Replaced optional `whiptail` dialogs with a consistent number-driven Bash menu rendered in the active SSH terminal; operation results remain visible until Enter is pressed.
+- Added per-item progress and elapsed/estimated-remaining-time feedback to mirror benchmark and list operations, plus numbered progress for Python, Node.js and Docker endpoint checks.
 - Added read-only Docker Engine APT source inspection and a separate Docker Hub OCI Registry V2 endpoint probe.
 - Added safe `daemon.json` registry-mirror merging with `dockerd --validate`, restricted snapshots, SHA-256 conflict checks and explicit rollback.
 - Added a separately confirmed Docker systemd restart command; daemon configuration changes never restart Docker automatically.

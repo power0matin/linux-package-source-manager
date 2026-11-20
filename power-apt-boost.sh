@@ -320,6 +320,25 @@ _print_progress_bar() {
     "$bar" "$percent" >&2
 }
 
+_print_task_progress() {
+  local label="$1" completed="$2" total="$3" started_at="$4"
+  local elapsed remaining=0
+  [[ "$QUIET" != true ]] || return 0
+  ((total > 0)) || return 0
+  ((completed <= total)) || completed="$total"
+  elapsed=$((SECONDS - started_at))
+  if ((completed > 0 && completed < total)); then
+    remaining=$(((elapsed * (total - completed) + completed - 1) / completed))
+  fi
+  if ((completed < total)); then
+    printf '  [%d/%d] %s completed | elapsed %ds | ETA ~%ds\n' \
+      "$completed" "$total" "$label" "$elapsed" "$remaining" >&2
+  else
+    printf '  [%d/%d] %s completed | elapsed %ds | done\n' \
+      "$completed" "$total" "$label" "$elapsed" >&2
+  fi
+}
+
 _print_step() {
   local step_num="$1" total="$2" msg="$3"
   printf "\n  ${COLOR_BOLD}${COLOR_BLUE}[%d/%d]${COLOR_RESET} ${COLOR_BOLD}%s${COLOR_RESET}\n" \
@@ -799,8 +818,17 @@ list_mirrors() {
   _load_mirror_catalog
   _print_section_header "AVAILABLE MIRRORS"
   local mirror_url result_file result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
-  local meta mirror_id source official country
-  while IFS= read -r mirror_url; do
+  local meta mirror_id source official country completed=0 total started_at
+  local -a mirror_urls=()
+  mapfile -t mirror_urls < <(_get_mirrors)
+  total="${#mirror_urls[@]}"
+  started_at="$SECONDS"
+  ((total > 0)) || {
+    warn "No mirrors match the current catalog profile."
+    return 0
+  }
+  printf '  Testing %d mirror(s)...\n' "$total" >&2
+  for mirror_url in "${mirror_urls[@]}"; do
     result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.list.XXXXXX")"
     _tmp_dirs+=("$result_file")
     _test_mirror "$mirror_url" "$result_file" "$CODENAME"
@@ -816,11 +844,10 @@ list_mirrors() {
       printf '  %-24s REJECTED reason=%s source=%s official=%s\n' \
         "$mirror_id" "${reason:-incompatible_release}" "$source" "$official" >&2
     fi
-  done < <(_get_mirrors)
+    ((completed += 1))
+    _print_task_progress "Mirror checks" "$completed" "$total" "$started_at"
+  done
 }
-
-# ─── HTTP Probing ─────────────────────────────────────────────────────────────
-
 _classify_curl_error() {
   local content
   content="$(cat "$1" 2>/dev/null || true)"
@@ -1102,8 +1129,8 @@ _select_mirror() {
   local mirror_list total_mirrors bench_start bench_end bench_duration
   local bench_tmpdir idx total i pid result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
   local best="" best_score="999999" best_avg="" tested=0 passed=0 failed=0
-  local -a mirrors
-  local -a pids=()
+  local completed=0 batch_count batch_completed batch_idx progress_started
+  local -a mirrors pids=() batch_indices=() completed_flags=()
 
   _load_mirror_catalog
   _print_section_header "MIRROR SELECTION"
@@ -1118,26 +1145,46 @@ _select_mirror() {
   msg "  Parallel workers: ${COLOR_BOLD}${BENCH_WORKERS}${COLOR_RESET}"
   msg "  Retry policy:     ${COLOR_BOLD}${PROBE_RETRIES} retries per transient failure${COLOR_RESET}"
   msg "  Eligibility: HTTP 200 + Ubuntu suite metadata + valid archive signature"
-  echo ""
+  printf '  Progress updates are printed as each mirror finishes.\n\n' >&2
 
-  bench_start="$(date +%s)"
+  bench_start="$SECONDS"
+  progress_started="$SECONDS"
   bench_tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/${APP_SLUG}.bench.XXXXXX")"
   _tmp_dirs+=("$bench_tmpdir")
-  _start_spinner "Testing and verifying Ubuntu mirrors..."
 
   _bench_worker() {
-    local idx="$1" url="$2" codename="$3" result_file="$4"
-    _test_mirror "$url" "$result_file" "$codename" >/dev/null 2>&1
+    local url="$1" codename="$2" result_file="$3" done_file="$4" status=0
+    _test_mirror "$url" "$result_file" "$codename" >/dev/null 2>&1 || status=$?
+    printf '%s\n' "$status" >"$done_file"
+    return 0
   }
 
   idx=0
   while ((idx < total)); do
     pids=()
+    batch_indices=()
     while (("${#pids[@]}" < BENCH_WORKERS)) && ((idx < total)); do
-      _bench_worker "$idx" "${mirrors[$idx]}" "$CODENAME" "${bench_tmpdir}/${idx}.result" &
+      batch_indices+=("$idx")
+      completed_flags[idx]=0
+      _bench_worker "${mirrors[$idx]}" "$CODENAME" \
+        "${bench_tmpdir}/${idx}.result" "${bench_tmpdir}/${idx}.done" &
       pids+=("$!")
       _bg_pids+=("$!")
       ((idx += 1))
+    done
+
+    batch_count="${#batch_indices[@]}"
+    batch_completed=0
+    while ((batch_completed < batch_count)); do
+      for batch_idx in "${batch_indices[@]}"; do
+        if [[ "${completed_flags[$batch_idx]:-0}" != 1 && -f "${bench_tmpdir}/${batch_idx}.done" ]]; then
+          completed_flags[batch_idx]=1
+          ((completed += 1))
+          ((batch_completed += 1))
+          _print_task_progress "Mirror verification" "$completed" "$total" "$progress_started"
+        fi
+      done
+      ((batch_completed < batch_count)) && sleep 0.1
     done
 
     for pid in "${pids[@]}"; do
@@ -1147,9 +1194,8 @@ _select_mirror() {
   done
   pids=()
 
-  bench_end="$(date +%s)"
+  bench_end="$SECONDS"
   bench_duration=$((bench_end - bench_start))
-  _stop_spinner
 
   for ((i = 0; i < total; i++)); do
     result_line="$(cat "${bench_tmpdir}/${i}.result" 2>/dev/null || true)"
@@ -1171,7 +1217,7 @@ _select_mirror() {
       fi
     else
       ((failed += 1)) || true
-      msg_verbose "Rejected ${mirrors[$i]}: ${reason:-incompatible_release}"
+      msg_verbose "Rejected ${mirrors[$i]}: ${reason:-incompatible_or_unverified_release}"
     fi
   done
   rm -rf "$bench_tmpdir" 2>/dev/null || true
@@ -1197,9 +1243,6 @@ _select_mirror() {
   SELECTED_MIRROR="$best"
   SELECTED_TIME="$best_avg"
 }
-
-# ─── Backup ───────────────────────────────────────────────────────────────────
-
 _create_backup() {
   local backup_dir old_umask tar_root
   old_umask="$(umask)"
@@ -2269,7 +2312,7 @@ _node_registry_set() {
 _node_probe_registry() {
   local registry="$1" package="$2" timeout="${3:-$TIMEOUT_TOTAL}" output
   if output="$(
-    python3 - "$registry" "$package" "$timeout" 2>/dev/null <<'PY'
+    python3 - "$registry" "$package" "$timeout" <<'PY'
 import json, re, sys
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urljoin, urlsplit
@@ -2292,6 +2335,7 @@ def host(value):
     if not re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]{1,5})?", value):
         raise ValueError("invalid host metadata")
     return value
+current_step = 1
 try:
     metadata_url = registry.rstrip("/") + "/" + quote(package, safe="@")
     opener = build_opener(HTTPSOnlyRedirect())
@@ -2313,17 +2357,21 @@ try:
     tarball_url = urljoin(final_metadata_url, tarball)
     if not valid_https(tarball_url):
         raise ValueError("tarball is not credential-free HTTPS")
+    print("[1/2] Registry package metadata check completed.", file=sys.stderr, flush=True)
+    current_step = 2
     head = Request(tarball_url, method="HEAD", headers={"User-Agent":"Power-APT-Boost/3.0"})
     with opener.open(head, timeout=timeout) as response:
         final_tarball_url, status = response.geturl(), response.status
     if not valid_https(final_tarball_url) or not 200 <= int(status) < 300:
         raise ValueError("tarball endpoint failed")
+    print("[2/2] Tarball endpoint check completed.", file=sys.stderr, flush=True)
     integrity = dist.get("integrity", "") if isinstance(dist, dict) else ""
     print("METADATA_HOST=" + host(final_metadata_url))
     print("VERSION=" + latest)
     print("TARBALL_HOST=" + host(final_tarball_url))
     print("INTEGRITY=" + ("sha512" if isinstance(integrity, str) and integrity.startswith("sha512-") else "not-advertised"))
 except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+    print(f"[{current_step}/2] Node.js registry verification failed.", file=sys.stderr, flush=True)
     print("REASON=" + type(exc).__name__)
     raise SystemExit(1)
 PY
@@ -2582,7 +2630,7 @@ PY
 _docker_probe_mirror() {
   local registry="$1" output
   if output="$(
-    python3 - "$registry" "$TIMEOUT_TOTAL" 2>/dev/null <<'PY'
+    python3 - "$registry" "$TIMEOUT_TOTAL" <<'PY'
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
@@ -2639,11 +2687,13 @@ try:
     final_origin = origin(response.geturl())
     api_version = response.headers.get("Docker-Distribution-API-Version", "").strip().lower()
     supported = status in (200, 401) and api_version == "registry/2.0"
+    print("[1/1] Registry V2 endpoint probe: " + ("PASS" if supported else "FAIL"), file=sys.stderr, flush=True)
     print("STATUS=" + str(status))
     print("HOST=" + final_origin)
     print("SUPPORTED=" + ("true" if supported else "false"))
     raise SystemExit(0 if supported else 1)
 except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError):
+    print("[1/1] Registry V2 endpoint probe: FAIL", file=sys.stderr, flush=True)
     print("ERROR=registry_v2_probe_failed")
     raise SystemExit(1)
 finally:
@@ -3671,6 +3721,7 @@ class HTTPSOnlyRedirect(HTTPRedirectHandler):
 
 base = sys.argv[1]
 timeout = min(max(int(sys.argv[2]), 1), 60)
+current_step = 1
 opener = build_opener(HTTPSHandler(context=ssl.create_default_context()), HTTPSOnlyRedirect())
 
 class Links(HTMLParser):
@@ -3699,6 +3750,8 @@ try:
         content_type = response.headers.get("Content-Type", "").lower()
     if not safe_https(metadata_url) or len(body) > 4 * 1024 * 1024:
         raise ValueError("unsafe redirect or oversized metadata")
+    print("[1/2] Project metadata check completed.", file=sys.stderr, flush=True)
+    current_step = 2
     artifact_url = ""
     hash_present = False
     if "json" in content_type:
@@ -3737,12 +3790,14 @@ try:
             response.read(1)
     if not safe_https(final_url) or not 200 <= int(status) < 400:
         raise ValueError("artifact endpoint did not respond successfully over HTTPS")
+    print("[2/2] Distribution endpoint check completed.", file=sys.stderr, flush=True)
     print("METADATA=PASS")
     print("ARTIFACT=PASS")
     print("METADATA_HOST=" + host(metadata_url))
     print("ARTIFACT_HOST=" + host(final_url))
     print("SHA256_METADATA=" + ("present" if hash_present else "not-advertised"))
 except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+    print(f"[{current_step}/2] Python index verification failed.", file=sys.stderr, flush=True)
     code = getattr(exc, "code", None)
     print("METADATA=FAIL")
     print("ARTIFACT=NOT_CHECKED")
@@ -5019,70 +5074,78 @@ _resolve_backup_path() {
   printf '%s\n' "$backup_path"
 }
 
+_menu_clear_screen() {
+  local term="${TERM:-}"
+  if [[ -t 2 && -n "$term" && "$term" != dumb ]]; then
+    printf '\033[2J\033[H' >&2
+  fi
+}
+
 _menu_choose() {
-  local title="$1"
-  local prompt="$2"
+  local title="$1" prompt="$2" answer="" numeric i
   shift 2
-  local -a tags=() labels=() whiptail_args=()
+  local -a tags=() labels=()
   while (($# >= 2)); do
     tags+=("$1")
     labels+=("$2")
-    whiptail_args+=("$1" "$2")
     shift 2
   done
+  (("${#tags[@]}" > 0)) || return 1
 
-  if command -v whiptail >/dev/null 2>&1; then
-    whiptail --title "$title" --menu "$prompt" 22 78 12 "${whiptail_args[@]}" 3>&1 1>&2 2>&3
-    return $?
-  fi
-
-  printf '\n%s\n%s\n' "$title" "$prompt" >&2
-  local i
+  _menu_clear_screen
+  printf '\n%s\n%s\n\n' "$title" "$prompt" >&2
   for ((i = 0; i < ${#tags[@]}; i++)); do
-    printf '  %d) %s\n' "$((i + 1))" "${labels[$i]}" >&2
+    printf '  %2d) %s\n' "$((i + 1))" "${labels[$i]}" >&2
   done
-  printf 'Select an option: ' >&2
-  local answer=""
-  IFS= read -r answer || return 1
-  if [[ "$answer" =~ ^[0-9]+$ ]] && ((answer >= 1 && answer <= ${#tags[@]})); then
-    printf '%s\n' "${tags[$((answer - 1))]}"
-    return 0
-  fi
-  for ((i = 0; i < ${#tags[@]}; i++)); do
-    if [[ "$answer" == "${tags[$i]}" ]]; then
-      printf '%s\n' "${tags[$i]}"
-      return 0
+  printf '   0) Cancel / Back\n\n' >&2
+  printf 'Select an option number: ' >&2
+
+  while true; do
+    IFS= read -r answer || return 1
+    if [[ "$answer" =~ ^[0-9]{1,2}$ ]]; then
+      numeric=$((10#$answer))
+      if ((numeric == 0)); then
+        return 1
+      fi
+      if ((numeric >= 1 && numeric <= ${#tags[@]})); then
+        printf '%s\n' "${tags[$((numeric - 1))]}"
+        return 0
+      fi
     fi
+    printf 'Invalid selection. Enter a number from 1 to %d, or 0 to go back: ' "${#tags[@]}" >&2
   done
-  return 1
 }
-
 _menu_input() {
-  local title="$1"
-  local prompt="$2"
-  local default_value="${3:-}"
-  local answer=""
-  if command -v whiptail >/dev/null 2>&1; then
-    whiptail --title "$title" --inputbox "$prompt" 10 78 "$default_value" 3>&1 1>&2 2>&3
-    return $?
+  local title="$1" prompt="$2" default_value="${3:-}" answer=""
+  printf '\n%s\n%s\n' "$title" "$prompt" >&2
+  if [[ -n "$default_value" ]]; then
+    printf 'Default: %s\n' "$default_value" >&2
   fi
-  printf '%s [%s]: ' "$prompt" "$default_value" >&2
+  printf 'Value (press Enter to keep the default): ' >&2
   IFS= read -r answer || return 1
   printf '%s\n' "${answer:-$default_value}"
 }
-
 _menu_message() {
-  local title="$1"
-  local message="$2"
-  if command -v whiptail >/dev/null 2>&1; then
-    whiptail --title "$title" --msgbox "$message" 16 78
-  else
-    printf '\n%s\n%s\n' "$title" "$message" >&2
-    printf 'Press Enter to continue: ' >&2
-    IFS= read -r _ || true
-  fi
+  local title="$1" message="$2"
+  printf '\n%s\n\n%s\n\n' "$title" "$message" >&2
+  printf 'Press Enter to return to the menu: ' >&2
+  IFS= read -r _ || true
 }
 
+_menu_operation_result() {
+  local title="$1" success_message="$2" status="$3"
+  case "$status" in
+  0)
+    _menu_message "$title" "$success_message"
+    ;;
+  "$EXIT_CANCELLED")
+    _menu_message "$title" "Operation cancelled. No changes were applied."
+    ;;
+  *)
+    _menu_message "$title" "Operation failed with exit code $status. Review the output above before continuing."
+    ;;
+  esac
+}
 _run_list_flow() {
   _check_probe_tool
   detect_ubuntu
@@ -5169,7 +5232,9 @@ _run_mirror_management() {
     result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.custom.XXXXXX")" || return "$EXIT_GENERAL"
     _tmp_dirs+=("$result_file")
     _print_section_header "VERIFYING CUSTOM MIRROR"
+    local verification_started="$SECONDS"
     _test_mirror "$requested_url" "$result_file" "$CODENAME"
+    _print_task_progress "Custom mirror verification" 1 1 "$verification_started"
     result_line="$(cat "$result_file" 2>/dev/null || true)"
     rm -f "$result_file" 2>/dev/null || true
     IFS='|' read -r eligible score avg_latency main_code updates_code security_code redirects freshness signature reason <<<"$result_line"
@@ -5269,7 +5334,7 @@ _run_apply_flow() {
   if [[ "$DRY_RUN" != true ]]; then _acquire_mutation_lock; fi
 
   if [[ -n "$FORCE_MIRROR" ]]; then
-    local forced_url result_file result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
+    local forced_url result_file result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason verification_started
     forced_url="$(_validate_mirror_url "$FORCE_MIRROR")" || {
       error "Invalid Ubuntu mirror URL: $FORCE_MIRROR"
       return "$EXIT_USAGE"
@@ -5299,7 +5364,9 @@ _run_apply_flow() {
     msg "  Mirror: ${COLOR_BOLD}${forced_url}${COLOR_RESET}"
     result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.force.XXXXXX")"
     _tmp_dirs+=("$result_file")
+    verification_started="$SECONDS"
     _test_mirror "$forced_url" "$result_file" "$CODENAME"
+    _print_task_progress "Specified mirror verification" 1 1 "$verification_started"
     result_line="$(cat "$result_file" 2>/dev/null || true)"
     rm -f "$result_file" 2>/dev/null || true
     IFS='|' read -r eligible score avg_latency main_code updates_code security_code redirects freshness signature reason <<<"$result_line"
@@ -5460,7 +5527,7 @@ _menu_manage_mirrors() {
       MIRROR_MANAGEMENT_VALUE="$value"
       rc=0
       _run_mirror_management || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Add operation finished with exit code $rc."
+      _menu_operation_result "Custom mirror result" "Mirror verification and catalog update completed." "$rc"
       ;;
     disable | enable | remove)
       listing=""
@@ -5478,7 +5545,7 @@ _menu_manage_mirrors() {
       MIRROR_MANAGEMENT_VALUE="$value"
       rc=0
       _run_mirror_management || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Operation finished with exit code $rc."
+      _menu_operation_result "Custom mirror result" "Custom mirror catalog update completed." "$rc"
       ;;
     back) return 0 ;;
     esac
@@ -5507,7 +5574,7 @@ _menu_apt() {
       DRY_RUN=false
       rc=0
       _run_apply_flow || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      _menu_operation_result "APT management" "Mirror selection and APT configuration completed." "$rc"
       ;;
     apply_custom)
       FORCE_MIRROR="$(_menu_input "Custom mirror" "Enter an Ubuntu mirror base URL" "")" || continue
@@ -5519,23 +5586,23 @@ _menu_apt() {
       DRY_RUN=false
       rc=0
       _run_apply_flow || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      _menu_operation_result "APT management" "Custom mirror verification and APT configuration completed." "$rc"
       ;;
     list)
-      _run_list_flow
-      _menu_message "APT mirrors" "Mirror testing completed."
+      rc=0
+      _run_list_flow || rc=$?
+      _menu_operation_result "APT mirrors" "Mirror listing and health checks completed." "$rc"
       ;;
     manage) _menu_manage_mirrors ;;
     back) return 0 ;;
     esac
   done
 }
-
 _menu_benchmark() {
-  _run_benchmark_only
-  _menu_message "Benchmark" "Benchmark completed. No system configuration was changed."
+  local rc=0
+  _run_benchmark_only || rc=$?
+  _menu_operation_result "Benchmark" "Benchmark completed. No system configuration was changed." "$rc"
 }
-
 _menu_backups() {
   if [[ "$(id -u)" -ne 0 ]]; then
     _menu_message "Backup and Restore" "Run the menu as root to inspect protected system backups."
@@ -5561,7 +5628,7 @@ _menu_backups() {
     rc=0
     _run_prune_backups || rc=$?
     PRUNE_BACKUPS_KEEP=""
-    [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Backup cleanup" "Cleanup finished with exit code $rc."
+    _menu_operation_result "Backup cleanup" "Verified backup cleanup completed." "$rc"
     ;;
   restore)
     listing="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn || true)"
@@ -5581,7 +5648,7 @@ _menu_backups() {
     RESTORE_SCOPE="all"
     rc=0
     _run_restore_flow || rc=$?
-    [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Restore result" "Restore finished with exit code $rc."
+    _menu_operation_result "Restore result" "APT snapshot restoration completed." "$rc"
     ;;
   back) return 0 ;;
   esac
@@ -5636,7 +5703,7 @@ _menu_nodejs() {
       NODE_TEST_PACKAGE="$(_menu_input "Test package" "Package name" "is-number")" || continue
       rc=0
       _run_node_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Registry test" "Operation returned $rc."
+      _menu_operation_result "Node.js registry test" "Registry metadata and tarball endpoint checks completed." "$rc"
       ;;
     configure)
       NODE_CLIENT="$(_menu_choose "Node.js client" "Select package manager" "npm" "npm" "pnpm" "pnpm" "yarn" "Yarn Classic/Berry" "back" "Cancel")" || continue
@@ -5651,7 +5718,7 @@ _menu_nodejs() {
       NODE_ACTION="set"
       rc=0
       _run_node_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Node.js" "Operation returned $rc."
+      _menu_operation_result "Node.js" "Registry configuration completed." "$rc"
       ;;
     reset)
       NODE_CLIENT="$(_menu_choose "Reset Node.js" "Select package manager" "npm" "npm" "pnpm" "pnpm" "yarn" "Yarn" "back" "Cancel")" || continue
@@ -5665,20 +5732,23 @@ _menu_nodejs() {
       NODE_ACTION=reset
       rc=0
       _run_node_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Node.js" "Operation returned $rc."
+      _menu_operation_result "Node.js" "Managed registry reset completed." "$rc"
       ;;
     back) return 0 ;;
     esac
   done
 }
-
 _menu_python() {
   local choice scope rc
   while true; do
     choice="$(_menu_choose "Python Package Sources" "No package installs or lockfile edits" \
-      "status" "Inspect Python tools" "test" "Test PyPI-compatible index" \
-      "pip" "Configure pip" "uv" "Configure uv" "poetry" "Add Poetry source" \
-      "reset" "Reset app-managed source" "back" "Back")" || return 0
+      "status" "Inspect Python tools" \
+      "test" "Test PyPI-compatible index" \
+      "pip" "Configure pip" \
+      "uv" "Configure uv" \
+      "poetry" "Add Poetry source" \
+      "reset" "Reset app-managed source" \
+      "back" "Back")" || return 0
     case "$choice" in
     status)
       _python_status_report
@@ -5686,8 +5756,9 @@ _menu_python() {
       ;;
     test)
       PYTHON_INDEX_URL="$(_menu_input "Python index" "HTTPS PEP 503/691 URL" "https://pypi.org/simple/")" || continue
-      _python_test_index "$PYTHON_INDEX_URL"
-      _menu_message "Index test" "Check completed."
+      rc=0
+      _python_test_index "$PYTHON_INDEX_URL" || rc=$?
+      _menu_operation_result "Python index test" "Index metadata and distribution endpoint checks completed." "$rc"
       ;;
     pip | uv | poetry)
       PYTHON_CLIENT="$choice"
@@ -5699,7 +5770,9 @@ _menu_python() {
         scope="$(_menu_choose "uv scope" "Choose scope" "user" "User" "project" "Project" "global" "System" "back" "Cancel")" || continue
         [[ "$scope" != back ]] || continue
         PYTHON_SCOPE="$scope"
-        if [[ "$scope" == project ]]; then PYTHON_PROJECT_FILE="$(_menu_input "uv project" "uv.toml or pyproject.toml" "uv.toml")" || continue; fi
+        if [[ "$scope" == project ]]; then
+          PYTHON_PROJECT_FILE="$(_menu_input "uv project" "uv.toml or pyproject.toml" "uv.toml")" || continue
+        fi
       elif [[ "$choice" == poetry ]]; then
         PYTHON_SCOPE=project
         scope="$(_menu_choose "Poetry priority" "Supplemental preserves implicit PyPI" "supplemental" "Supplemental" "explicit" "Explicit" "primary" "Primary (disables PyPI)" "back" "Cancel")" || continue
@@ -5713,7 +5786,7 @@ _menu_python() {
       fi
       rc=0
       _run_python_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Python" "Operation returned $rc."
+      _menu_operation_result "Python" "Package index configuration completed." "$rc"
       ;;
     reset)
       PYTHON_CLIENT="$(_menu_choose "Reset Python" "Choose client" "pip" "pip" "uv" "uv" "poetry" "Poetry" "back" "Cancel")" || continue
@@ -5726,20 +5799,21 @@ _menu_python() {
       elif [[ "$PYTHON_CLIENT" == uv ]]; then
         PYTHON_SCOPE="$(_menu_choose "uv scope" "Choose scope" "user" "User" "project" "Project" "global" "System" "back" "Cancel")" || continue
         [[ "$PYTHON_SCOPE" != back ]] || continue
-        if [[ "$PYTHON_SCOPE" == project ]]; then PYTHON_PROJECT_FILE="$(_menu_input "uv project" "uv.toml or pyproject.toml" "uv.toml")" || continue; fi
+        if [[ "$PYTHON_SCOPE" == project ]]; then
+          PYTHON_PROJECT_FILE="$(_menu_input "uv project" "uv.toml or pyproject.toml" "uv.toml")" || continue
+        fi
       else
         PYTHON_SCOPE="$(_menu_choose "pip scope" "Choose scope" "user" "User" "site" "Active venv" "global" "System" "back" "Cancel")" || continue
         [[ "$PYTHON_SCOPE" != back ]] || continue
       fi
       rc=0
       _run_python_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Python" "Operation returned $rc."
+      _menu_operation_result "Python" "Managed package index reset completed." "$rc"
       ;;
     back) return 0 ;;
     esac
   done
 }
-
 _country_code_supported() {
   local requested="$1" entry country mirror_url
   for entry in "${_MIRROR_CATALOG[@]}"; do
@@ -5871,7 +5945,7 @@ _menu_docker() {
       DOCKER_MIRROR_URL="$(_menu_input "Registry mirror" "HTTPS origin only; no credentials or path" "$DOCKER_HUB_CACHE_MIRROR")" || continue
       rc=0
       _run_docker_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Registry test" "Operation returned $rc."
+      _menu_operation_result "Docker registry test" "Registry V2 endpoint check completed." "$rc"
       ;;
     configure)
       DOCKER_ACTION="set"
@@ -5879,13 +5953,13 @@ _menu_docker() {
       DRY_RUN=false
       rc=0
       _run_docker_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker configuration" "Operation returned $rc."
+      _menu_operation_result "Docker configuration" "Registry mirror configuration completed. Docker was not restarted." "$rc"
       ;;
     reset)
       DOCKER_ACTION="reset"
       rc=0
       _run_docker_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker reset" "Operation returned $rc."
+      _menu_operation_result "Docker reset" "Managed Docker registry mirror reset completed." "$rc"
       ;;
     restore)
       path="$(_menu_input "Docker snapshot path" "Enter a snapshot path from the Power APT Boost Docker backup directory" "")" || continue
@@ -5893,19 +5967,18 @@ _menu_docker() {
       DOCKER_RESTORE_PATH="$path"
       rc=0
       _run_docker_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker restore" "Operation returned $rc."
+      _menu_operation_result "Docker restore" "Docker snapshot restoration completed." "$rc"
       ;;
     restart)
       DOCKER_ACTION="restart"
       rc=0
       _run_docker_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker restart" "Operation returned $rc."
+      _menu_operation_result "Docker restart" "Docker daemon restart action completed." "$rc"
       ;;
     back) return 0 ;;
     esac
   done
 }
-
 _menu_main() {
   if ! _is_interactive; then
     error "The interactive menu requires a TTY. Use --help for non-interactive commands."

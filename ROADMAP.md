@@ -132,7 +132,11 @@ Ubuntu Package Sources & Mirror Manager
 Menu requirements:
 
 - Show the detected OS release, architecture, active user, root requirement and current source status.
-- Use a simple Bash numbered menu as the guaranteed fallback; optionally use `whiptail` when available. `whiptail` must not become a mandatory dependency.
+- Always render a plain Bash numbered menu directly in the current SSH terminal; do not use `whiptail` or another dialog frontend.
+- Accept numeric menu choices only, with an explicit zero option to cancel or go back.
+- Clear the terminal only when transitioning to a fresh menu screen; keep operation output visible until the user presses Enter to continue.
+- Keep all interactive text and progress messages in English.
+- Show completed/total progress after each mirror or registry check, including elapsed time and an estimated remaining time for multi-item work.
 - Every submenu must include Back and Cancel.
 - Clearly distinguish **Inspect**, **Test**, **Preview**, **Apply**, **Restore** and **Reset** actions.
 - Before a change, show the exact files, environment variables, service actions and scope that will be affected.
@@ -711,7 +715,7 @@ Do not let each adapter implement a separate, inconsistent backup or confirmatio
 - [ ] Add a test that generated release content matches the tested source revision.
 - [ ] Keep a direct developer path that does not require a complex build system.
 - [ ] Do not introduce Python, Node.js or other runtimes as mandatory dependencies for the Bash tool.
-- [ ] Optional dependencies such as `whiptail`, `jq`, `dig` or ecosystem clients must be detected and have graceful fallbacks.
+- [ ] Optional dependencies such as `jq`, `dig` or ecosystem clients must be detected and have graceful fallbacks.
 
 ### 17.3 Configuration storage
 
@@ -888,7 +892,7 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 
 - [x] Add TTY detection and non-interactive behavior.
 - [x] Implement numbered Bash menu fallback.
-- [x] Add optional `whiptail` UI when installed.
+- [x] Replace optional `whiptail` dialogs with one numbered Bash interface for SSH and local terminal sessions.
 - [x] Add Overview, APT, Benchmark, Backup/Restore, Diagnostics and Settings screens.
 - [x] Add reusable confirmation, preview, cancel and back navigation helpers.
 - [x] Ensure every menu action calls the same functions as the CLI.

@@ -4,9 +4,9 @@
 
 | Version | Support status |
 | ------- | -------------- |
-| v3.0.0 | :white_check_mark: Latest published release |
+| v3.0.x | :white_check_mark: Supported stable release line |
 | v2.1.0 and earlier | :x: Unsupported |
-| `main` | Development source; see the published releases for supported versions |
+| `main` | Development source; may contain unreleased changes |
 
 ## Reporting a Vulnerability
 
@@ -91,7 +91,7 @@ This policy covers the `power-apt-boost.sh` script and its direct behavior. The 
 
 ## Release status
 
-The `main` branch currently declares script version `3.0.0`, but that version has not been published as a Git tag/release. The latest published release is `v2.1.0`. For production use, prefer the tagged release unless you have reviewed and intentionally chosen the unreleased source.
+The `main` branch may contain changes that have not been published as a tagged release. For production use, prefer the latest stable version listed on the [GitHub Releases page](https://github.com/power0matin/linux-package-source-manager/releases) unless you have reviewed and intentionally chosen unreleased source.
 
 ### Network and proxy diagnostics
 

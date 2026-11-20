@@ -2048,7 +2048,7 @@ _node_resolve_target() {
     esac
     [[ -n "$raw" && "$raw" != *$'\n'* && "$raw" != *$'\r'* ]] || return "$EXIT_USAGE"
     case "$raw" in
-    "~/"*) raw="$HOME/${raw#~/}" ;;
+    ~/*) raw="$HOME/${raw#~/}" ;;
     /*) ;;
     *) raw="$HOME/$raw" ;;
     esac
@@ -3911,14 +3911,14 @@ _parse_args() {
     --node-test-registry)
       [[ -n "${2:-}" ]] || die "Option $1 requires a registry URL." "$EXIT_USAGE"
       NODE_REQUESTED=true
-      NODE_ACTION=test
+      NODE_ACTION="test"
       NODE_REGISTRY_URL="$2"
       shift 2
       ;;
     --node-set-registry)
       [[ -n "${2:-}" ]] || die "Option $1 requires a registry URL." "$EXIT_USAGE"
       NODE_REQUESTED=true
-      NODE_ACTION=set
+      NODE_ACTION="set"
       NODE_REGISTRY_URL="$2"
       shift 2
       ;;
@@ -4773,7 +4773,7 @@ _menu_nodejs() {
       _menu_message "Node.js" "Read-only inspection completed."
       ;;
     test)
-      NODE_ACTION=test
+      NODE_ACTION="test"
       NODE_REGISTRY_URL="$(_menu_input "Registry URL" "Credential-free HTTPS registry URL" "https://registry.npmjs.org/")" || continue
       NODE_TEST_PACKAGE="$(_menu_input "Test package" "Package name" "is-number")" || continue
       rc=0
@@ -4790,7 +4790,7 @@ _menu_nodejs() {
       if [[ "$NODE_SCOPE" == project ]]; then
         NODE_PROJECT_DIR="$(_menu_input "Project directory" "Directory containing package.json" "$PWD")" || continue
       fi
-      NODE_ACTION=set
+      NODE_ACTION="set"
       rc=0
       _run_node_manager || rc=$?
       [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Node.js" "Operation returned $rc."

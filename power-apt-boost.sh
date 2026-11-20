@@ -2362,11 +2362,18 @@ import sys
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
-from urllib.request import HTTPSHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
+
+class HTTPSOnlyRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        target = urljoin(request.full_url, new_url)
+        if urlsplit(request.full_url).scheme.lower() == "https" and urlsplit(target).scheme.lower() != "https":
+            raise ValueError("HTTPS downgrade redirect blocked")
+        return super().redirect_request(request, file_pointer, code, message, headers, target)
 
 base = sys.argv[1]
 timeout = min(max(int(sys.argv[2]), 1), 60)
-opener = build_opener(HTTPSHandler(context=ssl.create_default_context()))
+opener = build_opener(HTTPSHandler(context=ssl.create_default_context()), HTTPSOnlyRedirect())
 
 class Links(HTMLParser):
     def __init__(self):

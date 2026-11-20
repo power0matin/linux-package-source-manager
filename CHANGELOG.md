@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- Added read-only Docker Engine APT source inspection and a separate Docker Hub OCI Registry V2 endpoint probe.
+- Added safe `daemon.json` registry-mirror merging with `dockerd --validate`, restricted snapshots, SHA-256 conflict checks and explicit rollback.
+- Added a separately confirmed Docker systemd restart command; daemon configuration changes never restart Docker automatically.
 - Added APT source inventory for legacy and Deb822 sources, with Ubuntu/third-party classification and duplicate URI/suite reporting.
 - Added architecture-aware Ubuntu archive selection, including a separate security pocket on amd64/i386 and ports archive selection on other architectures.
 - Added explicit APT proxy set/clear options, APT retry configuration and bounded live DNS/TLS diagnostics.

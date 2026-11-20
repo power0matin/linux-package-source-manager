@@ -944,23 +944,33 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 
 ### Phase 5 — Python ecosystem manager
 
-**Goal:** Manage PyPI source configuration safely for pip, virtual environments, pipx, uv and Poetry.
+**Goal:** Safely inspect and manage Python package indexes for pip, uv and Poetry, while detecting pipx without rewriting its isolated application environments.
 
-- [ ] Add Python tool detection and effective config inventory.
-- [ ] Add PyPI-compatible catalog and correct simple-index/artifact checks.
-- [ ] Add pip user/global/venv scope support.
-- [ ] Add environment-variable override reporting.
-- [ ] Add uv indexes with priority and explicit pin preservation.
-- [ ] Add Poetry sources with primary/supplemental/explicit semantics.
-- [ ] Add project-file preview and opt-in editing.
-- [ ] Add safe reset and rollback per Python client.
-- [ ] Add dependency-confusion and credential-handling tests.
+- [x] Detect python3, pip, the active virtual environment, pipx, uv and Poetry; detect the PEP 668 externally-managed marker.
+- [x] Report pip user/site/global index settings and environment override variable names without exposing their values.
+- [x] Validate user-supplied HTTPS PEP 503/691 Simple API endpoints and check one advertised distribution endpoint without installing or downloading a complete package.
+- [x] Add pip user, active-venv and global index scopes with environment-override guards and PEP 668 protection for global writes.
+- [x] Add uv user, system and project index configuration with explicit default-index conflict checks and preservation of existing source declarations.
+- [x] Add Poetry project sources with supplemental, primary and explicit priority semantics.
+- [x] Add project TOML preview and opt-in atomic editing; reject symlinked, non-regular, invalid or unsupported TOML targets.
+- [x] Add managed-source reset and conflict-checked snapshot restore for pip, uv and Poetry.
+- [x] Add offline coverage for credentials, private source preservation, project source pins, PEP 668, environment overrides, TOML parser absence and restore conflicts.
+- [ ] Add a curated, provenance-reviewed PyPI mirror catalogue and discovery/refresh workflow.
+- [ ] Add a dedicated pipx source adapter after its selected backend and existing venv policy can be managed without changing installed application environments.
+
+**Scope decisions**
+
+- This phase tests and configures a URL explicitly supplied by the user. It does not claim that a built-in list of regional PyPI mirrors is current or trustworthy; catalogue discovery is a separate follow-up.
+- pipx is detected and reported only. Its application environments can use different pip/uv backends and are deliberately not rewritten by the shared pip or uv configuration operations.
+- uv/Poetry editing requires Python 3.11+ (`tomllib`) or an already-installed `tomli`; the tool never installs a parser automatically.
+- The artifact check reports whether SHA-256 metadata is advertised, but does not download a whole distribution to recalculate its digest.
 
 **Acceptance criteria**
 
-- [ ] A Python mirror can be tested and selected without installing a package.
-- [ ] Existing private sources, project pins and hashes are preserved.
-- [ ] No unsupported or externally-managed system Python environment is modified.
+- [x] A user-supplied Python mirror can be tested and selected without installing a package.
+- [x] Existing private sources and project pins are preserved; dependency files and lockfile hashes are never rewritten.
+- [x] No unsupported or PEP 668 externally-managed system Python environment is modified.
+- [x] Preview is read-only and reset/restore only affects app-managed configuration after a conflict check.
 
 ### Phase 6 — Node.js registries
 
@@ -1145,8 +1155,9 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Current execution state:** Phase 4 — PR #5 is open for review; ShellCheck and shfmt pass, and all three Ubuntu offline suites pass 145/145 on head `575b12c597112c2d85135b3e1246f75ff7c68164`.  
-**Previous phases:** PRs #1-#4 are merged into `main`; Phase 3 is complete.  
-**Next permitted work unit:** Review and merge PR #5 before starting Phase 5.  
-**Live-network validation:** Public mirror discovery and real archive-signature checks were not run in CI; CI uses offline fixtures and mocked probe responses.  
+**Current execution state:** Phase 5 — Python package-source manager implemented on `feat/phase-5-python-ecosystem-20261120`; PR and exact-head CI validation pending.  
+**Previous phases:** PRs #1-#5 are merged into `main`; Phase 4 is complete at `a5df05875ca3268da8a694760053ef4e583cf851`.  
+**Next permitted work unit:** Review and merge the Phase 5 PR after all three Ubuntu test suites and lint checks pass; then start Phase 6.  
+**Python scope:** pip, uv and Poetry configuration are managed; pipx is detected only; curated PyPI mirror discovery remains a follow-up.  
+**Live-network validation:** Public Ubuntu mirror discovery and real archive-signature checks were not run in CI; Python index endpoint checks are runtime opt-in and are not CI network prerequisites.  
 **Release/deployment status:** No release, tag or deployment has been created.

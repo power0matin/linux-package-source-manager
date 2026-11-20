@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added Node.js registry management for npm, pnpm, Yarn Classic and Yarn Berry, including version detection, user config and explicit project opt-in.
 - Added HTTPS npm-compatible metadata checks and tarball-host HEAD checks without downloading packages, plus redacted previews and target-specific snapshots.
 - Added conflict-checked registry rollback while preserving scoped registries, auth entries, publish settings and lockfiles.
+- Redacted registry output to origins only, rejected conflicting Node.js action flags and honored external absolute XDG config directories for pnpm.
 - Added a versioned mirror catalog for built-in, Ubuntu-index and user-defined entries, with strict validation and provenance.
 - Added the Ubuntu mirror index as a discovery source with a 24-hour cache, root-only storage, schema validation and last-known-good fallback; HTTP index data is treated only as untrusted discovery input, with HTTPS-only redirects enforced for both curl and wget and mandatory signed-metadata verification of every selectable mirror.
 - Added signed Ubuntu Release metadata verification for main, updates and security suites, including suite/codename matching, freshness checks and same-host redirect policy.

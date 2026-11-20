@@ -2021,7 +2021,7 @@ _node_snapshot_target_valid() {
   npm:user) [[ "$target" == "$HOME/"* && "$(basename "$target")" == .npmrc ]] ;;
   npm:project | pnpm:project) [[ "$(basename "$target")" == .npmrc && -f "$dir/package.json" && ! -L "$dir/package.json" ]] ;;
   pnpm:user)
-    xdg="\${XDG_CONFIG_HOME:-$HOME/.config}"
+    xdg="${XDG_CONFIG_HOME:-$HOME/.config}"
     [[ "$xdg" == /* ]] || return 1
     xdg="$(realpath -m -- "$xdg" 2>/dev/null)" || return 1
     [[ "$target" == "$xdg/pnpm/rc" ]]

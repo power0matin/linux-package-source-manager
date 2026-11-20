@@ -2326,7 +2326,7 @@ _node_status_report() {
 
 
 _node_apply_registry() {
-  local action="$1" url="\${2:-}" project="\${NODE_PROJECT_DIR:-}" target state snapshot temp current normalized package current_label
+  local action="$1" url="${2:-}" project="${NODE_PROJECT_DIR:-}" target state snapshot temp current normalized package current_label
   command -v "$NODE_CLIENT" >/dev/null 2>&1 || {
     error "$NODE_CLIENT is not installed; no package manager will be installed."
     return "$EXIT_GENERAL"
@@ -3612,15 +3612,15 @@ ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}    --country CODE${COLOR_RESET}        Filter mirrors by country code
   ${COLOR_GREEN}    --ipv6${COLOR_RESET}                Use IPv6 for mirror testing
 
-  \${COLOR_GREEN}    --node-status\${COLOR_RESET}         Detect Node.js/npm/pnpm/Yarn and registry hosts
-  \${COLOR_GREEN}    --node-test-registry URL\${COLOR_RESET} Test registry metadata and tarball endpoint
-  \${COLOR_GREEN}    --node-set-registry URL\${COLOR_RESET} Configure a user or explicit project registry
-  \${COLOR_GREEN}    --node-reset-registry\${COLOR_RESET}   Restore the previous app-managed config
-  \${COLOR_GREEN}    --node-restore PATH\${COLOR_RESET}    Restore a conflict-checked Node.js snapshot
-  \${COLOR_GREEN}    --node-client NAME\${COLOR_RESET}     Select npm, pnpm or yarn
-  \${COLOR_GREEN}    --node-scope SCOPE\${COLOR_RESET}     Select user or project config
-  \${COLOR_GREEN}    --node-project DIR\${COLOR_RESET}     Project directory containing package.json
-  \${COLOR_GREEN}    --node-test-package NAME\${COLOR_RESET} Package name for registry metadata checks
+  ${COLOR_GREEN}    --node-status${COLOR_RESET}         Detect Node.js/npm/pnpm/Yarn and registry hosts
+  ${COLOR_GREEN}    --node-test-registry URL${COLOR_RESET} Test registry metadata and tarball endpoint
+  ${COLOR_GREEN}    --node-set-registry URL${COLOR_RESET} Configure a user or explicit project registry
+  ${COLOR_GREEN}    --node-reset-registry${COLOR_RESET}   Restore the previous app-managed config
+  ${COLOR_GREEN}    --node-restore PATH${COLOR_RESET}    Restore a conflict-checked Node.js snapshot
+  ${COLOR_GREEN}    --node-client NAME${COLOR_RESET}     Select npm, pnpm or yarn
+  ${COLOR_GREEN}    --node-scope SCOPE${COLOR_RESET}     Select user or project config
+  ${COLOR_GREEN}    --node-project DIR${COLOR_RESET}     Project directory containing package.json
+  ${COLOR_GREEN}    --node-test-package NAME${COLOR_RESET} Package name for registry metadata checks
   ${COLOR_GREEN}    --python-status${COLOR_RESET}       Detect Python tools and pip index scopes
   ${COLOR_GREEN}    --python-test-index URL${COLOR_RESET} Test PEP 503/691 metadata and one artifact endpoint
   ${COLOR_GREEN}    --python-set-index URL${COLOR_RESET} Configure a pip, uv or Poetry source
@@ -3641,18 +3641,18 @@ ${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
   curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash -s -- --yes
 
 
-  \${COLOR_DIM}# Inspect Node.js clients and verify registry metadata without installing packages\${COLOR_RESET}
-  bash \${_SCRIPT_NAME} --node-status --json
-  bash \${_SCRIPT_NAME} --node-test-registry https://registry.npmjs.org/
+  ${COLOR_DIM}# Inspect Node.js clients and verify registry metadata without installing packages${COLOR_RESET}
+  bash ${_SCRIPT_NAME} --node-status --json
+  bash ${_SCRIPT_NAME} --node-test-registry https://registry.npmjs.org/
 
-  \${COLOR_DIM}# Configure npm at user scope with an explicit confirmation\${COLOR_RESET}
-  bash \${_SCRIPT_NAME} --node-set-registry https://registry.npmjs.org/ --node-client npm --yes
+  ${COLOR_DIM}# Configure npm at user scope with an explicit confirmation${COLOR_RESET}
+  bash ${_SCRIPT_NAME} --node-set-registry https://registry.npmjs.org/ --node-client npm --yes
 
-  \${COLOR_DIM}# Explicit project scope (requires package.json)\${COLOR_RESET}
-  bash \${_SCRIPT_NAME} --node-set-registry https://registry.npmjs.org/ --node-client pnpm --node-scope project --node-project /path/to/project --yes
+  ${COLOR_DIM}# Explicit project scope (requires package.json)${COLOR_RESET}
+  bash ${_SCRIPT_NAME} --node-set-registry https://registry.npmjs.org/ --node-client pnpm --node-scope project --node-project /path/to/project --yes
 
-  \${COLOR_DIM}# Restore the previous app-managed registry setting\${COLOR_RESET}
-  bash \${_SCRIPT_NAME} --node-reset-registry --node-client npm --yes
+  ${COLOR_DIM}# Restore the previous app-managed registry setting${COLOR_RESET}
+  bash ${_SCRIPT_NAME} --node-reset-registry --node-client npm --yes
 
   ${COLOR_DIM}# Read-only status and diagnostics${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME} --status
@@ -3917,14 +3917,14 @@ _parse_args() {
       shift
       ;;
     --node-test-registry)
-      [[ -n "\${2:-}" ]] || die "Option $1 requires a registry URL." "$EXIT_USAGE"
+      [[ -n "${2:-}" ]] || die "Option $1 requires a registry URL." "$EXIT_USAGE"
       NODE_REQUESTED=true
       NODE_ACTION=test
       NODE_REGISTRY_URL="$2"
       shift 2
       ;;
     --node-set-registry)
-      [[ -n "\${2:-}" ]] || die "Option $1 requires a registry URL." "$EXIT_USAGE"
+      [[ -n "${2:-}" ]] || die "Option $1 requires a registry URL." "$EXIT_USAGE"
       NODE_REQUESTED=true
       NODE_ACTION=set
       NODE_REGISTRY_URL="$2"
@@ -3936,27 +3936,27 @@ _parse_args() {
       shift
       ;;
     --node-restore)
-      [[ -n "\${2:-}" ]] || die "Option $1 requires a snapshot path." "$EXIT_USAGE"
+      [[ -n "${2:-}" ]] || die "Option $1 requires a snapshot path." "$EXIT_USAGE"
       NODE_REQUESTED=true
       NODE_ACTION=restore
       NODE_RESTORE_PATH="$2"
       shift 2
       ;;
     --node-client)
-      case "\${2:-}" in npm | pnpm | yarn) NODE_CLIENT="$2" ;; *) die "Node.js client must be npm, pnpm or yarn." "$EXIT_USAGE" ;; esac
+      case "${2:-}" in npm | pnpm | yarn) NODE_CLIENT="$2" ;; *) die "Node.js client must be npm, pnpm or yarn." "$EXIT_USAGE" ;; esac
       shift 2
       ;;
     --node-scope)
-      case "\${2:-}" in user | project) NODE_SCOPE="$2" ;; *) die "Node.js scope must be user or project." "$EXIT_USAGE" ;; esac
+      case "${2:-}" in user | project) NODE_SCOPE="$2" ;; *) die "Node.js scope must be user or project." "$EXIT_USAGE" ;; esac
       shift 2
       ;;
     --node-project)
-      [[ -n "\${2:-}" ]] || die "Option $1 requires a project directory." "$EXIT_USAGE"
+      [[ -n "${2:-}" ]] || die "Option $1 requires a project directory." "$EXIT_USAGE"
       NODE_PROJECT_DIR="$2"
       shift 2
       ;;
     --node-test-package)
-      [[ -n "\${2:-}" ]] || die "Option $1 requires a package name." "$EXIT_USAGE"
+      [[ -n "${2:-}" ]] || die "Option $1 requires a package name." "$EXIT_USAGE"
       NODE_TEST_PACKAGE="$2"
       shift 2
       ;;

@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug in Power APT Boost
+about: Report a bug in Linux Package Source Manager
 title: '[BUG] '
 labels: bug
 assignees: ''

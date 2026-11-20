@@ -1035,7 +1035,6 @@ TOML
   unset -f _python_pip_get _python_pip_set _python_pip_unset
 }
 
-
 _node_test_ini_set() {
   local file="$1" key="$2" value="$3" tmp
   mkdir -p "$(dirname "$file")"
@@ -1136,7 +1135,10 @@ test_node_manager_safety() {
   assert_exit_code 1 "$code" "Node.js package validator rejects traversal names"
 
   npm() {
-    if [[ "$1 $2 $3" == "config get userconfig" ]]; then printf '%s/.npmrc\n' "$HOME"; return 0; fi
+    if [[ "$1 $2 $3" == "config get userconfig" ]]; then
+      printf '%s/.npmrc\n' "$HOME"
+      return 0
+    fi
     if [[ "$1 $2 $3" == "config get registry" ]]; then
       local file="$HOME/.npmrc"
       [[ "$*" != *"--location=project"* ]] || file="$PWD/.npmrc"
@@ -1153,7 +1155,10 @@ test_node_manager_safety() {
   }
 
   pnpm() {
-    if [[ "$1 $2 $3" == "config get globalconfig" ]]; then printf '%s/pnpm/rc\n' "$XDG_CONFIG_HOME"; return 0; fi
+    if [[ "$1 $2 $3" == "config get globalconfig" ]]; then
+      printf '%s/pnpm/rc\n' "$XDG_CONFIG_HOME"
+      return 0
+    fi
     if [[ "$1 $2 $3" == "config get registry" ]]; then
       local file="$XDG_CONFIG_HOME/pnpm/rc"
       [[ "$*" != *"--location=project"* ]] || file="$PWD/.npmrc"
@@ -1171,7 +1176,10 @@ test_node_manager_safety() {
 
   NODE_TEST_YARN_VERSION="1.22.22"
   yarn() {
-    if [[ "$1" == "--version" ]]; then printf '%s\n' "$NODE_TEST_YARN_VERSION"; return 0; fi
+    if [[ "$1" == "--version" ]]; then
+      printf '%s\n' "$NODE_TEST_YARN_VERSION"
+      return 0
+    fi
     if [[ "$1 $2 $3" == "config get registry" ]]; then
       local file="$PWD/.yarnrc"
       sed -n 's/^registry[[:space:]][[:space:]]*//p' "$file" 2>/dev/null | head -n 1

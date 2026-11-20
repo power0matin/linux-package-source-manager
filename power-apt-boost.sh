@@ -2989,7 +2989,11 @@ PY
     rm -rf -- "$snapshot"
     return "$EXIT_BACKUP"
   }
-  if ! _docker_validate_with_dockerd "$DOCKER_DAEMON_CONFIG" || ! _docker_snapshot_mark_after "$snapshot"; then
+  if ! _docker_snapshot_mark_after "$snapshot"; then
+    error "Could not record the post-write checksum; manual recovery may be required: $snapshot"
+    return "$EXIT_RESTORE"
+  fi
+  if ! _docker_validate_with_dockerd "$DOCKER_DAEMON_CONFIG"; then
     error "Post-write validation failed; restoring daemon.json automatically."
     _docker_restore_snapshot_unlocked "$snapshot" || return "$EXIT_RESTORE"
     return "$EXIT_GENERAL"
@@ -3134,7 +3138,10 @@ _run_docker_manager() {
     }
     _docker_apply_mirror "$url"
     ;;
-  reset) _docker_reset_mirror ;;
+  reset)
+    _confirm_action "Restore the previous daemon.json from the app-managed snapshot?" || return "$EXIT_CANCELLED"
+    _docker_reset_mirror
+    ;;
   restore)
     _confirm_action "Restore Docker daemon configuration from snapshot $DOCKER_RESTORE_PATH?" || return "$EXIT_CANCELLED"
     _docker_restore_snapshot "$DOCKER_RESTORE_PATH"

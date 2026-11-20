@@ -1155,9 +1155,12 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Current execution state:** Phase 5 — Python package-source manager implemented on `feat/phase-5-python-ecosystem-20261120`; PR and exact-head CI validation pending.  
+**Current execution state:** Phase 5 core Python package-source manager is implemented in [PR #6](https://github.com/power0matin/power-apt-boost/pull/6); PR remains open for review.  
+**Exact-head CI:** All jobs passed on `7f16fa605ed1a674252fb3451cc1ddcb25a1b38c` — ShellCheck, shfmt, Ubuntu 20.04 (168/168), Ubuntu 22.04 (168/168) and Ubuntu 24.04 (186/186). [CI run #84](https://github.com/power0matin/power-apt-boost/actions/runs/44647360924).  
 **Previous phases:** PRs #1-#5 are merged into `main`; Phase 4 is complete at `a5df05875ca3268da8a694760053ef4e583cf851`.  
-**Next permitted work unit:** Review and merge the Phase 5 PR after all three Ubuntu test suites and lint checks pass; then start Phase 6.  
+**Next permitted work unit:** Review and merge PR #6 before starting Phase 6.  
+**Live-network validation:** No live PyPI index or artifact probe was run in CI; index checks use offline input-validation tests. A curated mirror catalogue and pipx backend adapter remain separate follow-ups.  
+**Release/deployment status:** No release, tag or deployment has been created.  
 **Python scope:** pip, uv and Poetry configuration are managed; pipx is detected only; curated PyPI mirror discovery remains a follow-up.  
 **Live-network validation:** Public Ubuntu mirror discovery and real archive-signature checks were not run in CI; Python index endpoint checks are runtime opt-in and are not CI network prerequisites.  
 **Release/deployment status:** No release, tag or deployment has been created.

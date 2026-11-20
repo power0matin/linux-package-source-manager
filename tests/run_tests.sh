@@ -1518,7 +1518,9 @@ PY
     esac
   }
   _confirm_action() {
-    [[ "$YES" == true ]] && return 0
+    if [[ "$YES" == true ]]; then
+      return 0
+    fi
     return "$EXIT_USAGE"
   }
   YES=false

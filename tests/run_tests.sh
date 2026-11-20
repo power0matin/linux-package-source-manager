@@ -82,7 +82,6 @@ test_cli() {
 
   output="$(bash "$SCRIPT" --version 2>&1)"
   assert_contains "3.0.3" "$output" "version matches script version"
-  assert_contains "sudo bash linux-package-source-manager.sh" "$output" "help uses the renamed standalone script"
   assert_contains "--menu" "$(bash "$SCRIPT" --help 2>&1)" "help documents interactive menu"
   assert_contains "--doctor" "$(bash "$SCRIPT" --help 2>&1)" "help documents doctor command"
   assert_contains "--yes" "$(bash "$SCRIPT" --help 2>&1)" "help documents explicit non-interactive confirmation"

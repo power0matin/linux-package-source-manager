@@ -30,7 +30,7 @@ When creating a bug report, include:
 - **Expected behavior**
 - **Actual behavior**
 - **OS and Ubuntu version** (`cat /etc/os-release`)
-- **Script version** (`bash power-apt-boost.sh --version`)
+- **Script version** (`bash linux-package-source-manager.sh --version`)
 - **Network environment** (VPS provider, region, proxy)
 
 ### Suggesting Features
@@ -67,16 +67,16 @@ git clone https://github.com/YOUR_USERNAME/linux-package-source-manager.git
 cd linux-package-source-manager
 
 # Make the script executable
-chmod +x power-apt-boost.sh
+chmod +x linux-package-source-manager.sh
 
 # Run shellcheck
-shellcheck power-apt-boost.sh
+shellcheck linux-package-source-manager.sh
 
 # Run shfmt
-shfmt -d power-apt-boost.sh
+shfmt -d linux-package-source-manager.sh
 
 # Test locally (dry run)
-sudo bash power-apt-boost.sh --dry-run
+sudo bash linux-package-source-manager.sh --dry-run
 ```
 
 ### Testing
@@ -86,10 +86,10 @@ sudo bash power-apt-boost.sh --dry-run
 bash tests/run_tests.sh
 
 # Run shellcheck
-shellcheck -x power-apt-boost.sh
+shellcheck -x linux-package-source-manager.sh
 
 # Run shfmt check
-shfmt -d power-apt-boost.sh
+shfmt -d linux-package-source-manager.sh
 ```
 
 ## Code Style
@@ -111,7 +111,7 @@ shfmt -d power-apt-boost.sh
 All code must pass ShellCheck with zero warnings:
 
 ```bash
-shellcheck -x power-apt-boost.sh
+shellcheck -x linux-package-source-manager.sh
 ```
 
 ### shfmt
@@ -120,10 +120,10 @@ All code must be formatted with shfmt:
 
 ```bash
 # Check formatting
-shfmt -d power-apt-boost.sh
+shfmt -d linux-package-source-manager.sh
 
 # Auto-fix formatting
-shfmt -w power-apt-boost.sh
+shfmt -w linux-package-source-manager.sh
 ```
 
 ### Comments
@@ -175,7 +175,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) format:
 
 ```
 linux-package-source-manager/
-├── power-apt-boost.sh      # Main script (single-file for curl | bash)
+├── linux-package-source-manager.sh      # Main script (single-file for curl | bash)
 ├── tests/                   # Test suite
 ├── .github/                 # GitHub CI/CD and templates
 ├── README.md
@@ -197,7 +197,7 @@ linux-package-source-manager/
 Linux Package Source Manager is intentionally a single Bash script. This enables:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/.../power-apt-boost.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/.../linux-package-source-manager.sh | sudo bash
 ```
 
 This is the primary installation method. Splitting into multiple files would break this workflow.

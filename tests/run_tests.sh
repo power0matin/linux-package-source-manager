@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 readonly PROJECT_DIR
-SCRIPT="${PROJECT_DIR}/power-apt-boost.sh"
+SCRIPT="${PROJECT_DIR}/linux-package-source-manager.sh"
 readonly SCRIPT
 
 RED='\033[0;31m'
@@ -76,12 +76,13 @@ test_cli() {
   local output code
   output="$(bash "$SCRIPT" --help 2>&1)"
   assert_contains "Linux Package Source Manager" "$output" "help displays product name"
-  assert_contains "https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/power-apt-boost.sh" "$output" "help prints a valid install URL"
+  assert_contains "https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/linux-package-source-manager.sh" "$output" "help prints a valid install URL"
   assert_contains "| sudo bash -s -- --yes" "$output" "help uses explicit non-interactive confirmation"
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"
-  assert_contains "3.0.2" "$output" "version matches script version"
+  assert_contains "3.0.3" "$output" "version matches script version"
+  assert_contains "sudo bash linux-package-source-manager.sh" "$output" "help uses the renamed standalone script"
   assert_contains "--menu" "$(bash "$SCRIPT" --help 2>&1)" "help documents interactive menu"
   assert_contains "--doctor" "$(bash "$SCRIPT" --help 2>&1)" "help documents doctor command"
   assert_contains "--yes" "$(bash "$SCRIPT" --help 2>&1)" "help documents explicit non-interactive confirmation"
@@ -274,7 +275,7 @@ test_filesystem_operations() {
   export POWER_APT_BOOST_TEST_ROOT="$_TEST_ROOT"
   export POWER_APT_BOOST_SOURCE_ONLY=1
 
-  # shellcheck source=../power-apt-boost.sh
+  # shellcheck source=../linux-package-source-manager.sh
   source "$SCRIPT"
   _setup_colors
   apt-get() {

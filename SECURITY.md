@@ -32,7 +32,7 @@ Send an email to the maintainer with:
 
 ### Scope
 
-This policy covers the `power-apt-boost.sh` script and its direct behavior. The following are out of scope:
+This policy covers the `linux-package-source-manager.sh` script and its direct behavior. The following are out of scope:
 
 - Bugs in third-party tools (curl, wget, apt)
 - Issues in Ubuntu itself
@@ -136,5 +136,5 @@ The `main` branch may contain changes that have not been published as a tagged r
 4. **Verify the script** matches the repository:
 
    ```bash
-   sha256sum power-apt-boost.sh
+   sha256sum linux-package-source-manager.sh
    ```

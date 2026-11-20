@@ -12,7 +12,7 @@ A clear description of what the bug is.
 
 ## Steps to Reproduce
 
-1. Run `sudo bash power-apt-boost.sh`
+1. Run `sudo bash linux-package-source-manager.sh`
 2. ...
 3. See error
 
@@ -27,7 +27,7 @@ What actually happened.
 ## Environment
 
 - **Ubuntu version**: (output of `cat /etc/os-release`)
-- **Script version**: (output of `bash power-apt-boost.sh --version`)
+- **Script version**: (output of `bash linux-package-source-manager.sh --version`)
 - **Architecture**: (output of `uname -m`)
 - **Network**: (VPS provider, region, proxy if any)
 

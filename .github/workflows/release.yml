@@ -24,11 +24,11 @@ jobs:
           sudo chmod +x /usr/local/bin/shfmt
       - name: Run ShellCheck
         run: |
-          shellcheck -x power-apt-boost.sh
+          shellcheck -x linux-package-source-manager.sh
           shellcheck -x -e SC2034,SC2329 tests/run_tests.sh
       - name: Check shfmt formatting
         run: |
-          shfmt -d power-apt-boost.sh
+          shfmt -d linux-package-source-manager.sh
           shfmt -d tests/run_tests.sh
 
   test:
@@ -64,7 +64,7 @@ jobs:
           set -Eeuo pipefail
           tag="${GITHUB_REF_NAME}"
           version="${tag#v}"
-          source_version="$(awk -F'"' '/^readonly APP_VERSION=/{print $2; exit}' power-apt-boost.sh)"
+          source_version="$(awk -F'"' '/^readonly APP_VERSION=/{print $2; exit}' linux-package-source-manager.sh)"
 
           if [[ "$tag" != "v$version" || -z "$source_version" || "$source_version" != "$version" ]]; then
             printf 'Release tag %s does not match source version %s.\n' "$tag" "${source_version:-missing}" >&2
@@ -81,11 +81,13 @@ jobs:
 
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "script=linux-package-source-manager.sh" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes and checksum
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          SCRIPT_NAME: ${{ steps.version.outputs.script }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -102,26 +104,15 @@ jobs:
           ' CHANGELOG.md > RELEASE_NOTES.md
           test -s RELEASE_NOTES.md
 
-          sha256sum power-apt-boost.sh > power-apt-boost.sh.sha256
+          sha256sum linux-package-source-manager.sh > linux-package-source-manager.sh.sha256
           {
             cat RELEASE_NOTES.md
-            cat <<EOF
-
-          ## Installation
-
-          ```bash
-          curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/${RELEASE_TAG}/power-apt-boost.sh | sudo bash -s -- --yes
-          ```
-
-          ## Verify
-
-          Download `power-apt-boost.sh` and `power-apt-boost.sh.sha256` from this release, then run:
-
-          ```bash
-          sha256sum -c power-apt-boost.sh.sha256
-          ```
-          EOF
+            printf '\n## Installation\n\n```bash\ncurl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/%s/%s | sudo bash -s -- --yes\n```\n\n## Verify\n\nDownload `%s` and `%s.sha256` from this release, then run:\n\n```bash\nsha256sum -c %s.sha256\n```\n' \
+              "$RELEASE_TAG" "$SCRIPT_NAME" "$SCRIPT_NAME" "$SCRIPT_NAME" "$SCRIPT_NAME"
           } > RELEASE_BODY.md
+          grep -Fq "$SCRIPT_NAME" RELEASE_BODY.md
+          test -s "$SCRIPT_NAME" "$SCRIPT_NAME.sha256"
+          sha256sum -c "$SCRIPT_NAME.sha256"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -129,8 +120,8 @@ jobs:
           name: "Linux Package Source Manager ${{ steps.version.outputs.tag }}"
           body_path: RELEASE_BODY.md
           files: |
-            power-apt-boost.sh
-            power-apt-boost.sh.sha256
+            linux-package-source-manager.sh
+            linux-package-source-manager.sh.sha256
           draft: false
           prerelease: false
           fail_on_unmatched_files: true

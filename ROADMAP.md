@@ -1156,11 +1156,12 @@ The implementation must follow the current official behavior of each ecosystem. 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
 **Current execution state:** Phase 6 Node.js registry support is implemented in [PR #7](https://github.com/power0matin/power-apt-boost/pull/7); PR is open for review and has not been merged.  
-**Exact-head CI:** All four jobs passed on `3912bd12477ede2e6de086f5016febe05752887f` — ShellCheck, shfmt, Ubuntu 20.04 (208/208), Ubuntu 22.04 (208/208) and Ubuntu 24.04 (226/226). [CI run #96](https://github.com/power0matin/power-apt-boost/actions/runs/44654775428).  
+**Exact implementation CI:** All four jobs passed on `1e743b1f2b49eccad4fad36c87dd65da936de92b` — ShellCheck, shfmt, Ubuntu 20.04 (211/211), Ubuntu 22.04 (211/211) and Ubuntu 24.04 (229/229). [CI run #98](https://github.com/power0matin/power-apt-boost/actions/runs/44655542642).  
 **Previous phases:** PRs #1-#6 are merged into `main`; Phase 5 is merged at `d7a228aa41ee910ff21b8f7f2ff62410d82dc37b`.  
 **Next permitted work unit:** Review and merge PR #7 before starting Phase 7.  
 **Node.js validation:** CI is offline and uses command mocks for npm, pnpm and Yarn Classic/Berry. No real package managers or live registry endpoints were installed or queried in CI. The runtime registry check is opt-in and uses a user-supplied HTTPS endpoint; the tarball check uses HEAD only.  
 **Python scope:** pip, uv and Poetry configuration are managed; pipx is detected only; a curated PyPI catalogue remains a follow-up.  
 **Node.js scope:** npm, pnpm, Yarn Classic and Berry are supported for user configuration by default, with explicit project scope; private scopes and auth are preserved.  
 **Release/deployment status:** No release, tag or deployment has been created.  
+**Documentation-only sync:** Subsequent Roadmap/PR metadata updates do not change the validated implementation SHA above.  
 **Earlier live validation:** Public Ubuntu mirror discovery/signature checks and live PyPI probes are not CI prerequisites; opt-in runtime checks remain separate from offline regression coverage.

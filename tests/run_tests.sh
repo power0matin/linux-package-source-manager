@@ -881,7 +881,7 @@ test_python_manager_safety() {
   unset POWER_APT_BOOST_TEST_EXTERNALLY_MANAGED
 
   _python_is_externally_managed() { return 0; }
-  id() { printf '%s\\n' 0; }
+  id() { printf '0'; }
   PYTHON_SCOPE=global
   code=0
   _python_resolve_pip_scope >/dev/null 2>&1 || code=$?

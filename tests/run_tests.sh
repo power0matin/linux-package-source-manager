@@ -132,6 +132,9 @@ test_cli() {
   bash "$SCRIPT" --docker-status --docker-reset-mirror >/dev/null 2>&1 || code=$?
   assert_exit_code 2 "$code" "conflicting Docker actions are rejected"
   code=0
+  bash "$SCRIPT" --docker-restore >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Docker restore requires an explicit snapshot path"
+  code=0
   bash "$SCRIPT" --docker-test-mirror http://mirror.example/ >/dev/null 2>&1 || code=$?
   assert_exit_code 2 "$code" "Docker mirror probe rejects plain HTTP before network access"
   code=0
@@ -1362,8 +1365,12 @@ YARNRC
 }
 
 test_docker_manager_safety() {
-  local path="$DOCKER_DAEMON_CONFIG" before after code output restart_log
+  local path="$DOCKER_DAEMON_CONFIG" before after code output restart_log backup_mode
   mkdir -p "$DOCKER_CONFIG_DIR" "$APT_SOURCES_DIR"
+  chmod 0750 "$BACKUP_BASE"
+  _docker_require_backup_base
+  backup_mode="$(stat -c '%a' "$BACKUP_BASE")"
+  assert_equal "750" "$backup_mode" "Docker backup setup preserves the shared APT backup parent permissions"
   cat >"${APT_SOURCES_DIR}/docker.sources" <<'DOCKERSOURCES'
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
@@ -1494,6 +1501,16 @@ PY
   [[ ! -e "$DOCKER_STATE_FILE" ]] && code=0 || code=1
   assert_exit_code 0 "$code" "Failed pre-write validation does not save active state"
   DOCKER_TEST_DOCKERD_FAIL=false
+
+  rm -f -- "$path"
+  ln -s "${_TEST_ROOT}/docker-symlink-target.json" "$path"
+  code=0
+  _docker_apply_mirror "https://mirror.gcr.io" >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Docker manager refuses a symlinked daemon.json target"
+  [[ -L "$path" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "Rejected Docker symlink is left untouched"
+  rm -f -- "$path"
+  printf '%s\n' '{"debug":true}' >"$path"
 
   JSON_OUTPUT=true
   output="$(_docker_status_report)"

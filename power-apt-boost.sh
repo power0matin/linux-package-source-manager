@@ -2859,7 +2859,9 @@ _docker_restore_snapshot_unlocked() {
   fi
   if [[ -f "$DOCKER_STATE_FILE" && ! -L "$DOCKER_STATE_FILE" ]]; then
     state_value="$(cat "$DOCKER_STATE_FILE")"
-    [[ "$state_value" != "$snapshot" ]] || rm -f -- "$DOCKER_STATE_FILE"
+    if [[ "$state_value" == "$snapshot" ]]; then
+      rm -f -- "$DOCKER_STATE_FILE" || return "$EXIT_RESTORE"
+    fi
   fi
   info "Docker daemon configuration restored from the verified snapshot."
 }
@@ -2967,11 +2969,16 @@ PY
     return "$EXIT_BACKUP"
   fi
   if [[ -f "$DOCKER_DAEMON_CONFIG" ]]; then
-    chown --reference="$DOCKER_DAEMON_CONFIG" "$temp" && chmod --reference="$DOCKER_DAEMON_CONFIG" "$temp" || {
+    if ! chown --reference="$DOCKER_DAEMON_CONFIG" "$temp"; then
       rm -f -- "$temp"
       rm -rf -- "$snapshot"
       return "$EXIT_BACKUP"
-    }
+    fi
+    if ! chmod --reference="$DOCKER_DAEMON_CONFIG" "$temp"; then
+      rm -f -- "$temp"
+      rm -rf -- "$snapshot"
+      return "$EXIT_BACKUP"
+    fi
   else
     chmod 0644 "$temp" || {
       rm -f -- "$temp"
@@ -4677,20 +4684,20 @@ _parse_args() {
     --docker-status)
       [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
       DOCKER_REQUESTED=true
-      DOCKER_ACTION=status
+      DOCKER_ACTION="status"
       shift
       ;;
     --docker-catalog)
       [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
       DOCKER_REQUESTED=true
-      DOCKER_ACTION=catalog
+      DOCKER_ACTION="catalog"
       shift
       ;;
     --docker-test-mirror)
       [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
       [[ -n "${2:-}" ]] || die "Option $1 requires a mirror URL." "$EXIT_USAGE"
       DOCKER_REQUESTED=true
-      DOCKER_ACTION=test
+      DOCKER_ACTION="test"
       DOCKER_MIRROR_URL="$2"
       shift 2
       ;;
@@ -4698,28 +4705,28 @@ _parse_args() {
       [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
       [[ -n "${2:-}" ]] || die "Option $1 requires a mirror URL." "$EXIT_USAGE"
       DOCKER_REQUESTED=true
-      DOCKER_ACTION=set
+      DOCKER_ACTION="set"
       DOCKER_MIRROR_URL="$2"
       shift 2
       ;;
     --docker-reset-mirror)
       [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
       DOCKER_REQUESTED=true
-      DOCKER_ACTION=reset
+      DOCKER_ACTION="reset"
       shift
       ;;
     --docker-restore)
       [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
       [[ -n "${2:-}" ]] || die "Option $1 requires a snapshot path." "$EXIT_USAGE"
       DOCKER_REQUESTED=true
-      DOCKER_ACTION=restore
+      DOCKER_ACTION="restore"
       DOCKER_RESTORE_PATH="$2"
       shift 2
       ;;
     --docker-restart)
       [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
       DOCKER_REQUESTED=true
-      DOCKER_ACTION=restart
+      DOCKER_ACTION="restart"
       shift
       ;;
     --node-status)
@@ -5843,7 +5850,7 @@ _menu_docker() {
       "back" "Back")" || return 0
     case "$choice" in
     status)
-      DOCKER_ACTION=status
+      DOCKER_ACTION="status"
       _docker_status_report
       _menu_message "Docker / OCI" "Read-only inspection completed."
       ;;
@@ -5852,14 +5859,14 @@ _menu_docker() {
       _menu_message "Docker Hub cache" "Candidate details displayed."
       ;;
     test)
-      DOCKER_ACTION=test
+      DOCKER_ACTION="test"
       DOCKER_MIRROR_URL="$(_menu_input "Registry mirror" "HTTPS origin only; no credentials or path" "$DOCKER_HUB_CACHE_MIRROR")" || continue
       rc=0
       _run_docker_manager || rc=$?
       [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Registry test" "Operation returned $rc."
       ;;
     configure)
-      DOCKER_ACTION=set
+      DOCKER_ACTION="set"
       DOCKER_MIRROR_URL="$(_menu_input "Registry mirror" "HTTPS origin only; daemon is not restarted" "$DOCKER_HUB_CACHE_MIRROR")" || continue
       DRY_RUN=false
       rc=0
@@ -5867,21 +5874,21 @@ _menu_docker() {
       [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker configuration" "Operation returned $rc."
       ;;
     reset)
-      DOCKER_ACTION=reset
+      DOCKER_ACTION="reset"
       rc=0
       _run_docker_manager || rc=$?
       [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker reset" "Operation returned $rc."
       ;;
     restore)
       path="$(_menu_input "Docker snapshot path" "Enter a snapshot path from the Power APT Boost Docker backup directory" "")" || continue
-      DOCKER_ACTION=restore
+      DOCKER_ACTION="restore"
       DOCKER_RESTORE_PATH="$path"
       rc=0
       _run_docker_manager || rc=$?
       [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker restore" "Operation returned $rc."
       ;;
     restart)
-      DOCKER_ACTION=restart
+      DOCKER_ACTION="restart"
       rc=0
       _run_docker_manager || rc=$?
       [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker restart" "Operation returned $rc."

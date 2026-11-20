@@ -2495,7 +2495,6 @@ _run_node_manager() {
   esac
 }
 
-
 # ─── Docker Engine and OCI Registry Management ────────────────────────────────
 
 _docker_require_root() {
@@ -3162,7 +3161,6 @@ _run_docker_manager() {
 }
 
 # ─── Python Package Source Management ────────────────────────────────────────
-
 
 _python_validate_index_url() {
   python3 - "$1" <<'PY'
@@ -4680,7 +4678,6 @@ _parse_args() {
       shift
       ;;
 
-
     --docker-status)
       [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
       DOCKER_REQUESTED=true
@@ -4863,9 +4860,8 @@ _parse_args() {
   [[ "$RESTORE_SCOPE" == all || "$RESTORE" == true ]] || die "--restore-scope requires --restore." "$EXIT_USAGE"
   [[ "$NETWORK_DIAGNOSTICS" != true || "$DOCTOR_REQUESTED" == true ]] || die "--network-diagnostics can only be used with --doctor." "$EXIT_USAGE"
 
-
   if [[ "$DOCKER_REQUESTED" == true ]]; then
-    [[ "$ACTION_REQUESTED" != true || ( "$DRY_RUN" == true && "$DOCKER_ACTION" == set ) ]] || die "Docker commands cannot be combined with APT apply options." "$EXIT_USAGE"
+    [[ "$ACTION_REQUESTED" != true || ("$DRY_RUN" == true && "$DOCKER_ACTION" == set) ]] || die "Docker commands cannot be combined with APT apply options." "$EXIT_USAGE"
     [[ "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$LIST_REQUESTED" != true && "$RESTORE" != true && "$MIRROR_MANAGEMENT_REQUESTED" != true && -z "$PRUNE_BACKUPS_KEEP" && "$STATUS_REQUESTED" != true && "$DOCTOR_REQUESTED" != true && "$MENU_REQUESTED" != true && "$PYTHON_REQUESTED" != true && "$NODE_REQUESTED" != true ]] || die "Docker commands cannot be combined with other command modes." "$EXIT_USAGE"
     [[ "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true && -z "$COUNTRY_FILTER" && "$USE_IPV6" != true && "$BENCH_WORKERS" -eq "$DEFAULT_BENCH_WORKERS" && "$PROBE_RETRIES" -eq 1 ]] || die "Docker commands cannot be combined with APT mirror benchmark options." "$EXIT_USAGE"
     [[ "$NETWORK_DIAGNOSTICS" != true && "$APT_RETRIES" -eq 3 && -z "$APT_PROXY" && "$CLEAR_APT_PROXY" != true ]] || die "Docker commands cannot be combined with APT network options." "$EXIT_USAGE"
@@ -5942,7 +5938,6 @@ main() {
     : >"$LOG_FILE"
     _log_to_file "Session started: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   fi
-
 
   if [[ "$DOCKER_REQUESTED" == true ]]; then
     local docker_status=0

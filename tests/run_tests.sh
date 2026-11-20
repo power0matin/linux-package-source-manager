@@ -979,6 +979,7 @@ TOML
     assert_exit_code 1 "$code" "uv reset removes only the managed source block"
 
     path="${_TEST_ROOT}/python-toml/poetry/pyproject.toml"
+    mkdir -p "$(dirname "$path")"
     cat >"$path" <<'TOML'
 [tool.poetry]
 name = "fixture-poetry"

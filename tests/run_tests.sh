@@ -108,6 +108,15 @@ test_cli() {
   bash "$SCRIPT" --node-status --doctor >/dev/null 2>&1 || code=$?
   assert_exit_code 2 "$code" "Node.js command cannot be combined with APT doctor"
   code=0
+  bash "$SCRIPT" --node-status --official-only >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Node.js command rejects APT mirror profile flags"
+  code=0
+  bash "$SCRIPT" --node-status --apt-retries 5 >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Node.js command rejects APT apply options"
+  code=0
+  bash "$SCRIPT" --node-status --country us >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Node.js command rejects APT benchmark filters"
+  code=0
   bash "$SCRIPT" --node-status --python-status >/dev/null 2>&1 || code=$?
   assert_exit_code 2 "$code" "Node.js and Python command modes cannot be combined"
   output="$(bash "$SCRIPT" --node-status --json 2>&1)"

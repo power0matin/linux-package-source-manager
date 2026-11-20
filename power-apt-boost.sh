@@ -47,6 +47,12 @@ readonly BACKUP_BASE="${_SYSTEM_ROOT}/var/backups/${APP_SLUG}"
 readonly KEYRING_PATH="${_SYSTEM_ROOT}/usr/share/keyrings/ubuntu-archive-keyring.gpg"
 readonly OS_RELEASE_FILE="${_SYSTEM_ROOT}/etc/os-release"
 readonly APT_LOCK_FILE="${_SYSTEM_ROOT}/run/lock/${APP_SLUG}.lock"
+readonly DOCKER_CONFIG_DIR="${_SYSTEM_ROOT}/etc/docker"
+readonly DOCKER_DAEMON_CONFIG="${DOCKER_CONFIG_DIR}/daemon.json"
+readonly DOCKER_BACKUP_BASE="${BACKUP_BASE}/docker"
+readonly DOCKER_STATE_FILE="${DOCKER_BACKUP_BASE}/current-state"
+readonly DOCKER_LOCK_FILE="${_SYSTEM_ROOT}/run/lock/${APP_SLUG}-docker.lock"
+readonly DOCKER_HUB_CACHE_MIRROR="https://mirror.gcr.io"
 
 readonly PROBE_TIMEOUT_CONNECT=5
 readonly MIRROR_INDEX_URL="http://mirrors.ubuntu.com/mirrors.txt"
@@ -179,6 +185,17 @@ NODE_METADATA_HOST=""
 NODE_TARBALL_HOST=""
 NODE_PACKAGE_VERSION=""
 NODE_PACKAGE_INTEGRITY=""
+
+DOCKER_REQUESTED=false
+DOCKER_ACTION=""
+DOCKER_MIRROR_URL=""
+DOCKER_RESTORE_PATH=""
+DOCKER_PROBE_STATUS=""
+DOCKER_PROBE_HOST=""
+DOCKER_CONFIG_STATUS="unknown"
+DOCKER_CONFIG_MIRROR_ORIGINS=()
+DOCKER_APT_SOURCE_COUNT=0
+DOCKER_APT_SOURCE_SUITES=()
 
 _tmp_dirs=()
 _bg_pids=()
@@ -2478,7 +2495,660 @@ _run_node_manager() {
   esac
 }
 
+
+# ─── Docker Engine and OCI Registry Management ────────────────────────────────
+
+_docker_require_root() {
+  if [[ "$_TEST_MODE" == "1" ]]; then
+    return 0
+  fi
+  [[ "$(id -u)" -eq 0 ]] || {
+    error "Docker daemon configuration changes require root. Use sudo."
+    return "$EXIT_NOT_ROOT"
+  }
+}
+
+_docker_validate_config_path() {
+  local resolved
+  [[ "$DOCKER_CONFIG_DIR" == /* && -d "$DOCKER_CONFIG_DIR" && ! -L "$DOCKER_CONFIG_DIR" ]] || {
+    error "Docker configuration directory is missing or symlinked: $DOCKER_CONFIG_DIR"
+    return "$EXIT_USAGE"
+  }
+  resolved="$(realpath -e -- "$DOCKER_CONFIG_DIR" 2>/dev/null)" || return "$EXIT_USAGE"
+  [[ "$resolved" == "$DOCKER_CONFIG_DIR" ]] || {
+    error "Docker configuration directory resolves through an unexpected path."
+    return "$EXIT_USAGE"
+  }
+  [[ ! -L "$DOCKER_DAEMON_CONFIG" && (! -e "$DOCKER_DAEMON_CONFIG" || -f "$DOCKER_DAEMON_CONFIG") ]] || {
+    error "Refusing a symlink or non-regular daemon.json target."
+    return "$EXIT_USAGE"
+  }
+}
+
+_docker_validate_mirror_url() {
+  python3 - "$1" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+raw = sys.argv[1]
+if not raw or any(ch.isspace() or ord(ch) < 32 for ch in raw):
+    raise SystemExit(1)
+try:
+    parsed = urlsplit(raw)
+    if parsed.scheme.lower() != "https" or not parsed.hostname:
+        raise SystemExit(1)
+    if parsed.username is not None or parsed.password is not None:
+        raise SystemExit(1)
+    if parsed.query or parsed.fragment or parsed.path not in ("", "/"):
+        raise SystemExit(1)
+    port = parsed.port
+    if port is not None and not 1 <= port <= 65535:
+        raise SystemExit(1)
+    host = parsed.hostname.lower()
+    if ":" in host:
+        host = f"[{host}]"
+    if port is not None:
+        host += f":{port}"
+    print("https://" + host)
+except (ValueError, UnicodeError):
+    raise SystemExit(1)
+PY
+}
+
+_docker_url_origin_label() {
+  [[ -n "$1" ]] || {
+    printf '%s' "not configured"
+    return 0
+  }
+  python3 - "$1" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+try:
+    parsed = urlsplit(sys.argv[1])
+    if not parsed.scheme or not parsed.hostname:
+        print("<invalid-url>")
+        raise SystemExit(0)
+    host = parsed.hostname.lower()
+    if ":" in host:
+        host = f"[{host}]"
+    if parsed.port is not None:
+        host += f":{parsed.port}"
+    print(parsed.scheme.lower() + "://" + host)
+except ValueError:
+    print("<invalid-url>")
+PY
+}
+
+_docker_probe_mirror() {
+  local registry="$1" output
+  if output="$(
+    python3 - "$registry" "$TIMEOUT_TOTAL" 2>/dev/null <<'PY'
+import sys
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+registry, raw_timeout = sys.argv[1:]
+timeout = min(max(int(raw_timeout), 1), 60)
+
+class HTTPSOnlyRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        target = urljoin(request.full_url, new_url)
+        parsed = urlsplit(target)
+        if (
+            parsed.scheme.lower() != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError("unsafe redirect")
+        return super().redirect_request(request, file_pointer, code, message, headers, target)
+
+def origin(value):
+    parsed = urlsplit(value)
+    if parsed.scheme.lower() != "https" or not parsed.hostname:
+        raise ValueError("unsafe final URL")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("credentials in final URL")
+    port = parsed.port
+    host = parsed.hostname.lower()
+    if ":" in host:
+        host = f"[{host}]"
+    if port is not None:
+        host += f":{port}"
+    return "https://" + host
+
+response = None
+try:
+    endpoint = registry.rstrip("/") + "/v2/"
+    request = Request(
+        endpoint,
+        method="GET",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "Power-APT-Boost/3.0",
+        },
+    )
+    opener = build_opener(HTTPSOnlyRedirect())
+    try:
+        response = opener.open(request, timeout=timeout)
+        status = response.status
+    except HTTPError as exc:
+        response = exc
+        status = exc.code
+    final_origin = origin(response.geturl())
+    api_version = response.headers.get("Docker-Distribution-API-Version", "").strip().lower()
+    supported = status in (200, 401) and api_version == "registry/2.0"
+    print("STATUS=" + str(status))
+    print("HOST=" + final_origin)
+    print("SUPPORTED=" + ("true" if supported else "false"))
+    raise SystemExit(0 if supported else 1)
+except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError):
+    print("ERROR=registry_v2_probe_failed")
+    raise SystemExit(1)
+finally:
+    if response is not None:
+        response.close()
+PY
+  )"; then
+    DOCKER_PROBE_STATUS="$(sed -n 's/^STATUS=//p' <<<"$output" | head -n 1)"
+    DOCKER_PROBE_HOST="$(sed -n 's/^HOST=//p' <<<"$output" | head -n 1)"
+    [[ -n "$DOCKER_PROBE_HOST" ]] || return "$EXIT_NETWORK"
+    info "Docker Registry API V2 endpoint verified at $DOCKER_PROBE_HOST (HTTP $DOCKER_PROBE_STATUS)."
+    msg "This checks protocol compatibility only; it does not verify pull-through-cache behavior or pull image layers."
+    return 0
+  fi
+  error "The endpoint did not pass the HTTPS Docker Registry API V2 check."
+  return "$EXIT_NETWORK"
+}
+
+_docker_scan_apt_sources() {
+  local file uri suite host
+  local -A seen_suites=()
+  DOCKER_APT_SOURCE_COUNT=0
+  DOCKER_APT_SOURCE_SUITES=()
+  for file in "$APT_SOURCES_FILE" "$APT_SOURCES_DIR"/*.list "$APT_SOURCES_DIR"/*.sources; do
+    [[ -f "$file" && ! -L "$file" ]] || continue
+    while IFS='|' read -r uri suite; do
+      [[ -n "$uri" && -n "$suite" ]] || continue
+      host="${uri#*://}"
+      host="${host%%/*}"
+      host="${host##*@}"
+      host="${host%%:*}"
+      [[ "${host,,}" == "download.docker.com" ]] || continue
+      ((DOCKER_APT_SOURCE_COUNT += 1)) || true
+      if [[ -z "${seen_suites[$suite]+x}" ]]; then
+        seen_suites["$suite"]=1
+        DOCKER_APT_SOURCE_SUITES+=("$suite")
+      fi
+    done < <(_apt_source_records "$file")
+  done
+}
+
+_docker_read_config() {
+  local output line
+  DOCKER_CONFIG_MIRROR_ORIGINS=()
+  if [[ -L "$DOCKER_DAEMON_CONFIG" ]]; then
+    DOCKER_CONFIG_STATUS="symlink"
+    return 0
+  fi
+  if [[ ! -e "$DOCKER_DAEMON_CONFIG" ]]; then
+    DOCKER_CONFIG_STATUS="missing"
+    return 0
+  fi
+  if [[ ! -f "$DOCKER_DAEMON_CONFIG" || ! -r "$DOCKER_DAEMON_CONFIG" ]]; then
+    DOCKER_CONFIG_STATUS="unreadable"
+    return 0
+  fi
+  if ! output="$(
+    python3 - "$DOCKER_DAEMON_CONFIG" <<'PY'
+import json
+import sys
+from urllib.parse import urlsplit
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as stream:
+        config = json.load(stream)
+    if not isinstance(config, dict):
+        raise ValueError("top-level JSON value must be an object")
+    mirrors = config.get("registry-mirrors", [])
+    if not isinstance(mirrors, list) or any(not isinstance(item, str) for item in mirrors):
+        raise ValueError("registry-mirrors must be an array of strings")
+    print("VALID")
+    for value in mirrors:
+        try:
+            parsed = urlsplit(value)
+            if not parsed.scheme or not parsed.hostname:
+                print("ORIGIN=<invalid-url>")
+                continue
+            host = parsed.hostname.lower()
+            if ":" in host:
+                host = f"[{host}]"
+            if parsed.port is not None:
+                host += f":{parsed.port}"
+            print("ORIGIN=" + parsed.scheme.lower() + "://" + host)
+        except ValueError:
+            print("ORIGIN=<invalid-url>")
+except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+    print("INVALID")
+    raise SystemExit(1)
+PY
+  )"; then
+    DOCKER_CONFIG_STATUS="invalid-json"
+    return 0
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+    VALID) DOCKER_CONFIG_STATUS="valid" ;;
+    ORIGIN=*) DOCKER_CONFIG_MIRROR_ORIGINS+=("${line#ORIGIN=}") ;;
+    *) ;;
+    esac
+  done <<<"$output"
+}
+
+_docker_require_backup_base() {
+  [[ "$DOCKER_BACKUP_BASE" == /* && ! -L "$BACKUP_BASE" && ! -L "$DOCKER_BACKUP_BASE" ]] || {
+    error "Refusing a symlinked Docker backup directory."
+    return "$EXIT_BACKUP"
+  }
+  mkdir -p "$DOCKER_BACKUP_BASE" || return "$EXIT_BACKUP"
+  chmod 0700 "$BACKUP_BASE" "$DOCKER_BACKUP_BASE" || return "$EXIT_BACKUP"
+  [[ "$(realpath -e -- "$DOCKER_BACKUP_BASE" 2>/dev/null)" == "$DOCKER_BACKUP_BASE" ]] || return "$EXIT_BACKUP"
+}
+
+_docker_snapshot_create() {
+  local snapshot existed=false old_umask mode owner group
+  _docker_require_backup_base || return "$EXIT_BACKUP"
+  _docker_validate_config_path || return "$EXIT_BACKUP"
+  old_umask="$(umask)"
+  umask 077
+  snapshot="$(mktemp -d "$DOCKER_BACKUP_BASE/snapshot.XXXXXXXX")" || {
+    umask "$old_umask"
+    return "$EXIT_BACKUP"
+  }
+  printf '%s\n' "$DOCKER_DAEMON_CONFIG" >"$snapshot/target"
+  if [[ -f "$DOCKER_DAEMON_CONFIG" ]]; then
+    existed=true
+    stat -c '%a %u %g' -- "$DOCKER_DAEMON_CONFIG" >"$snapshot/before-stat" || {
+      rm -rf -- "$snapshot"
+      umask "$old_umask"
+      return "$EXIT_BACKUP"
+    }
+    cp -p -- "$DOCKER_DAEMON_CONFIG" "$snapshot/original" || {
+      rm -rf -- "$snapshot"
+      umask "$old_umask"
+      return "$EXIT_BACKUP"
+    }
+    sha256sum "$snapshot/original" | awk '{print $1}' >"$snapshot/before-sha256"
+  fi
+  printf '%s\n' "$existed" >"$snapshot/before-exists"
+  chmod 0600 "$snapshot/"* 2>/dev/null || true
+  umask "$old_umask"
+  printf '%s\n' "$snapshot"
+}
+
+_docker_snapshot_mark_after() {
+  local snapshot="$1"
+  [[ -d "$snapshot" && ! -L "$snapshot" ]] || return "$EXIT_BACKUP"
+  if [[ -f "$DOCKER_DAEMON_CONFIG" && ! -L "$DOCKER_DAEMON_CONFIG" ]]; then
+    printf '%s\n' true >"$snapshot/after-exists"
+    sha256sum "$DOCKER_DAEMON_CONFIG" | awk '{print $1}' >"$snapshot/after-sha256"
+  elif [[ ! -e "$DOCKER_DAEMON_CONFIG" && ! -L "$DOCKER_DAEMON_CONFIG" ]]; then
+    printf '%s\n' false >"$snapshot/after-exists"
+  else
+    return "$EXIT_BACKUP"
+  fi
+  chmod 0600 "$snapshot/"* 2>/dev/null
+}
+
+_docker_restore_snapshot_unlocked() {
+  local snapshot="$1" base target before after current temp mode owner group item state_value
+  _docker_require_backup_base || return "$EXIT_RESTORE"
+  base="$(realpath -e -- "$DOCKER_BACKUP_BASE" 2>/dev/null)" || return "$EXIT_RESTORE"
+  [[ ! -L "$snapshot" ]] || return "$EXIT_RESTORE"
+  snapshot="$(readlink -f -- "$snapshot" 2>/dev/null)" || return "$EXIT_RESTORE"
+  [[ "$snapshot" == "$base/"* && -d "$snapshot" && ! -L "$snapshot" ]] || return "$EXIT_RESTORE"
+  for item in target before-exists after-exists; do
+    [[ -f "$snapshot/$item" && ! -L "$snapshot/$item" ]] || return "$EXIT_RESTORE"
+  done
+  target="$(cat "$snapshot/target")"
+  before="$(cat "$snapshot/before-exists")"
+  after="$(cat "$snapshot/after-exists")"
+  [[ "$target" == "$DOCKER_DAEMON_CONFIG" ]] || return "$EXIT_RESTORE"
+  [[ "$before" == true || "$before" == false ]] || return "$EXIT_RESTORE"
+  [[ "$after" == true || "$after" == false ]] || return "$EXIT_RESTORE"
+  _docker_validate_config_path || return "$EXIT_RESTORE"
+  if [[ "$after" == true ]]; then
+    [[ -f "$DOCKER_DAEMON_CONFIG" && ! -L "$DOCKER_DAEMON_CONFIG" && -f "$snapshot/after-sha256" ]] || return "$EXIT_RESTORE"
+    current="$(sha256sum "$DOCKER_DAEMON_CONFIG" | awk '{print $1}')"
+    [[ "$current" == "$(cat "$snapshot/after-sha256")" ]] || {
+      error "daemon.json changed after this snapshot; refusing to overwrite newer edits."
+      return "$EXIT_RESTORE"
+    }
+  else
+    [[ ! -e "$DOCKER_DAEMON_CONFIG" && ! -L "$DOCKER_DAEMON_CONFIG" ]] || return "$EXIT_RESTORE"
+  fi
+  if [[ "$before" == true ]]; then
+    for item in original before-stat before-sha256; do
+      [[ -f "$snapshot/$item" && ! -L "$snapshot/$item" ]] || return "$EXIT_RESTORE"
+    done
+    [[ "$(sha256sum "$snapshot/original" | awk '{print $1}')" == "$(cat "$snapshot/before-sha256")" ]] || return "$EXIT_RESTORE"
+    IFS=' ' read -r mode owner group <"$snapshot/before-stat" || return "$EXIT_RESTORE"
+    [[ "$mode" =~ ^[0-7]{3,4}$ && "$owner" =~ ^[0-9]+$ && "$group" =~ ^[0-9]+$ ]] || return "$EXIT_RESTORE"
+    temp="$(mktemp "$DOCKER_CONFIG_DIR/.daemon.json.restore.XXXXXXXX")" || return "$EXIT_RESTORE"
+    if cp -- "$snapshot/original" "$temp"; then
+      chown "$owner:$group" "$temp" || {
+        rm -f -- "$temp"
+        return "$EXIT_RESTORE"
+      }
+      chmod "$mode" "$temp" || {
+        rm -f -- "$temp"
+        return "$EXIT_RESTORE"
+      }
+      mv -f -- "$temp" "$DOCKER_DAEMON_CONFIG" || {
+        rm -f -- "$temp"
+        return "$EXIT_RESTORE"
+      }
+    else
+      rm -f -- "$temp"
+      return "$EXIT_RESTORE"
+    fi
+  else
+    rm -f -- "$DOCKER_DAEMON_CONFIG" || return "$EXIT_RESTORE"
+  fi
+  if [[ -f "$DOCKER_STATE_FILE" && ! -L "$DOCKER_STATE_FILE" ]]; then
+    state_value="$(cat "$DOCKER_STATE_FILE")"
+    [[ "$state_value" != "$snapshot" ]] || rm -f -- "$DOCKER_STATE_FILE"
+  fi
+  info "Docker daemon configuration restored from the verified snapshot."
+}
+
+_docker_restore_snapshot() {
+  (
+    local lock_dir
+    _docker_require_root || exit $?
+    _docker_validate_config_path || exit $?
+    lock_dir="$(dirname "$DOCKER_LOCK_FILE")"
+    mkdir -p "$lock_dir" || exit "$EXIT_GENERAL"
+    exec 9>"$DOCKER_LOCK_FILE"
+    flock -n 9 || {
+      error "Another Docker configuration operation is in progress."
+      exit "$EXIT_GENERAL"
+    }
+    _docker_restore_snapshot_unlocked "$1"
+  )
+}
+
+_docker_save_state() {
+  local snapshot="$1" temp
+  _docker_require_backup_base || return "$EXIT_BACKUP"
+  [[ ! -L "$DOCKER_STATE_FILE" && (! -e "$DOCKER_STATE_FILE" || -f "$DOCKER_STATE_FILE") ]] || return "$EXIT_BACKUP"
+  temp="$(mktemp "$DOCKER_BACKUP_BASE/.current-state.XXXXXXXX")" || return "$EXIT_BACKUP"
+  printf '%s\n' "$snapshot" >"$temp"
+  chmod 0600 "$temp" || {
+    rm -f -- "$temp"
+    return "$EXIT_BACKUP"
+  }
+  mv -f -- "$temp" "$DOCKER_STATE_FILE" || {
+    rm -f -- "$temp"
+    return "$EXIT_BACKUP"
+  }
+}
+
+_docker_validate_with_dockerd() {
+  local path="$1"
+  command -v dockerd >/dev/null 2>&1 || {
+    error "dockerd is not installed; refusing to write an unvalidated daemon.json."
+    return "$EXIT_GENERAL"
+  }
+  dockerd --validate --config-file="$path" >/dev/null 2>&1 || {
+    error "dockerd rejected the proposed daemon configuration."
+    return "$EXIT_GENERAL"
+  }
+}
+
+_docker_apply_mirror_unlocked() {
+  local url="$1" merged snapshot temp state_value
+  _docker_require_root || return $?
+  _docker_validate_config_path || return $?
+  _docker_read_config
+  [[ "$DOCKER_CONFIG_STATUS" == valid || "$DOCKER_CONFIG_STATUS" == missing ]] || {
+    error "Existing daemon.json is not a valid JSON object with a registry-mirrors string array; refusing to overwrite it."
+    return "$EXIT_USAGE"
+  }
+  [[ ! -L "$DOCKER_STATE_FILE" ]] || return "$EXIT_BACKUP"
+  [[ ! -e "$DOCKER_STATE_FILE" ]] || {
+    error "A Power APT Boost Docker snapshot is already active. Reset it before configuring another mirror."
+    return "$EXIT_USAGE"
+  }
+  _docker_probe_mirror "$url" || return $?
+  if ! merged="$(
+    python3 - "$DOCKER_DAEMON_CONFIG" "$url" <<'PY'
+import json
+import os
+import sys
+
+path, mirror = sys.argv[1:]
+config = {}
+if os.path.exists(path):
+    with open(path, encoding="utf-8") as stream:
+        config = json.load(stream)
+if not isinstance(config, dict):
+    raise SystemExit(1)
+mirrors = config.get("registry-mirrors", [])
+if not isinstance(mirrors, list) or any(not isinstance(item, str) for item in mirrors):
+    raise SystemExit(1)
+if mirror not in mirrors:
+    mirrors.append(mirror)
+config["registry-mirrors"] = mirrors
+print(json.dumps(config, ensure_ascii=False, indent=2) + "\n", end="")
+PY
+  )"; then
+    error "Could not safely merge registry-mirrors into daemon.json."
+    return "$EXIT_USAGE"
+  fi
+  _print_section_header "DOCKER DAEMON CONFIGURATION PREVIEW"
+  printf 'Docker Engine APT repository: inspected separately; not changed\n'
+  printf 'daemon.json: %s\n' "$DOCKER_DAEMON_CONFIG"
+  printf 'Proposed registry mirror: %s\n' "$(_docker_url_origin_label "$url")"
+  printf 'Existing daemon settings and registry mirrors: preserved\n'
+  printf 'Daemon restart: NOT performed; use --docker-restart as a separate action\n'
+  if [[ "$DRY_RUN" == true ]]; then
+    printf 'Dry run: no file, backup or service state changed.\n'
+    return 0
+  fi
+  _confirm_action "Write the merged daemon.json without restarting Docker?" || return "$EXIT_CANCELLED"
+  snapshot="$(_docker_snapshot_create)" || return "$EXIT_BACKUP"
+  temp="$(mktemp "$DOCKER_CONFIG_DIR/.daemon.json.pab.XXXXXXXX")" || return "$EXIT_BACKUP"
+  if ! printf '%s' "$merged" >"$temp"; then
+    rm -f -- "$temp"
+    rm -rf -- "$snapshot"
+    return "$EXIT_BACKUP"
+  fi
+  if [[ -f "$DOCKER_DAEMON_CONFIG" ]]; then
+    chown --reference="$DOCKER_DAEMON_CONFIG" "$temp" && chmod --reference="$DOCKER_DAEMON_CONFIG" "$temp" || {
+      rm -f -- "$temp"
+      rm -rf -- "$snapshot"
+      return "$EXIT_BACKUP"
+    }
+  else
+    chmod 0644 "$temp" || {
+      rm -f -- "$temp"
+      rm -rf -- "$snapshot"
+      return "$EXIT_BACKUP"
+    }
+  fi
+  if ! _docker_validate_with_dockerd "$temp"; then
+    rm -f -- "$temp"
+    rm -rf -- "$snapshot"
+    return "$EXIT_GENERAL"
+  fi
+  mv -f -- "$temp" "$DOCKER_DAEMON_CONFIG" || {
+    rm -f -- "$temp"
+    rm -rf -- "$snapshot"
+    return "$EXIT_BACKUP"
+  }
+  if ! _docker_validate_with_dockerd "$DOCKER_DAEMON_CONFIG" || ! _docker_snapshot_mark_after "$snapshot"; then
+    error "Post-write validation failed; restoring daemon.json automatically."
+    _docker_restore_snapshot_unlocked "$snapshot" || return "$EXIT_RESTORE"
+    return "$EXIT_GENERAL"
+  fi
+  if ! _docker_save_state "$snapshot"; then
+    error "Could not save Docker rollback state; restoring the previous daemon.json."
+    _docker_restore_snapshot_unlocked "$snapshot" || return "$EXIT_RESTORE"
+    return "$EXIT_BACKUP"
+  fi
+  printf 'Snapshot: %s\n' "$snapshot"
+  info "Docker registry mirror saved. Docker was not restarted."
+}
+
+_docker_apply_mirror() {
+  (
+    local lock_dir
+    _docker_require_root || exit $?
+    _docker_validate_config_path || exit $?
+    lock_dir="$(dirname "$DOCKER_LOCK_FILE")"
+    mkdir -p "$lock_dir" || exit "$EXIT_GENERAL"
+    exec 9>"$DOCKER_LOCK_FILE"
+    flock -n 9 || {
+      error "Another Docker configuration operation is in progress."
+      exit "$EXIT_GENERAL"
+    }
+    _docker_apply_mirror_unlocked "$1"
+  )
+}
+
+_docker_reset_mirror() {
+  (
+    local lock_dir snapshot
+    _docker_require_root || exit $?
+    _docker_validate_config_path || exit $?
+    _docker_require_backup_base || exit $?
+    [[ -f "$DOCKER_STATE_FILE" && ! -L "$DOCKER_STATE_FILE" ]] || {
+      error "No app-managed Docker mirror configuration exists to reset."
+      exit "$EXIT_USAGE"
+    }
+    snapshot="$(cat "$DOCKER_STATE_FILE")"
+    lock_dir="$(dirname "$DOCKER_LOCK_FILE")"
+    mkdir -p "$lock_dir" || exit "$EXIT_GENERAL"
+    exec 9>"$DOCKER_LOCK_FILE"
+    flock -n 9 || {
+      error "Another Docker configuration operation is in progress."
+      exit "$EXIT_GENERAL"
+    }
+    _docker_restore_snapshot_unlocked "$snapshot"
+  )
+}
+
+_docker_restart_daemon() {
+  _docker_require_root || return $?
+  command -v systemctl >/dev/null 2>&1 || {
+    error "systemctl is not available; Docker was not restarted."
+    return "$EXIT_GENERAL"
+  }
+  systemctl is-active --quiet docker || {
+    error "Docker service is not active; refusing to start or restart it implicitly."
+    return "$EXIT_GENERAL"
+  }
+  _confirm_action "RESTART Docker now? Running workloads may be interrupted. This is separate from daemon.json configuration." || return "$EXIT_CANCELLED"
+  if systemctl restart docker; then
+    info "Docker daemon restart completed."
+  else
+    error "Docker daemon restart failed. Inspect systemctl status docker and journalctl -u docker."
+    return "$EXIT_GENERAL"
+  fi
+}
+
+_docker_status_report() {
+  local docker_version="not installed" service_status="unknown" origins_json="" first=true origin
+  _docker_scan_apt_sources
+  _docker_read_config
+  if command -v dockerd >/dev/null 2>&1; then
+    docker_version="$(dockerd --version 2>/dev/null | head -n 1 || printf '%s' "installed (version unavailable)")"
+  fi
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active --quiet docker; then service_status="active"; else service_status="inactive-or-unavailable"; fi
+  fi
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    for origin in "${DOCKER_CONFIG_MIRROR_ORIGINS[@]}"; do
+      [[ "$first" == true ]] || origins_json+=","
+      origins_json+="$(_json_quote "$origin")"
+      first=false
+    done
+    printf '{"schema_version":1,"command":"docker-status","docker_engine_apt":{"source_records":%s,"suites":[' "$DOCKER_APT_SOURCE_COUNT"
+    first=true
+    for origin in "${DOCKER_APT_SOURCE_SUITES[@]}"; do
+      [[ "$first" == true ]] || printf ','
+      printf '%s' "$(_json_quote "$origin")"
+      first=false
+    done
+    printf ']},"daemon":{"binary":%s,"service":%s,"config_status":%s,"registry_mirrors":[%s]}}\n' \
+      "$(_json_quote "$docker_version")" "$(_json_quote "$service_status")" "$(_json_quote "$DOCKER_CONFIG_STATUS")" "$origins_json"
+    return 0
+  fi
+  _print_section_header "DOCKER / OCI STATUS"
+  printf 'Docker Engine APT repository records: %s\n' "$DOCKER_APT_SOURCE_COUNT"
+  if (("${#DOCKER_APT_SOURCE_SUITES[@]}" > 0)); then
+    printf 'Docker APT suites: %s\n' "${DOCKER_APT_SOURCE_SUITES[*]}"
+  fi
+  printf 'Docker daemon binary: %s\n' "$docker_version"
+  printf 'Docker service: %s\n' "$service_status"
+  printf 'daemon.json status: %s\n' "$DOCKER_CONFIG_STATUS"
+  if (("${#DOCKER_CONFIG_MIRROR_ORIGINS[@]}" > 0)); then
+    printf 'Configured OCI registry mirror origins:\n'
+    for origin in "${DOCKER_CONFIG_MIRROR_ORIGINS[@]}"; do printf '  - %s\n' "$origin"; done
+  else
+    printf 'Configured OCI registry mirrors: none detected\n'
+  fi
+  printf 'Built-in Docker Hub cache candidate: %s\n' "$DOCKER_HUB_CACHE_MIRROR"
+  msg "Docker Engine APT source records and OCI image registry mirrors are separate settings."
+  msg "mirror.gcr.io is a partial cache of frequently requested public Docker Hub images, not a complete mirror."
+}
+
+_docker_catalog_report() {
+  _print_section_header "DOCKER HUB OCI MIRROR CATALOG"
+  printf 'Candidate: %s\n' "$DOCKER_HUB_CACHE_MIRROR"
+  printf 'Type: Google-managed pull-through cache for frequently requested public Docker Hub images\n'
+  printf 'Coverage: partial; a cache miss falls back to Docker Hub when the client is configured accordingly\n'
+  printf 'Probe: --docker-test-mirror %s\n' "$DOCKER_HUB_CACHE_MIRROR"
+  msg "Registry V2 endpoint reachability does not prove that an arbitrary endpoint is configured as a pull-through cache."
+}
+
+_run_docker_manager() {
+  local url=""
+  case "$DOCKER_ACTION" in
+  status) _docker_status_report ;;
+  catalog) _docker_catalog_report ;;
+  test)
+    url="$(_docker_validate_mirror_url "$DOCKER_MIRROR_URL")" || {
+      error "Mirror URL must be an HTTPS origin without credentials, path, query or fragment."
+      return "$EXIT_USAGE"
+    }
+    _docker_probe_mirror "$url"
+    ;;
+  set)
+    url="$(_docker_validate_mirror_url "$DOCKER_MIRROR_URL")" || {
+      error "Mirror URL must be an HTTPS origin without credentials, path, query or fragment."
+      return "$EXIT_USAGE"
+    }
+    _docker_apply_mirror "$url"
+    ;;
+  reset) _docker_reset_mirror ;;
+  restore)
+    _confirm_action "Restore Docker daemon configuration from snapshot $DOCKER_RESTORE_PATH?" || return "$EXIT_CANCELLED"
+    _docker_restore_snapshot "$DOCKER_RESTORE_PATH"
+    ;;
+  restart) _docker_restart_daemon ;;
+  *)
+    error "No Docker action was selected."
+    return "$EXIT_USAGE"
+    ;;
+  esac
+}
+
 # ─── Python Package Source Management ────────────────────────────────────────
+
 
 _python_validate_index_url() {
   python3 - "$1" <<'PY'

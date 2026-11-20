@@ -111,7 +111,8 @@ jobs:
               "$RELEASE_TAG" "$SCRIPT_NAME" "$SCRIPT_NAME" "$SCRIPT_NAME" "$SCRIPT_NAME"
           } > RELEASE_BODY.md
           grep -Fq "$SCRIPT_NAME" RELEASE_BODY.md
-          test -s "$SCRIPT_NAME" "$SCRIPT_NAME.sha256"
+          test -s "$SCRIPT_NAME"
+          test -s "$SCRIPT_NAME.sha256"
           sha256sum -c "$SCRIPT_NAME.sha256"
 
       - name: Create GitHub Release

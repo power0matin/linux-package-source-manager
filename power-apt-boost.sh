@@ -2175,10 +2175,10 @@ _node_registry_get() {
     _node_yarn_flavor || return 1
     if [[ "$NODE_YARN_FLAVOR" == classic ]]; then
       if [[ "$scope" == project ]]; then (cd "$project" && yarn config get registry) 2>/dev/null
-      else yarn config get registry --global 2>/dev/null; fi
+      else (cd "$HOME" && yarn config get registry) 2>/dev/null; fi
     else
       if [[ "$scope" == project ]]; then (cd "$project" && yarn config get npmRegistryServer) 2>/dev/null
-      else yarn config get npmRegistryServer --home 2>/dev/null; fi
+      else (cd "$HOME" && yarn config get npmRegistryServer) 2>/dev/null; fi
     fi
     ;;
   *) return 1 ;;
@@ -2253,17 +2253,9 @@ try:
     if not valid_https(tarball_url):
         raise ValueError("tarball is not credential-free HTTPS")
     head = Request(tarball_url, method="HEAD", headers={"User-Agent":"Power-APT-Boost/3.0"})
-    try:
-        with opener.open(head, timeout=timeout) as response:
-            final_tarball_url, status = response.geturl(), response.status
-    except HTTPError as exc:
-        if exc.code not in (405, 501):
-            raise
-        ranged = Request(tarball_url, headers={"Range":"bytes=0-0","User-Agent":"Power-APT-Boost/3.0"})
-        with opener.open(ranged, timeout=timeout) as response:
-            final_tarball_url, status = response.geturl(), response.status
-            response.read(1)
-    if not valid_https(final_tarball_url) or not 200 <= int(status) < 400:
+    with opener.open(head, timeout=timeout) as response:
+        final_tarball_url, status = response.geturl(), response.status
+    if not valid_https(final_tarball_url) or not 200 <= int(status) < 300:
         raise ValueError("tarball endpoint failed")
     integrity = dist.get("integrity", "") if isinstance(dist, dict) else ""
     print("METADATA_HOST=" + host(final_metadata_url))

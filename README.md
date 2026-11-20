@@ -234,7 +234,7 @@ Node.js registry URLs must use HTTPS and cannot contain embedded credentials, qu
 
 ### Docker Engine and OCI registries
 
-Power APT Boost treats the Docker Engine **APT repository** and Docker Hub **OCI image registry mirrors** as separate systems. The first provides Docker Engine packages through APT; the second changes where the daemon looks when pulling container images.
+Power APT Boost treats the Docker Engine **APT repository** and Docker Hub **OCI image registry mirrors** as separate systems. The first provides Docker Engine packages through APT; the second changes where the daemon looks when pulling container images. This manager currently targets the system/rootful Linux daemon at `/etc/docker/daemon.json`; rootless Docker and Docker Desktop are outside this phase.
 
 Inspect the current setup without changing it:
 
@@ -274,7 +274,7 @@ sudo bash power-apt-boost.sh --docker-restore /var/backups/power-apt-boost/docke
 
 The built-in `mirror.gcr.io` candidate is Google's cache of frequently requested public Docker Hub images, not a complete mirror. A cache miss may fall back to Docker Hub. Passing a Registry V2 endpoint probe confirms protocol compatibility only; it does not prove that an arbitrary endpoint is configured as a pull-through cache.
 
-References: [Docker daemon configuration](https://docs.docker.com/reference/cli/dockerd/), [Docker Hub registry mirrors](https://docs.docker.com/docker-hub/image-library/mirror/), [Docker Registry API V2](https://github.com/distribution/distribution/blob/main/docs/content/spec/api.md).
+References: [Docker daemon configuration and validation](https://docs.docker.com/reference/cli/dockerd/), [Google Artifact Registry cached Docker Hub images](https://docs.cloud.google.com/artifact-registry/docs/pull-cached-dockerhub-images), [Docker Registry API V2](https://github.com/distribution/distribution/blob/main/docs/content/spec/api.md).
 
 ### Apply a mirror
 

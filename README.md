@@ -500,11 +500,11 @@ If you have third-party APT sources in `/etc/apt/sources.list`, Power APT Boost 
 
 | Ubuntu Version | Current CI coverage |
 |---------------|---------------------|
-| 24.04 LTS Noble | 145 offline tests |
-| 22.04 LTS Jammy | 145 offline tests |
-| 20.04 LTS Focal | 145 offline tests |
+| 24.04 LTS Noble | 186 offline tests (includes TOML edit/restore coverage) |
+| 22.04 LTS Jammy | 168 offline tests (TOML parser unavailable path) |
+| 20.04 LTS Focal | 168 offline tests (TOML parser unavailable path) |
 
-CI also runs ShellCheck and shfmt. Offline tests cover source parsing, inventory, backup/restore, config ownership, proxy validation, architecture-specific archive selection, rollback and mirror compatibility. Live mirror connectivity, real archive-signature checks and external DNS/TLS availability are not CI prerequisites; network diagnostics are opt-in at runtime. [Latest Phase 4 CI run](https://github.com/power0matin/power-apt-boost/actions/runs/44633115521). Requires Bash 4.0+ and one of: curl, wget.
+CI also runs ShellCheck and shfmt. Offline tests cover APT parsing, inventory, backup/restore, config ownership, proxy validation, architecture-specific archive selection, rollback, mirror compatibility, Python index validation, PEP 668, private-source preservation and snapshot conflict handling. TOML edit/restore paths run where Python 3.11+ `tomllib` or an existing `tomli` is available; older images verify fail-closed behavior. Live public mirror reachability, real archive-signature checks, external DNS/TLS and live PyPI mirror/artifact reachability are not CI prerequisites. [Latest Phase 5 CI run](https://github.com/power0matin/power-apt-boost/actions/runs/44647360924). Requires Bash 4.0+ and one of: curl, wget.
 
 ## Security
 

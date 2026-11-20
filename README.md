@@ -130,7 +130,7 @@ sudo bash power-apt-boost.sh --status --json
 sudo bash power-apt-boost.sh --doctor --json
 ```
 
---status` reports the detected OS, APT source files, current managed mirror and available backups. `--doctor` checks local dependencies, permissions, the Ubuntu archive keyring and backup visibility. These commands do not change the system.
+`--status` reports the detected OS, APT source files, current managed mirror and available backups. `--doctor` checks local dependencies, permissions, the Ubuntu archive keyring and backup visibility. These commands do not change the system.
 
 ### Python package sources
 

@@ -86,6 +86,25 @@ test_cli() {
   assert_contains "--refresh-catalog" "$(bash "$SCRIPT" --help 2>&1)" "help documents mirror index refresh"
   assert_contains "--official-only" "$(bash "$SCRIPT" --help 2>&1)" "help documents official-only benchmark profile"
   assert_contains "--add-mirror" "$(bash "$SCRIPT" --help 2>&1)" "help documents custom mirror management"
+  assert_contains "--python-status" "$(bash "$SCRIPT" --help 2>&1)" "help documents Python diagnostics"
+  assert_contains "--python-test-index" "$(bash "$SCRIPT" --help 2>&1)" "help documents Python index verification"
+  assert_contains "--python-set-index" "$(bash "$SCRIPT" --help 2>&1)" "help documents Python index configuration"
+  code=0
+  bash "$SCRIPT" --python-client unknown --python-status >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "unknown Python client is rejected"
+  code=0
+  bash "$SCRIPT" --python-scope invalid --python-status >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "unknown Python scope is rejected"
+  code=0
+  bash "$SCRIPT" --python-test-index http://pypi.org/simple/ >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "insecure HTTP Python index is rejected before network access"
+  code=0
+  bash "$SCRIPT" --python-status --doctor >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Python command cannot be combined with APT doctor"
+  output="$(bash "$SCRIPT" --python-status --json 2>&1)"
+  python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["schema_version"] == 1 and d["command"] == "python-status" and "environment_overrides" in d' "$output"
+  assert_exit_code 0 "$?" "Python status JSON follows its schema"
+
 
   code=0
   bash "$SCRIPT" </dev/null >/dev/null 2>&1 || code=$?
@@ -828,6 +847,108 @@ test_benchmark_selection_and_read_only_safety() {
   BENCH_WORKERS="$original_workers"
 }
 
+
+test_python_manager_safety() {
+  local valid output code path original_xdg xdg_was_set original_pip_index pip_index_was_set
+  local original_pip_config pip_config_was_set snapshot before after
+  valid="$(_python_validate_index_url "https://pypi.org/simple")"
+  assert_equal "https://pypi.org/simple/" "$valid" "Python index URL is normalized"
+  code=0
+  _python_validate_index_url "http://pypi.org/simple/" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Python index rejects insecure HTTP"
+  code=0
+  _python_validate_index_url "https://user:secret@example.com/simple/" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Python index rejects embedded credentials"
+  code=0
+  _python_validate_index_url "https://example.com/packages/" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Python index requires a simple endpoint"
+  code=0
+  _python_validate_index_url "https://example.com/simple/?token=secret" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Python index rejects query strings"
+  output="$(_python_url_label "https://user:secret@example.com:8443/private/simple/")"
+  assert_equal "https://example.com:8443/private/simple/" "$output" "Python index display masks credentials"
+  POWER_APT_BOOST_TEST_EXTERNALLY_MANAGED=true
+  code=0
+  _python_is_externally_managed || code=$?
+  assert_exit_code 0 "$code" "PEP 668 guard recognizes externally-managed test marker"
+  unset POWER_APT_BOOST_TEST_EXTERNALLY_MANAGED
+
+  original_xdg="${XDG_STATE_HOME-}"
+  xdg_was_set="${XDG_STATE_HOME+x}"
+  original_pip_index="${PIP_INDEX_URL-}"
+  pip_index_was_set="${PIP_INDEX_URL+x}"
+  original_pip_config="${PIP_CONFIG_FILE-}"
+  pip_config_was_set="${PIP_CONFIG_FILE+x}"
+  export XDG_STATE_HOME="${_TEST_ROOT}/python-state"
+  unset PIP_INDEX_URL PIP_CONFIG_FILE
+
+  FAKE_PIP_INDEX="https://new.example/simple/"
+  _python_pip_get() { printf '%s' "$FAKE_PIP_INDEX"; }
+  _python_pip_set() { FAKE_PIP_INDEX="$2"; }
+  _python_pip_unset() { FAKE_PIP_INDEX=""; }
+
+  snapshot="$(_python_snapshot_create pip user global.index-url true "https://old.example/simple/")"
+  _python_snapshot_mark_after "$snapshot" pip "" "$FAKE_PIP_INDEX"
+  FAKE_PIP_INDEX="https://manually-changed.example/simple/"
+  code=0
+  _python_restore_snapshot "$snapshot" >/dev/null 2>&1 || code=$?
+  assert_exit_code 8 "$code" "pip snapshot refuses to overwrite a manually changed value"
+  assert_equal "https://manually-changed.example/simple/" "$FAKE_PIP_INDEX" "pip conflict leaves the newer value untouched"
+
+  FAKE_PIP_INDEX="https://new.example/simple/"
+  snapshot="$(_python_snapshot_create pip user global.index-url true "https://old.example/simple/")"
+  _python_snapshot_mark_after "$snapshot" pip "" "$FAKE_PIP_INDEX"
+  code=0
+  _python_restore_snapshot "$snapshot" >/dev/null 2>&1 || code=$?
+  assert_exit_code 0 "$code" "pip snapshot restores a matching managed value"
+  assert_equal "https://old.example/simple/" "$FAKE_PIP_INDEX" "pip snapshot restores the prior index"
+
+  path="${_TEST_ROOT}/python-toml/pyproject.toml"
+  mkdir -p "$(dirname "$path")"
+  printf '[project]\nname = "fixture-project"\n' >"$path"
+  before="$(sha256sum "$path")"
+  if python3 -c 'import tomllib' >/dev/null 2>&1 || python3 -c 'import tomli' >/dev/null 2>&1; then
+    output="$(_python_toml_edit preview uv project "$path" "https://pypi.org/simple/" "pab-test" supplemental)"
+    assert_contains "BEGIN POWER APT BOOST MANAGED PYTHON SOURCE" "$output" "uv preview displays a managed source block"
+    after="$(sha256sum "$path")"
+    assert_equal "$before" "$after" "uv preview leaves the project file unchanged"
+
+    _python_toml_edit write uv project "$path" "https://pypi.org/simple/" "pab-test" supplemental >/dev/null
+    assert_file_contains "$path" "[[tool.uv.index]]" "uv project source is written to the correct TOML table"
+    assert_file_contains "$path" 'name = "fixture-project"' "uv edit preserves unrelated project metadata"
+    code=0
+    _python_toml_edit write uv project "$path" "https://other.example/simple/" "pab-test" supplemental >/dev/null 2>&1 || code=$?
+    assert_exit_code 2 "$code" "uv refuses a duplicate managed index/source name"
+
+    _python_toml_edit remove uv project "$path" "" "pab-test" supplemental >/dev/null
+    assert_file_contains "$path" 'name = "fixture-project"' "uv reset preserves unrelated TOML"
+    code=0
+    grep -q "BEGIN POWER APT BOOST MANAGED PYTHON SOURCE" "$path" || code=1
+    assert_exit_code 1 "$code" "uv reset removes only the managed source block"
+
+    path="${_TEST_ROOT}/python-toml/poetry-pyproject.toml"
+    printf '[tool.poetry]\nname = "fixture-poetry"\n' >"$path"
+    _python_toml_edit write poetry project "$path" "https://pypi.org/simple/" "pab-test" supplemental >/dev/null
+    assert_file_contains "$path" 'priority = "supplemental"' "Poetry source uses the supplemental priority"
+    assert_file_contains "$path" 'name = "fixture-poetry"' "Poetry edit preserves existing project metadata"
+    _python_toml_edit remove poetry project "$path" "" "pab-test" supplemental >/dev/null
+    code=0
+    grep -q "BEGIN POWER APT BOOST MANAGED PYTHON SOURCE" "$path" || code=1
+    assert_exit_code 1 "$code" "Poetry reset removes the app-managed source block"
+  else
+    code=0
+    _python_toml_edit preview uv project "$path" "https://pypi.org/simple/" "pab-test" supplemental >/dev/null 2>&1 || code=$?
+    assert_exit_code 2 "$code" "TOML editing fails closed when no parser is installed"
+    after="$(sha256sum "$path")"
+    assert_equal "$before" "$after" "unsupported TOML parser leaves the project file unchanged"
+  fi
+
+  if [[ "$pip_index_was_set" == x ]]; then export PIP_INDEX_URL="$original_pip_index"; else unset PIP_INDEX_URL; fi
+  if [[ "$pip_config_was_set" == x ]]; then export PIP_CONFIG_FILE="$original_pip_config"; else unset PIP_CONFIG_FILE; fi
+  if [[ "$xdg_was_set" == x ]]; then export XDG_STATE_HOME="$original_xdg"; else unset XDG_STATE_HOME; fi
+  unset -f _python_pip_get _python_pip_set _python_pip_unset
+}
+
 main() {
   printf '\nPower APT Boost — Offline Test Suite\n'
   printf '%s\n' '===================================='
@@ -836,6 +957,7 @@ main() {
   test_probe_parser_and_list_criteria
   test_catalog_and_release_metadata
   test_benchmark_selection_and_read_only_safety
+  test_python_manager_safety
   printf '\nResults: %d passed, %d failed, %d total\n' "$_tests_passed" "$_tests_failed" "$_tests_run"
   [[ "$_tests_failed" -eq 0 ]]
 }

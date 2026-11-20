@@ -2150,10 +2150,15 @@ _python_restore_snapshot() {
   if [[ "$before" == true ]]; then
     [[ -f "$snapshot/original" && ! -L "$snapshot/original" ]] || return "$EXIT_RESTORE"
     temp="$(mktemp "$(dirname "$target")/.pab-restore.XXXXXXXX")" || return "$EXIT_RESTORE"
-    cp -p -- "$snapshot/original" "$temp" && mv -f -- "$temp" "$target" || {
+    if cp -p -- "$snapshot/original" "$temp"; then
+      if ! mv -f -- "$temp" "$target"; then
+        rm -f -- "$temp"
+        return "$EXIT_RESTORE"
+      fi
+    else
       rm -f -- "$temp"
       return "$EXIT_RESTORE"
-    }
+    fi
   else
     rm -f -- "$target" || return "$EXIT_RESTORE"
   fi
@@ -3313,10 +3318,10 @@ _parse_args() {
     --python-status) PYTHON_REQUESTED=true; PYTHON_ACTION=status; shift ;;
     --python-test-index)
       [[ -n "${2:-}" ]] || die "Option $1 requires an index URL." "$EXIT_USAGE"
-      PYTHON_REQUESTED=true; PYTHON_ACTION=test; PYTHON_INDEX_URL="$2"; shift 2 ;;
+      PYTHON_REQUESTED=true; PYTHON_ACTION="test"; PYTHON_INDEX_URL="$2"; shift 2 ;;
     --python-set-index)
       [[ -n "${2:-}" ]] || die "Option $1 requires an index URL." "$EXIT_USAGE"
-      PYTHON_REQUESTED=true; PYTHON_ACTION=set; PYTHON_INDEX_URL="$2"; shift 2 ;;
+      PYTHON_REQUESTED=true; PYTHON_ACTION="set"; PYTHON_INDEX_URL="$2"; shift 2 ;;
     --python-reset-index) PYTHON_REQUESTED=true; PYTHON_ACTION=reset; shift ;;
     --python-restore)
       [[ -n "${2:-}" ]] || die "Option $1 requires a snapshot path." "$EXIT_USAGE"
@@ -4094,7 +4099,7 @@ _menu_python() {
       ;;
     pip | uv | poetry)
       PYTHON_CLIENT="$choice"
-      PYTHON_ACTION=set
+      PYTHON_ACTION="set"
       PYTHON_INDEX_URL="$(_menu_input "Index URL" "HTTPS index ending in /simple/" "")" || continue
       PYTHON_SCOPE=auto
       PYTHON_PRIORITY=supplemental

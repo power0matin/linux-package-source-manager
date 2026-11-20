@@ -1541,11 +1541,18 @@ PY
     return "$EXIT_USAGE"
   }
   YES=false
+  _is_interactive() { return 1; }
   code=0
   _docker_restart_daemon >/dev/null 2>&1 || code=$?
-  assert_exit_code 10 "$code" "Docker restart cancellation requires explicit approval"
+  assert_exit_code 2 "$code" "Non-interactive Docker restart requires explicit --yes"
   [[ ! -e "$restart_log" ]] && code=0 || code=1
   assert_exit_code 0 "$code" "Unapproved Docker restart never calls systemctl restart"
+  _is_interactive() { return 0; }
+  code=0
+  printf 'n\n' | _docker_restart_daemon >/dev/null 2>&1 || code=$?
+  assert_exit_code 10 "$code" "Interactive Docker restart can be declined"
+  [[ ! -e "$restart_log" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "Declined Docker restart never calls systemctl restart"
   YES=true
   code=0
   _docker_restart_daemon >/dev/null 2>&1 || code=$?

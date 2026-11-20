@@ -1517,8 +1517,10 @@ PY
     *) return 1 ;;
     esac
   }
-  _is_interactive() { return 1; }
-  unset -f _confirm_action
+  _confirm_action() {
+    [[ "$YES" == true ]] && return 0
+    return "$EXIT_USAGE"
+  }
   YES=false
   code=0
   _docker_restart_daemon >/dev/null 2>&1 || code=$?
@@ -1531,7 +1533,7 @@ PY
   assert_exit_code 0 "$code" "Explicitly approved Docker restart is executed"
   assert_file_contains "$restart_log" "restart docker" "Docker restart uses the docker service unit"
 
-  unset -f systemctl _is_interactive _docker_probe_mirror dockerd
+  unset -f systemctl _docker_probe_mirror dockerd
   unset -f _confirm_action
   DOCKER_REQUESTED=false DOCKER_ACTION="" DOCKER_MIRROR_URL="" DOCKER_RESTORE_PATH=""
   DOCKER_TEST_DOCKERD_FAIL=false

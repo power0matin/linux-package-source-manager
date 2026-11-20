@@ -83,7 +83,7 @@ _SCRIPT_NAME="${BASH_SOURCE[0]}"
 set -u
 if [[ "$_SCRIPT_NAME" == "bash" ]] || [[ "$_SCRIPT_NAME" == "/usr/bin/bash" ]]; then
   _SCRIPT_NAME="linux-package-source-manager.sh"
-elif [[ "$_SCRIPT_NAME" == *"power-apt-boost"* ]]; then
+elif [[ "$_SCRIPT_NAME" == *"linux-package-source-manager"* || "$_SCRIPT_NAME" == *"power-apt-boost"* ]]; then
   _SCRIPT_NAME="$(basename "$_SCRIPT_NAME")"
 fi
 

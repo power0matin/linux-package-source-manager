@@ -19,7 +19,7 @@ IFS=$'\n\t'
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 readonly APP_NAME="Linux Package Source Manager"
-readonly APP_VERSION="3.0.1"
+readonly APP_VERSION="3.0.2"
 readonly APP_SLUG="power-apt-boost"
 readonly APP_AUTHOR="Matin Shahabadi"
 readonly APP_GITHUB="https://github.com/power0matin/linux-package-source-manager"
@@ -908,8 +908,10 @@ _validate_release_metadata() {
     return 1
   fi
   if ((now - release_epoch > CATALOG_MAX_RELEASE_AGE)); then
-    printf 'invalid|stale_release_metadata|stale\n'
-    return 1
+    if [[ "$expected_suite" != "$expected_codename" || -n "$valid_until" ]]; then
+      printf 'invalid|stale_release_metadata|stale\n'
+      return 1
+    fi
   fi
 
   if [[ -n "$valid_until" ]]; then
@@ -924,7 +926,11 @@ _validate_release_metadata() {
     printf 'valid|ok|valid-until\n'
     return 0
   fi
-  printf 'valid|ok|not-declared\n'
+  if [[ "$expected_suite" == "$expected_codename" ]]; then
+    printf 'valid|ok|static-suite-no-valid-until\n'
+  else
+    printf 'valid|ok|not-declared\n'
+  fi
 }
 
 _same_mirror_origin() {

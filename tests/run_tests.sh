@@ -81,7 +81,7 @@ test_cli() {
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"
-  assert_contains "3.0.1" "$output" "version matches script version"
+  assert_contains "3.0.2" "$output" "version matches script version"
   assert_contains "--menu" "$(bash "$SCRIPT" --help 2>&1)" "help documents interactive menu"
   assert_contains "--doctor" "$(bash "$SCRIPT" --help 2>&1)" "help documents doctor command"
   assert_contains "--yes" "$(bash "$SCRIPT" --help 2>&1)" "help documents explicit non-interactive confirmation"
@@ -826,6 +826,26 @@ EOF
   sed "s/^Valid-Until:.*/Valid-Until: $(date -u -d '1 day ago' -R)/" "$body" >"${body}.expired"
   output="$(_validate_release_metadata "${body}.expired" "noble" "noble-updates" 2>/dev/null || true)"
   assert_contains "invalid|expired_release_metadata|expired" "$output" "expired Valid-Until metadata is rejected"
+
+  cat >"${body}.static-main" <<'EOF'
+Origin: Ubuntu
+Label: Ubuntu
+Suite: noble
+Codename: noble
+Date: Thu, 25 Apr 2024 15:10:33 UTC
+EOF
+  output="$(_validate_release_metadata "${body}.static-main" "noble" "noble")"
+  assert_contains "valid|ok|static-suite-no-valid-until" "$output" "immutable Ubuntu base suite without Valid-Until remains valid after initial release"
+
+  cat >"${body}.stale-dynamic" <<EOF
+Origin: Ubuntu
+Label: Ubuntu
+Suite: noble-updates
+Codename: noble
+Date: $(date -u -d '9 days ago' -R)
+EOF
+  output="$(_validate_release_metadata "${body}.stale-dynamic" "noble" "noble-updates" 2>/dev/null || true)"
+  assert_contains "invalid|stale_release_metadata|stale" "$output" "dynamic Ubuntu updates suite without Valid-Until is still rejected when stale"
 
   assert_equal "https://example.com/ubuntu" "$(_validate_mirror_url "https://example.com/ubuntu/")" "mirror URL normalization strips trailing slash"
   code=0

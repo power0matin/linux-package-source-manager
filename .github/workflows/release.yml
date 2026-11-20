@@ -110,7 +110,7 @@ jobs:
           ## Installation
 
           ```bash
-          curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/${RELEASE_TAG}/power-apt-boost.sh | sudo bash
+          curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/${RELEASE_TAG}/power-apt-boost.sh | sudo bash -s -- --yes
           ```
 
           ## Verify
@@ -126,7 +126,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "Power APT Boost ${{ steps.version.outputs.tag }}"
+          name: "Linux Package Source Manager ${{ steps.version.outputs.tag }}"
           body_path: RELEASE_BODY.md
           files: |
             power-apt-boost.sh

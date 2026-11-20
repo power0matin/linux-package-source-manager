@@ -1904,7 +1904,6 @@ DRYRUN
   fi
 }
 
-
 # ─── Node.js Registry Management ──────────────────────────────────────────────
 
 _node_backup_base() {
@@ -1933,7 +1932,10 @@ PY
 }
 
 _node_url_label() {
-  [[ -n "$1" ]] || { printf '%s' "not configured"; return 0; }
+  [[ -n "$1" ]] || {
+    printf '%s' "not configured"
+    return 0
+  }
   python3 - "$1" <<'PY'
 import sys
 from urllib.parse import urlsplit
@@ -1964,9 +1966,12 @@ _node_yarn_flavor() {
   version="${version#v}"
   major="${version%%.*}"
   [[ "$major" =~ ^[0-9]+$ ]] || return 1
-  if ((major == 1)); then NODE_YARN_FLAVOR=classic
-  elif ((major >= 2)); then NODE_YARN_FLAVOR=berry
-  else return 1
+  if ((major == 1)); then
+    NODE_YARN_FLAVOR=classic
+  elif ((major >= 2)); then
+    NODE_YARN_FLAVOR=berry
+  else
+    return 1
   fi
 }
 
@@ -1986,7 +1991,10 @@ _node_override_names() {
   for name in npm_config_registry NPM_CONFIG_REGISTRY npm_config_userconfig NPM_CONFIG_USERCONFIG \
     npm_config_globalconfig NPM_CONFIG_GLOBALCONFIG pnpm_config_registry PNPM_CONFIG_REGISTRY \
     YARN_NPM_REGISTRY_SERVER YARN_RC_FILENAME YARN_IGNORE_PATH; do
-    if [[ -n "${!name+x}" ]]; then printf '%s\n' "$name"; found=true; fi
+    if [[ -n "${!name+x}" ]]; then
+      printf '%s\n' "$name"
+      found=true
+    fi
   done
   [[ "$found" == true ]] || printf '%s\n' none
 }
@@ -2053,7 +2061,10 @@ _node_resolve_target() {
     *) raw="$HOME/$raw" ;;
     esac
     base="$(dirname "$raw")"
-    [[ ! -L "$base" ]] || { error "Refusing a symlinked Node.js config directory."; return "$EXIT_USAGE"; }
+    [[ ! -L "$base" ]] || {
+      error "Refusing a symlinked Node.js config directory."
+      return "$EXIT_USAGE"
+    }
     NODE_TARGET_FILE="$(realpath -m -- "$base")/$(basename "$raw")"
   fi
   [[ "$NODE_TARGET_FILE" == /* && ! -L "$NODE_TARGET_FILE" && (! -e "$NODE_TARGET_FILE" || -f "$NODE_TARGET_FILE") ]] || {
@@ -2085,8 +2096,14 @@ _node_snapshot_create() {
   printf '%s\n' "$target" >"$snapshot/target"
   printf '%s\n' "$existed" >"$snapshot/before-exists"
   if [[ "$existed" == true ]]; then
-    stat -c '%a %u %g' -- "$target" >"$snapshot/before-stat" || { rm -rf -- "$snapshot"; return "$EXIT_BACKUP"; }
-    cp -p -- "$target" "$snapshot/original" || { rm -rf -- "$snapshot"; return "$EXIT_BACKUP"; }
+    stat -c '%a %u %g' -- "$target" >"$snapshot/before-stat" || {
+      rm -rf -- "$snapshot"
+      return "$EXIT_BACKUP"
+    }
+    cp -p -- "$target" "$snapshot/original" || {
+      rm -rf -- "$snapshot"
+      return "$EXIT_BACKUP"
+    }
   fi
   chmod 0600 "$snapshot/"* 2>/dev/null || true
   printf '%s\n' "$snapshot"
@@ -2143,9 +2160,18 @@ _node_restore_snapshot() {
     [[ "$mode" =~ ^[0-7]{3,4}$ && "$owner" =~ ^[0-9]+$ && "$group" =~ ^[0-9]+$ && -d "$(dirname "$target")" && ! -L "$(dirname "$target")" ]] || return "$EXIT_RESTORE"
     temp="$(mktemp "$(dirname "$target")/.pab-node-restore.XXXXXXXX")" || return "$EXIT_RESTORE"
     if cp -- "$snapshot/original" "$temp"; then
-      if [[ "$(id -u)" -eq 0 ]]; then chown "$owner:$group" "$temp" || { rm -f -- "$temp"; return "$EXIT_RESTORE"; }; fi
-      chmod "$mode" "$temp" || { rm -f -- "$temp"; return "$EXIT_RESTORE"; }
-      mv -f -- "$temp" "$target" || { rm -f -- "$temp"; return "$EXIT_RESTORE"; }
+      if [[ "$(id -u)" -eq 0 ]]; then chown "$owner:$group" "$temp" || {
+        rm -f -- "$temp"
+        return "$EXIT_RESTORE"
+      }; fi
+      chmod "$mode" "$temp" || {
+        rm -f -- "$temp"
+        return "$EXIT_RESTORE"
+      }
+      mv -f -- "$temp" "$target" || {
+        rm -f -- "$temp"
+        return "$EXIT_RESTORE"
+      }
     else
       rm -f -- "$temp"
       return "$EXIT_RESTORE"
@@ -2164,20 +2190,24 @@ _node_registry_get() {
   local client="$1" scope="$2" project="${3:-}"
   case "$client" in
   npm)
-    if [[ "$scope" == project ]]; then (cd "$project" && npm config get registry --location=project) 2>/dev/null
+    if [[ "$scope" == project ]]; then
+      (cd "$project" && npm config get registry --location=project) 2>/dev/null
     else npm config get registry --location=user 2>/dev/null; fi
     ;;
   pnpm)
-    if [[ "$scope" == project ]]; then (cd "$project" && pnpm config get registry --location=project) 2>/dev/null
+    if [[ "$scope" == project ]]; then
+      (cd "$project" && pnpm config get registry --location=project) 2>/dev/null
     else pnpm config get registry --location=global 2>/dev/null; fi
     ;;
   yarn)
     _node_yarn_flavor || return 1
     if [[ "$NODE_YARN_FLAVOR" == classic ]]; then
-      if [[ "$scope" == project ]]; then (cd "$project" && yarn config get registry) 2>/dev/null
+      if [[ "$scope" == project ]]; then
+        (cd "$project" && yarn config get registry) 2>/dev/null
       else (cd "$HOME" && yarn config get registry) 2>/dev/null; fi
     else
-      if [[ "$scope" == project ]]; then (cd "$project" && yarn config get npmRegistryServer) 2>/dev/null
+      if [[ "$scope" == project ]]; then
+        (cd "$project" && yarn config get npmRegistryServer) 2>/dev/null
       else (cd "$HOME" && yarn config get npmRegistryServer) 2>/dev/null; fi
     fi
     ;;
@@ -2194,12 +2224,14 @@ _node_registry_set() {
   pnpm:project) (cd "$project" && pnpm config set registry "$url" --location=project >/dev/null 2>&1) ;;
   yarn:user)
     _node_yarn_flavor || return 1
-    if [[ "$NODE_YARN_FLAVOR" == classic ]]; then yarn config set registry "$url" --global >/dev/null 2>&1
+    if [[ "$NODE_YARN_FLAVOR" == classic ]]; then
+      yarn config set registry "$url" --global >/dev/null 2>&1
     else yarn config set npmRegistryServer "$url" --home >/dev/null 2>&1; fi
     ;;
   yarn:project)
     _node_yarn_flavor || return 1
-    if [[ "$NODE_YARN_FLAVOR" == classic ]]; then (cd "$project" && yarn config set registry "$url" >/dev/null 2>&1)
+    if [[ "$NODE_YARN_FLAVOR" == classic ]]; then
+      (cd "$project" && yarn config set registry "$url" >/dev/null 2>&1)
     else (cd "$project" && yarn config set npmRegistryServer "$url" >/dev/null 2>&1); fi
     ;;
   *) return "$EXIT_USAGE" ;;
@@ -2208,7 +2240,8 @@ _node_registry_set() {
 
 _node_probe_registry() {
   local registry="$1" package="$2" timeout="${3:-$TIMEOUT_TOTAL}" output
-  if output="$(python3 - "$registry" "$package" "$timeout" 2>/dev/null <<'PY'
+  if output="$(
+    python3 - "$registry" "$package" "$timeout" 2>/dev/null <<'PY'
 import json, re, sys
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urljoin, urlsplit
@@ -2266,7 +2299,7 @@ except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError, js
     print("REASON=" + type(exc).__name__)
     raise SystemExit(1)
 PY
-)"; then
+  )"; then
     NODE_METADATA_HOST="$(sed -n 's/^METADATA_HOST=//p' <<<"$output" | head -n 1)"
     NODE_TARBALL_HOST="$(sed -n 's/^TARBALL_HOST=//p' <<<"$output" | head -n 1)"
     NODE_PACKAGE_VERSION="$(sed -n 's/^VERSION=//p' <<<"$output" | head -n 1)"
@@ -2316,7 +2349,6 @@ _node_status_report() {
   msg "Diagnostics do not install packages or edit package manifests or lockfiles."
 }
 
-
 _node_apply_registry() {
   local action="$1" url="${2:-}" project="${NODE_PROJECT_DIR:-}" target state snapshot temp current normalized package current_label
   command -v "$NODE_CLIENT" >/dev/null 2>&1 || {
@@ -2333,7 +2365,10 @@ _node_apply_registry() {
   _node_check_overrides || return $?
 
   if [[ "$action" == reset ]]; then
-    [[ -f "$state" ]] || { error "No app-managed registry exists for this target."; return "$EXIT_USAGE"; }
+    [[ -f "$state" ]] || {
+      error "No app-managed registry exists for this target."
+      return "$EXIT_USAGE"
+    }
     snapshot="$(cat "$state")"
     if [[ "$DRY_RUN" == true ]]; then
       printf 'Preview: restore previous %s %s config from %s\nTarget: %s\nNo change made.\n' "$NODE_CLIENT" "$NODE_SCOPE" "$snapshot" "$target"
@@ -2349,26 +2384,41 @@ _node_apply_registry() {
     error "Use credential-free HTTPS registry URL without query or fragment."
     return "$EXIT_USAGE"
   }
-  package="$(_node_validate_package_name "$NODE_TEST_PACKAGE")" || { error "Invalid npm package name."; return "$EXIT_USAGE"; }
+  package="$(_node_validate_package_name "$NODE_TEST_PACKAGE")" || {
+    error "Invalid npm package name."
+    return "$EXIT_USAGE"
+  }
   current="$(_node_registry_get "$NODE_CLIENT" "$NODE_SCOPE" "$project" 2>/dev/null || true)"
   current_label="$(_node_url_label "$current")"
   _node_probe_registry "$url" "$package" "$TIMEOUT_TOTAL" || return $?
-  [[ ! -e "$state" ]] || { error "An app-managed registry already exists for this target; reset it first."; return "$EXIT_USAGE"; }
+  [[ ! -e "$state" ]] || {
+    error "An app-managed registry already exists for this target; reset it first."
+    return "$EXIT_USAGE"
+  }
   printf 'Registry diff preview:\n'
   printf '  Client: %s\n  Scope: %s\n  Config: %s\n' "$NODE_CLIENT" "$NODE_SCOPE" "$target"
   printf '  Current effective registry (redacted): %s\n' "$current_label"
   printf '  Proposed registry: %s\n' "$(_node_url_label "$url")"
   printf '  Other entries: preserved; secret values are not displayed.\n'
-  if [[ "$DRY_RUN" == true ]]; then printf 'No configuration was changed.\n'; return 0; fi
+  if [[ "$DRY_RUN" == true ]]; then
+    printf 'No configuration was changed.\n'
+    return 0
+  fi
   _confirm_action "Apply this registry change?" || return "$EXIT_CANCELLED"
   snapshot="$(_node_snapshot_create "$NODE_CLIENT" "$NODE_SCOPE" "$target")" || return "$EXIT_BACKUP"
   if ! _node_registry_set "$NODE_CLIENT" "$NODE_SCOPE" "$project" "$url"; then
-    _node_snapshot_mark_after "$snapshot" "$target" || { error "Recovery snapshot needs manual review: $snapshot"; return "$EXIT_RESTORE"; }
+    _node_snapshot_mark_after "$snapshot" "$target" || {
+      error "Recovery snapshot needs manual review: $snapshot"
+      return "$EXIT_RESTORE"
+    }
     _node_restore_snapshot "$snapshot" || return "$EXIT_RESTORE"
     error "Registry command failed; previous config was restored."
     return "$EXIT_GENERAL"
   fi
-  _node_snapshot_mark_after "$snapshot" "$target" || { error "Recovery snapshot could not be finalized: $snapshot"; return "$EXIT_RESTORE"; }
+  _node_snapshot_mark_after "$snapshot" "$target" || {
+    error "Recovery snapshot could not be finalized: $snapshot"
+    return "$EXIT_RESTORE"
+  }
   current="$(_node_registry_get "$NODE_CLIENT" "$NODE_SCOPE" "$project" 2>/dev/null || true)"
   normalized="$(_node_validate_registry_url "$current" 2>/dev/null || true)"
   if [[ "$normalized" != "$url" ]]; then
@@ -2376,7 +2426,10 @@ _node_apply_registry() {
     error "Registry read-back mismatch; previous config was restored."
     return "$EXIT_GENERAL"
   fi
-  temp="$(mktemp "$(_node_backup_base)/.state.XXXXXXXX")" || { _node_restore_snapshot "$snapshot" || return "$EXIT_RESTORE"; return "$EXIT_BACKUP"; }
+  temp="$(mktemp "$(_node_backup_base)/.state.XXXXXXXX")" || {
+    _node_restore_snapshot "$snapshot" || return "$EXIT_RESTORE"
+    return "$EXIT_BACKUP"
+  }
   printf '%s\n' "$snapshot" >"$temp"
   chmod 0600 "$temp"
   if ! mv -f -- "$temp" "$state"; then
@@ -2407,7 +2460,10 @@ _run_node_manager() {
     _node_restore_snapshot "$NODE_RESTORE_PATH"
     ;;
   set | reset) _node_apply_registry "$NODE_ACTION" "$NODE_REGISTRY_URL" ;;
-  *) error "No Node.js action was selected."; return "$EXIT_USAGE" ;;
+  *)
+    error "No Node.js action was selected."
+    return "$EXIT_USAGE"
+    ;;
   esac
 }
 

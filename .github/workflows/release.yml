@@ -9,59 +9,128 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Create Release
+  lint:
+    name: Lint release source
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Lint
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+      - name: Install shfmt
         run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
           sudo curl -fsSL -o /usr/local/bin/shfmt \
             "https://github.com/mvdan/sh/releases/download/v3.7.0/shfmt_v3.7.0_linux_amd64"
           sudo chmod +x /usr/local/bin/shfmt
-          shellcheck -x power-apt-boost.sh
-          shfmt -d power-apt-boost.sh
-
-      - name: Get version
-        id: version
-        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Generate changelog
-        id: changelog
+      - name: Run ShellCheck
         run: |
-          # Extract changelog for this version
-          version="${{ steps.version.outputs.tag }}"
-          changelog=$(awk "/^## ${version#v}/,/^## [0-9]/" CHANGELOG.md | sed '$ d')
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$changelog" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          shellcheck -x power-apt-boost.sh
+          shellcheck -x -e SC2034,SC2329 tests/run_tests.sh
+      - name: Check shfmt formatting
+        run: |
+          shfmt -d power-apt-boost.sh
+          shfmt -d tests/run_tests.sh
+
+  test:
+    name: Offline tests (Ubuntu ${{ matrix.ubuntu-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu-version: ["20.04", "22.04", "24.04"]
+    container:
+      image: ubuntu:${{ matrix.ubuntu-version }}
+    steps:
+      - name: Install test dependencies
+        run: |
+          apt-get update
+          apt-get install -y bash coreutils tar curl util-linux python3-minimal gawk grep sed findutils
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run offline regression suite
+        run: bash tests/run_tests.sh
+
+  release:
+    name: Publish GitHub Release
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+      - name: Verify tag, source version and changelog entry
+        id: version
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          source_version="$(awk -F'"' '/^readonly APP_VERSION=/{print $2; exit}' power-apt-boost.sh)"
+
+          if [[ "$tag" != "v$version" || -z "$source_version" || "$source_version" != "$version" ]]; then
+            printf 'Release tag %s does not match source version %s.\\n' "$tag" "${source_version:-missing}" >&2
+            exit 1
+          fi
+
+          awk -v heading="## [$version]" '
+            index($0, heading) == 1 {
+              suffix = substr($0, length(heading) + 1)
+              if (suffix == "" || suffix ~ /^[[:space:]]/) found = 1
+            }
+            END { exit !found }
+          ' CHANGELOG.md
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes and checksum
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          awk -v heading="## [${RELEASE_VERSION}]" '
+            index($0, heading) == 1 {
+              suffix = substr($0, length(heading) + 1)
+              if (suffix == "" || suffix ~ /^[[:space:]]/) {
+                in_section = 1
+                next
+              }
+            }
+            in_section && /^## / { exit }
+            in_section { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          test -s RELEASE_NOTES.md
+
+          sha256sum power-apt-boost.sh > power-apt-boost.sh.sha256
+          {
+            cat RELEASE_NOTES.md
+            cat <<EOF
+
+          ## Installation
+
+          ```bash
+          curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/${RELEASE_TAG}/power-apt-boost.sh | sudo bash
+          ```
+
+          ## Verify
+
+          Download `power-apt-boost.sh` and `power-apt-boost.sh.sha256` from this release, then run:
+
+          ```bash
+          sha256sum -c power-apt-boost.sh.sha256
+          ```
+          EOF
+          } > RELEASE_BODY.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: "Power APT Boost ${{ steps.version.outputs.tag }}"
-          body: |
-            ## Changes
-
-            ${{ steps.changelog.outputs.changelog }}
-
-            ## Installation
-
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/${{ steps.version.outputs.tag }}/power-apt-boost.sh | sudo bash
-            ```
-
-            ## Verify
-
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/${{ steps.version.outputs.tag }}/power-apt-boost.sh | sha256sum
-            ```
-          files: power-apt-boost.sh
+          body_path: RELEASE_BODY.md
+          files: |
+            power-apt-boost.sh
+            power-apt-boost.sh.sha256
           draft: false
           prerelease: false
+          fail_on_unmatched_files: true

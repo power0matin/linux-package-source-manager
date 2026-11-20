@@ -2002,6 +2002,7 @@ _node_snapshot_target_valid() {
   local client="$1" scope="$2" target="$3" dir
   [[ "$target" == /* && "$target" != *$'\n'* && "$target" != *$'\r'* && ! -L "$target" ]] || return 1
   dir="$(dirname "$target")"
+  [[ "$(realpath -m -- "$dir" 2>/dev/null)" == "$dir" ]] || return 1
   case "$client:$scope" in
   npm:user) [[ "$target" == "$HOME/"* && "$(basename "$target")" == .npmrc ]] ;;
   npm:project | pnpm:project) [[ "$(basename "$target")" == .npmrc && -f "$dir/package.json" && ! -L "$dir/package.json" ]] ;;
@@ -2063,7 +2064,9 @@ _node_resolve_target() {
 }
 
 _node_state_path() {
-  printf '%s/state-%s-%s' "$(_node_backup_base)" "$1" "$2"
+  local digest
+  digest="$(printf '%s' "$3" | sha256sum | awk '{print $1}')"
+  printf '%s/state-%s-%s-%s' "$(_node_backup_base)" "$1" "$2" "$digest"
 }
 
 _node_snapshot_create() {
@@ -2082,6 +2085,7 @@ _node_snapshot_create() {
   printf '%s\n' "$target" >"$snapshot/target"
   printf '%s\n' "$existed" >"$snapshot/before-exists"
   if [[ "$existed" == true ]]; then
+    stat -c '%a %u %g' -- "$target" >"$snapshot/before-stat" || { rm -rf -- "$snapshot"; return "$EXIT_BACKUP"; }
     cp -p -- "$target" "$snapshot/original" || { rm -rf -- "$snapshot"; return "$EXIT_BACKUP"; }
   fi
   chmod 0600 "$snapshot/"* 2>/dev/null || true
@@ -2103,7 +2107,7 @@ _node_snapshot_mark_after() {
 }
 
 _node_restore_snapshot() {
-  local snapshot="$1" base client scope target before after current temp item state
+  local snapshot="$1" base client scope target before after current temp item state mode owner group
   base="$(_node_backup_base)"
   [[ "$base" == /* && -d "$base" && ! -L "$base" ]] || return "$EXIT_USAGE"
   base="$(realpath -e -- "$base" 2>/dev/null)" || return "$EXIT_USAGE"
@@ -2134,10 +2138,13 @@ _node_restore_snapshot() {
     [[ ! -e "$target" && ! -L "$target" ]] || return "$EXIT_RESTORE"
   fi
   if [[ "$before" == true ]]; then
-    [[ -f "$snapshot/original" && ! -L "$snapshot/original" ]] || return "$EXIT_RESTORE"
-    mkdir -p "$(dirname "$target")" || return "$EXIT_RESTORE"
+    [[ -f "$snapshot/original" && ! -L "$snapshot/original" && -f "$snapshot/before-stat" && ! -L "$snapshot/before-stat" ]] || return "$EXIT_RESTORE"
+    IFS=' ' read -r mode owner group <"$snapshot/before-stat" || return "$EXIT_RESTORE"
+    [[ "$mode" =~ ^[0-7]{3,4}$ && "$owner" =~ ^[0-9]+$ && "$group" =~ ^[0-9]+$ && -d "$(dirname "$target")" && ! -L "$(dirname "$target")" ]] || return "$EXIT_RESTORE"
     temp="$(mktemp "$(dirname "$target")/.pab-node-restore.XXXXXXXX")" || return "$EXIT_RESTORE"
-    if cp -p -- "$snapshot/original" "$temp"; then
+    if cp -- "$snapshot/original" "$temp"; then
+      if [[ "$(id -u)" -eq 0 ]]; then chown "$owner:$group" "$temp" || { rm -f -- "$temp"; return "$EXIT_RESTORE"; }; fi
+      chmod "$mode" "$temp" || { rm -f -- "$temp"; return "$EXIT_RESTORE"; }
       mv -f -- "$temp" "$target" || { rm -f -- "$temp"; return "$EXIT_RESTORE"; }
     else
       rm -f -- "$temp"
@@ -2146,7 +2153,7 @@ _node_restore_snapshot() {
   else
     rm -f -- "$target" || return "$EXIT_RESTORE"
   fi
-  state="$(_node_state_path "$client" "$scope")"
+  state="$(_node_state_path "$client" "$scope" "$target")"
   if [[ -f "$state" && ! -L "$state" && "$(cat "$state")" == "$snapshot" ]]; then
     rm -f -- "$state" || return "$EXIT_RESTORE"
   fi
@@ -2317,22 +2324,9 @@ _node_status_report() {
   msg "Diagnostics do not install packages or edit package manifests or lockfiles."
 }
 
-_node_apply_registry() {
-  local action="$1" url="${2:-}" project="${NODE_PROJECT_DIR:-}" target state snapshot temp current normalized package
-  state="$(_node_state_path "$NODE_CLIENT" "$NODE_SCOPE")"
-  [[ ! -L "$state" ]] || return "$EXIT_BACKUP"
-  if [[ "$action" == reset ]]; then
-    [[ -f "$state" ]] || { error "No app-managed registry exists in this scope."; return "$EXIT_USAGE"; }
-    snapshot="$(cat "$state")"
-    if [[ "$DRY_RUN" == true ]]; then
-      printf 'Preview: restore previous %s %s config from %s; no change made.\n' "$NODE_CLIENT" "$NODE_SCOPE" "$snapshot"
-      return 0
-    fi
-    _confirm_action "Restore previous $NODE_CLIENT $NODE_SCOPE registry config?" || return "$EXIT_CANCELLED"
-    _node_restore_snapshot "$snapshot"
-    return $?
-  fi
 
+_node_apply_registry() {
+  local action="$1" url="\${2:-}" project="\${NODE_PROJECT_DIR:-}" target state snapshot temp current normalized package current_label
   command -v "$NODE_CLIENT" >/dev/null 2>&1 || {
     error "$NODE_CLIENT is not installed; no package manager will be installed."
     return "$EXIT_GENERAL"
@@ -2342,36 +2336,47 @@ _node_apply_registry() {
   [[ "$NODE_CLIENT" != yarn ]] || _node_yarn_flavor || return "$EXIT_GENERAL"
   _node_resolve_target "$NODE_CLIENT" "$NODE_SCOPE" "$project" || return $?
   target="$NODE_TARGET_FILE"
+  state="$(_node_state_path "$NODE_CLIENT" "$NODE_SCOPE" "$target")"
+  [[ ! -L "$state" ]] || return "$EXIT_BACKUP"
   _node_check_overrides || return $?
+
+  if [[ "$action" == reset ]]; then
+    [[ -f "$state" ]] || { error "No app-managed registry exists for this target."; return "$EXIT_USAGE"; }
+    snapshot="$(cat "$state")"
+    if [[ "$DRY_RUN" == true ]]; then
+      printf 'Preview: restore previous %s %s config from %s\nTarget: %s\nNo change made.\n' "$NODE_CLIENT" "$NODE_SCOPE" "$snapshot" "$target"
+      return 0
+    fi
+    _confirm_action "Restore previous $NODE_CLIENT $NODE_SCOPE registry config?" || return "$EXIT_CANCELLED"
+    _node_restore_snapshot "$snapshot"
+    return $?
+  fi
+
+  [[ "$action" == set ]] || return "$EXIT_USAGE"
   url="$(_node_validate_registry_url "$url")" || {
     error "Use credential-free HTTPS registry URL without query or fragment."
     return "$EXIT_USAGE"
   }
-  package="$(_node_validate_package_name "$NODE_TEST_PACKAGE")" || {
-    error "Invalid npm package name."
-    return "$EXIT_USAGE"
-  }
+  package="$(_node_validate_package_name "$NODE_TEST_PACKAGE")" || { error "Invalid npm package name."; return "$EXIT_USAGE"; }
+  current="$(_node_registry_get "$NODE_CLIENT" "$NODE_SCOPE" "$project" 2>/dev/null || true)"
+  current_label="$(_node_url_label "$current")"
   _node_probe_registry "$url" "$package" "$TIMEOUT_TOTAL" || return $?
-  [[ ! -e "$state" ]] || {
-    error "An app-managed registry already exists in this scope; reset it first."
-    return "$EXIT_USAGE"
-  }
-  if [[ "$DRY_RUN" == true ]]; then
-    printf 'Preview: set %s registry in %s scope to %s\nTarget: %s\nNo config changed.\n' "$NODE_CLIENT" "$NODE_SCOPE" "$(_node_url_label "$url")" "$target"
-    return 0
-  fi
-  _confirm_action "Set $NODE_CLIENT $NODE_SCOPE registry to $(_node_url_label "$url")?" || return "$EXIT_CANCELLED"
+  [[ ! -e "$state" ]] || { error "An app-managed registry already exists for this target; reset it first."; return "$EXIT_USAGE"; }
+  printf 'Registry diff preview:\n'
+  printf '  Client: %s\n  Scope: %s\n  Config: %s\n' "$NODE_CLIENT" "$NODE_SCOPE" "$target"
+  printf '  Current effective registry (redacted): %s\n' "$current_label"
+  printf '  Proposed registry: %s\n' "$(_node_url_label "$url")"
+  printf '  Other entries: preserved; secret values are not displayed.\n'
+  if [[ "$DRY_RUN" == true ]]; then printf 'No configuration was changed.\n'; return 0; fi
+  _confirm_action "Apply this registry change?" || return "$EXIT_CANCELLED"
   snapshot="$(_node_snapshot_create "$NODE_CLIENT" "$NODE_SCOPE" "$target")" || return "$EXIT_BACKUP"
   if ! _node_registry_set "$NODE_CLIENT" "$NODE_SCOPE" "$project" "$url"; then
-    _node_snapshot_mark_after "$snapshot" "$target" || return "$EXIT_RESTORE"
+    _node_snapshot_mark_after "$snapshot" "$target" || { error "Recovery snapshot needs manual review: $snapshot"; return "$EXIT_RESTORE"; }
     _node_restore_snapshot "$snapshot" || return "$EXIT_RESTORE"
     error "Registry command failed; previous config was restored."
     return "$EXIT_GENERAL"
   fi
-  _node_snapshot_mark_after "$snapshot" "$target" || {
-    error "Config changed but its recovery snapshot could not be finalized: $snapshot"
-    return "$EXIT_RESTORE"
-  }
+  _node_snapshot_mark_after "$snapshot" "$target" || { error "Recovery snapshot could not be finalized: $snapshot"; return "$EXIT_RESTORE"; }
   current="$(_node_registry_get "$NODE_CLIENT" "$NODE_SCOPE" "$project" 2>/dev/null || true)"
   normalized="$(_node_validate_registry_url "$current" 2>/dev/null || true)"
   if [[ "$normalized" != "$url" ]]; then
@@ -2379,10 +2384,7 @@ _node_apply_registry() {
     error "Registry read-back mismatch; previous config was restored."
     return "$EXIT_GENERAL"
   fi
-  temp="$(mktemp "$(_node_backup_base)/.state.XXXXXXXX")" || {
-    _node_restore_snapshot "$snapshot" || return "$EXIT_RESTORE"
-    return "$EXIT_BACKUP"
-  }
+  temp="$(mktemp "$(_node_backup_base)/.state.XXXXXXXX")" || { _node_restore_snapshot "$snapshot" || return "$EXIT_RESTORE"; return "$EXIT_BACKUP"; }
   printf '%s\n' "$snapshot" >"$temp"
   chmod 0600 "$temp"
   if ! mv -f -- "$temp" "$state"; then
@@ -2392,8 +2394,8 @@ _node_apply_registry() {
   fi
   printf 'Snapshot: %s\n' "$snapshot"
   info "$NODE_CLIENT registry configured in $NODE_SCOPE scope; unrelated config was preserved."
-  msg "Only the fetch registry changes. Private scopes, auth entries and publish registry remain intact."
-  msg "package.json, publishConfig and lockfiles are not modified."
+  msg "package.json, publishConfig, scoped registry entries, auth entries and lockfiles are not modified."
+  warn "The default registry may also be used by publish commands when no publishConfig.registry or package-manager publish registry is configured."
 }
 
 _run_node_manager() {

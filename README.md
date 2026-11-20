@@ -56,6 +56,10 @@ sudo bash power-apt-boost.sh --dry-run
 - Python package-source screen for pip, uv and Poetry; pipx is detected but its app environments are not changed
 - Read-only Python tool inventory and HTTPS PEP 503/691 index plus artifact checks without installing packages
 - Scoped pip index configuration and managed uv/Poetry TOML source blocks with preview, snapshots and conflict-safe restore
+- Node.js registry manager for npm, pnpm, Yarn Classic and Yarn Berry
+- Read-only Node.js/package-manager detection and HTTPS registry metadata plus tarball-host checks using HEAD only
+- User-level registry changes and explicit project-scope changes with redacted previews, snapshots and conflict-checked rollback
+- Scoped registries, authentication entries, Yarn Berry publish registry, package manifests and lockfiles are preserved
 - Overview, APT management, mirror benchmark, Backup/Restore, Diagnostics and session Settings screens
 - Safe apply and restore previews with confirmation; `--yes` is required to bypass prompts in non-interactive sessions
 - Fail-closed APT snapshots with SHA-256 validation and exact restore for new snapshots
@@ -182,6 +186,50 @@ bash power-apt-boost.sh --python-restore /path/to/python/snapshot
 ```
 
 uv and Poetry editing requires Python 3.11+ (`tomllib`) or an already-installed `tomli` module. No TOML parser or package manager is installed automatically. pipx is included in tool detection only; this phase deliberately does not rewrite the separate virtual environments managed by pipx.
+
+
+### Node.js package registries
+
+Node.js registry operations do not require root. Power APT Boost detects Node.js, npm, pnpm and Yarn Classic/Berry without installing any package manager.
+
+Inspect the available tools and effective registry hosts:
+
+```bash
+bash power-apt-boost.sh --node-status
+bash power-apt-boost.sh --node-status --json
+```
+
+Test an npm-compatible registry using package metadata and a HEAD request to the advertised tarball URL. The check does not download the archive:
+
+```bash
+bash power-apt-boost.sh --node-test-registry https://registry.npmjs.org/
+bash power-apt-boost.sh --node-test-registry https://registry.npmjs.org/ --node-test-package @acme/example
+```
+
+Preview and then configure the user-level registry:
+
+```bash
+bash power-apt-boost.sh --node-set-registry https://registry.npmjs.org/ --node-client npm --dry-run
+bash power-apt-boost.sh --node-set-registry https://registry.npmjs.org/ --node-client npm --yes
+```
+
+The default scope is the selected package manager's user configuration. Project configuration is opt-in and requires both --node-scope project and an explicit directory containing package.json:
+
+```bash
+bash power-apt-boost.sh --node-set-registry https://registry.npmjs.org/ \\
+  --node-client pnpm --node-scope project --node-project /path/to/project --dry-run
+```
+
+Only the default fetch-registry key is changed. Existing scoped registries, authentication settings and unrelated options are retained. The tool does not edit package.json, publishConfig, workspace files or lockfiles. Yarn Berry's separate npmPublishRegistry is not changed; other package-manager publish commands may fall back to the default registry when no explicit publish registry is configured.
+
+Reset only the app-managed setting or restore a snapshot after checking for external edits:
+
+```bash
+bash power-apt-boost.sh --node-reset-registry --node-client npm --yes
+bash power-apt-boost.sh --node-restore /path/to/nodejs/snapshot
+```
+
+Node.js registry URLs must use HTTPS and cannot contain embedded credentials, query strings or fragments. Existing environment overrides cause mutating operations to refuse rather than write a configuration that would be shadowed. --yes is required for non-interactive changes; --dry-run previews the target without writing it.
 
 ### Apply a mirror
 

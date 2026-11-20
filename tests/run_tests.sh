@@ -89,6 +89,43 @@ test_cli() {
   assert_contains "--python-status" "$(bash "$SCRIPT" --help 2>&1)" "help documents Python diagnostics"
   assert_contains "--python-test-index" "$(bash "$SCRIPT" --help 2>&1)" "help documents Python index verification"
   assert_contains "--python-set-index" "$(bash "$SCRIPT" --help 2>&1)" "help documents Python index configuration"
+
+  assert_contains "--node-status" "$(bash "$SCRIPT" --help 2>&1)" "help documents Node.js registry diagnostics"
+  assert_contains "--node-set-registry" "$(bash "$SCRIPT" --help 2>&1)" "help documents Node.js registry configuration"
+  code=0
+  bash "$SCRIPT" --node-client invalid --node-status >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "unknown Node.js client is rejected"
+  code=0
+  bash "$SCRIPT" --node-scope invalid --node-status >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "unknown Node.js scope is rejected"
+  code=0
+  bash "$SCRIPT" --node-status --node-reset-registry >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "conflicting Node.js actions are rejected before execution"
+  code=0
+  bash "$SCRIPT" --node-test-registry http://registry.npmjs.org/ >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "insecure Node.js registry is rejected before network access"
+  code=0
+  bash "$SCRIPT" --node-set-registry https://registry.npmjs.org/ --node-scope project >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "project registry requires an explicit project directory"
+  code=0
+  bash "$SCRIPT" --node-status --doctor >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Node.js command cannot be combined with APT doctor"
+  code=0
+  bash "$SCRIPT" --node-status --official-only >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Node.js command rejects APT mirror profile flags"
+  code=0
+  bash "$SCRIPT" --node-status --apt-retries 5 >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Node.js command rejects APT apply options"
+  code=0
+  bash "$SCRIPT" --node-status --country us >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Node.js command rejects APT benchmark filters"
+  code=0
+  bash "$SCRIPT" --node-status --python-status >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Node.js and Python command modes cannot be combined"
+  output="$(bash "$SCRIPT" --node-status --json 2>&1)"
+  python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["schema_version"] == 1 and d["command"] == "node-status" and "registry_hosts" in d and "environment_overrides" in d' "$output"
+  assert_exit_code 0 "$?" "Node.js status JSON follows its schema"
+
   code=0
   bash "$SCRIPT" --python-client unknown --python-status >/dev/null 2>&1 || code=$?
   assert_exit_code 2 "$code" "unknown Python client is rejected"
@@ -1010,6 +1047,299 @@ TOML
   unset -f _python_pip_get _python_pip_set _python_pip_unset
 }
 
+_node_test_ini_set() {
+  local file="$1" key="$2" value="$3" tmp
+  mkdir -p "$(dirname "$file")"
+  [[ -f "$file" ]] || : >"$file"
+  tmp="$(mktemp "$(dirname "$file")/.node-test.XXXXXXXX")" || return 1
+  awk -v key="$key" -v value="$value" '
+    BEGIN { prefix=key "="; found=0 }
+    index($0,prefix)==1 { if (!found) print prefix value; found=1; next }
+    { print }
+    END { if (!found) print prefix value }
+  ' "$file" >"$tmp" && cat "$tmp" >"$file"
+  local rc=$?
+  rm -f -- "$tmp"
+  return "$rc"
+}
+
+_node_test_yarn_classic_set() {
+  local file="$1" value="$2" tmp
+  mkdir -p "$(dirname "$file")"
+  [[ -f "$file" ]] || : >"$file"
+  tmp="$(mktemp "$(dirname "$file")/.node-test.XXXXXXXX")" || return 1
+  awk -v value="$value" '
+    BEGIN { found=0 }
+    /^registry[[:space:]]+/ { if (!found) print "registry " value; found=1; next }
+    { print }
+    END { if (!found) print "registry " value }
+  ' "$file" >"$tmp" && cat "$tmp" >"$file"
+  local rc=$?
+  rm -f -- "$tmp"
+  return "$rc"
+}
+
+_node_test_yarn_yaml_set() {
+  local file="$1" key="$2" value="$3"
+  python3 - "$file" "$key" "$value" <<'PY'
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+key, value = sys.argv[2:]
+lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+updated = []
+found = False
+for line in lines:
+    if line.startswith(key + ":"):
+        if not found:
+            updated.append(f'{key}: "{value}"')
+            found = True
+    else:
+        updated.append(line)
+if not found:
+    updated.append(f'{key}: "{value}"')
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+PY
+}
+
+test_node_manager_safety() {
+  local original_home="$HOME" original_xdg_state="${XDG_STATE_HOME-}" original_xdg_config="${XDG_CONFIG_HOME-}"
+  local home_set="${HOME+x}" xdg_state_set="${XDG_STATE_HOME+x}" xdg_config_set="${XDG_CONFIG_HOME+x}"
+  local -a override_names=(npm_config_registry NPM_CONFIG_REGISTRY npm_config_userconfig NPM_CONFIG_USERCONFIG
+    npm_config_globalconfig NPM_CONFIG_GLOBALCONFIG pnpm_config_registry PNPM_CONFIG_REGISTRY
+    YARN_NPM_REGISTRY_SERVER YARN_RC_FILENAME YARN_IGNORE_PATH)
+  local -a override_values=()
+  local name output code url snapshot before after path
+  for name in "${override_names[@]}"; do
+    override_values+=("${!name-}")
+    unset "$name"
+  done
+
+  HOME="${_TEST_ROOT}/node-home"
+  XDG_CONFIG_HOME="$HOME/.config"
+  XDG_STATE_HOME="${_TEST_ROOT}/node-state"
+  export HOME XDG_CONFIG_HOME XDG_STATE_HOME
+  DRY_RUN=false
+  mkdir -p "$HOME" "$XDG_CONFIG_HOME/pnpm" "${_TEST_ROOT}/node-project"
+  printf '%s\n' '{"name":"node-fixture","publishConfig":{"registry":"https://publish.example/"}}' >"${_TEST_ROOT}/node-project/package.json"
+
+  output="$(_node_validate_registry_url "https://registry.npmjs.org")"
+  assert_equal "https://registry.npmjs.org/" "$output" "Node.js registry URL is normalized"
+  code=0
+  _node_validate_registry_url "http://registry.npmjs.org/" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Node.js registry rejects plain HTTP"
+  code=0
+  _node_validate_registry_url "https://user:secret@registry.example/" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Node.js registry rejects embedded credentials"
+  code=0
+  _node_validate_registry_url "https://registry.example/?token=secret" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Node.js registry rejects query strings"
+  code=0
+  _node_validate_registry_url "https://registry.example/#fragment" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Node.js registry rejects fragments"
+  output="$(_node_url_label "https://user:secret@registry.example:8443/path/?token=hidden#fragment")"
+  assert_equal "https://registry.example:8443" "$output" "Node.js registry display exposes only the origin"
+  output="$(_node_url_label "https://registry.example/tenant-secret/path/")"
+  assert_equal "https://registry.example" "$output" "Node.js registry display never exposes path credentials"
+  output="$(_node_url_label "undefined")"
+  assert_equal "not configured" "$output" "Node.js registry display handles unset values"
+  output="$(_node_validate_package_name "@acme/valid-package")"
+  assert_equal "@acme/valid-package" "$output" "Node.js package validator accepts scoped package names"
+  code=0
+  _node_validate_package_name "../escape" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Node.js package validator rejects traversal names"
+
+  npm() {
+    if [[ "$1 $2 $3" == "config get userconfig" ]]; then
+      printf '%s/.npmrc\n' "$HOME"
+      return 0
+    fi
+    if [[ "$1 $2 $3" == "config get registry" ]]; then
+      local file="$HOME/.npmrc"
+      [[ "$*" != *"--location=project"* ]] || file="$PWD/.npmrc"
+      awk -F= '$1=="registry" {v=substr($0,index($0,"=")+1)} END {if(v!="") print v; else print "undefined"}' "$file" 2>/dev/null
+      return 0
+    fi
+    if [[ "$1 $2 $3" == "config set registry" ]]; then
+      local file="$HOME/.npmrc"
+      [[ "$*" != *"--location=project"* ]] || file="$PWD/.npmrc"
+      _node_test_ini_set "$file" registry "$4"
+      return $?
+    fi
+    return 2
+  }
+
+  pnpm() {
+    if [[ "$1 $2 $3" == "config get globalconfig" ]]; then
+      printf '%s/pnpm/rc\n' "$XDG_CONFIG_HOME"
+      return 0
+    fi
+    if [[ "$1 $2 $3" == "config get registry" ]]; then
+      local file="$XDG_CONFIG_HOME/pnpm/rc"
+      [[ "$*" != *"--location=project"* ]] || file="$PWD/.npmrc"
+      awk -F= '$1=="registry" {v=substr($0,index($0,"=")+1)} END {if(v!="") print v; else print "undefined"}' "$file" 2>/dev/null
+      return 0
+    fi
+    if [[ "$1 $2 $3" == "config set registry" ]]; then
+      local file="$XDG_CONFIG_HOME/pnpm/rc"
+      [[ "$*" != *"--location=project"* ]] || file="$PWD/.npmrc"
+      _node_test_ini_set "$file" registry "$4"
+      return $?
+    fi
+    return 2
+  }
+
+  NODE_TEST_YARN_VERSION="1.22.22"
+  yarn() {
+    if [[ "$1" == "--version" ]]; then
+      printf '%s\n' "$NODE_TEST_YARN_VERSION"
+      return 0
+    fi
+    if [[ "$1 $2 $3" == "config get registry" ]]; then
+      local file="$PWD/.yarnrc"
+      sed -n 's/^registry[[:space:]][[:space:]]*//p' "$file" 2>/dev/null | head -n 1
+      return 0
+    fi
+    if [[ "$1 $2 $3" == "config get npmRegistryServer" ]]; then
+      local file="$PWD/.yarnrc.yml"
+      sed -n 's/^npmRegistryServer:[[:space:]]*//p' "$file" 2>/dev/null | tr -d '"' | head -n 1
+      return 0
+    fi
+    if [[ "$1 $2 $3" == "config set registry" ]]; then
+      local file="$HOME/.yarnrc"
+      [[ "$PWD" == "$HOME" || "$*" == *"--global"* ]] || file="$PWD/.yarnrc"
+      _node_test_yarn_classic_set "$file" "$4"
+      return $?
+    fi
+    if [[ "$1 $2 $3" == "config set npmRegistryServer" ]]; then
+      local file="$HOME/.yarnrc.yml"
+      [[ "$PWD" == "$HOME" || "$*" == *"--home"* ]] || file="$PWD/.yarnrc.yml"
+      _node_test_yarn_yaml_set "$file" npmRegistryServer "$4"
+      return $?
+    fi
+    return 2
+  }
+
+  _node_probe_registry() { return 0; }
+  _confirm_action() { return 0; }
+
+  path="$HOME/.npmrc"
+  cat >"$path" <<'NPMRC'
+registry=https://registry.before.example/
+@internal:registry=https://packages.internal.example/
+//registry.before.example/:_authToken=NODE_SECRET_SENTINEL
+NPMRC
+  chmod 0640 "$path"
+  before="$(sha256sum "$path")"
+  NODE_CLIENT=npm NODE_SCOPE=user NODE_PROJECT_DIR="" NODE_TEST_PACKAGE=is-number NODE_YARN_FLAVOR=""
+  _node_apply_registry set "https://registry.after.example/" >/dev/null
+  assert_file_contains "$path" "registry=https://registry.after.example/" "npm user registry changes the default registry"
+  assert_file_contains "$path" "@internal:registry=https://packages.internal.example/" "npm preserves scoped registry entries"
+  assert_file_contains "$path" "NODE_SECRET_SENTINEL" "npm preserves auth token values"
+  [[ "$(stat -c '%a' "$path")" == 640 ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "npm preserves config file permissions"
+  snapshot="$(cat "$(_node_state_path npm user "$path")")"
+  cp "$path" "$_TEST_ROOT/npm-after.npmrc"
+  printf '%s\n' '# external change' >>"$path"
+  code=0
+  _node_apply_registry reset >/dev/null 2>&1 || code=$?
+  assert_exit_code 8 "$code" "npm restore refuses an externally modified file"
+  assert_file_contains "$path" "# external change" "npm restore conflict preserves the external edit"
+  cp "$_TEST_ROOT/npm-after.npmrc" "$path"
+  code=0
+  _node_apply_registry reset >/dev/null 2>&1 || code=$?
+  assert_exit_code 0 "$code" "npm reset restores its prior config"
+  after="$(sha256sum "$path")"
+  assert_equal "$before" "$after" "npm restore reproduces the original file bytes"
+
+  path="${_TEST_ROOT}/node-project/.npmrc"
+  cat >"$path" <<'NPMRC'
+registry=https://project.before.example/
+@private:registry=https://private.project.example/
+//private.project.example/:_authToken=PROJECT_SECRET_SENTINEL
+NPMRC
+  NODE_CLIENT=pnpm NODE_SCOPE=project NODE_PROJECT_DIR="${_TEST_ROOT}/node-project"
+  before="$(sha256sum "$path")"
+  _node_apply_registry set "https://project.after.example/" >/dev/null
+  assert_file_contains "$path" "registry=https://project.after.example/" "pnpm project scope changes the default registry"
+  assert_file_contains "$path" "@private:registry=https://private.project.example/" "pnpm preserves scoped registries"
+  assert_file_contains "$path" "PROJECT_SECRET_SENTINEL" "pnpm preserves project auth tokens"
+  assert_file_contains "${_TEST_ROOT}/node-project/package.json" '"registry":"https://publish.example/"' "pnpm leaves package publishConfig untouched"
+  _node_apply_registry reset >/dev/null
+  after="$(sha256sum "$path")"
+  assert_equal "$before" "$after" "pnpm project rollback restores the original .npmrc"
+
+  XDG_CONFIG_HOME="${_TEST_ROOT}/external-xdg-config"
+  export XDG_CONFIG_HOME
+  mkdir -p "$XDG_CONFIG_HOME/pnpm"
+  path="$XDG_CONFIG_HOME/pnpm/rc"
+  printf '%s\n' "registry=https://pnpm.before.example/" >"$path"
+  NODE_CLIENT=pnpm NODE_SCOPE=user NODE_PROJECT_DIR=""
+  before="$(sha256sum "$path")"
+  _node_apply_registry set "https://pnpm.after.example/" >/dev/null
+  assert_file_contains "$path" "registry=https://pnpm.after.example/" "pnpm user scope honors an external XDG_CONFIG_HOME"
+  _node_apply_registry reset >/dev/null
+  after="$(sha256sum "$path")"
+  assert_equal "$before" "$after" "pnpm external XDG config is restored exactly"
+
+  XDG_CONFIG_HOME="$HOME/.config"
+  export XDG_CONFIG_HOME
+  path="$HOME/.yarnrc"
+  cat >"$path" <<'YARNRC'
+registry https://classic.before.example
+unsafeHttpWhitelist
+  - internal.example
+YARNRC
+  NODE_CLIENT=yarn NODE_SCOPE=user NODE_PROJECT_DIR=""
+  NODE_TEST_YARN_VERSION="1.22.22"
+  before="$(sha256sum "$path")"
+  _node_yarn_flavor
+  assert_equal classic "$NODE_YARN_FLAVOR" "Yarn 1 is identified as Classic"
+  _node_apply_registry set "https://classic.after.example/" >/dev/null
+  assert_file_contains "$path" "registry https://classic.after.example/" "Yarn Classic user registry changes"
+  assert_file_contains "$path" "unsafeHttpWhitelist" "Yarn Classic preserves unrelated configuration"
+  _node_apply_registry reset >/dev/null
+  after="$(sha256sum "$path")"
+  assert_equal "$before" "$after" "Yarn Classic rollback restores the original file"
+
+  path="${_TEST_ROOT}/node-project/.yarnrc.yml"
+  cat >"$path" <<'YARNRC'
+npmRegistryServer: "https://berry.before.example"
+npmPublishRegistry: "https://publish.berry.example"
+npmScopes:
+  internal:
+    npmRegistryServer: "https://scoped.berry.example"
+    npmAuthToken: "BERRY_SECRET_SENTINEL"
+YARNRC
+  NODE_CLIENT=yarn NODE_SCOPE=project NODE_PROJECT_DIR="${_TEST_ROOT}/node-project"
+  NODE_TEST_YARN_VERSION="4.5.0"
+  before="$(sha256sum "$path")"
+  _node_yarn_flavor
+  assert_equal berry "$NODE_YARN_FLAVOR" "Yarn 2+ is identified as Berry"
+  _node_apply_registry set "https://berry.after.example/" >/dev/null
+  assert_file_contains "$path" 'npmRegistryServer: "https://berry.after.example/"' "Yarn Berry project registry changes"
+  assert_file_contains "$path" 'npmPublishRegistry: "https://publish.berry.example"' "Yarn Berry preserves publish registry"
+  assert_file_contains "$path" "https://scoped.berry.example" "Yarn Berry preserves scoped registry"
+  assert_file_contains "$path" "BERRY_SECRET_SENTINEL" "Yarn Berry preserves scoped auth tokens"
+  _node_apply_registry reset >/dev/null
+  after="$(sha256sum "$path")"
+  assert_equal "$before" "$after" "Yarn Berry rollback restores the original file"
+
+  NODE_REQUESTED=false NODE_ACTION="" NODE_CLIENT=npm NODE_SCOPE=user NODE_REGISTRY_URL=""
+  NODE_PROJECT_DIR="" NODE_TEST_PACKAGE=is-number NODE_RESTORE_PATH="" NODE_TARGET_FILE="" NODE_YARN_FLAVOR=""
+  DRY_RUN=true
+  unset -f npm pnpm yarn _node_probe_registry _confirm_action
+  unset -f _node_test_ini_set _node_test_yarn_classic_set _node_test_yarn_yaml_set
+  if [[ "$home_set" == x ]]; then export HOME="$original_home"; else unset HOME; fi
+  if [[ "$xdg_state_set" == x ]]; then export XDG_STATE_HOME="$original_xdg_state"; else unset XDG_STATE_HOME; fi
+  if [[ "$xdg_config_set" == x ]]; then export XDG_CONFIG_HOME="$original_xdg_config"; else unset XDG_CONFIG_HOME; fi
+  for ((code = 0; code < ${#override_names[@]}; code++)); do
+    name="${override_names[$code]}"
+    if [[ -n "${override_values[$code]}" ]]; then export "$name=${override_values[$code]}"; else unset "$name"; fi
+  done
+}
+
 main() {
   printf '\nPower APT Boost — Offline Test Suite\n'
   printf '%s\n' '===================================='
@@ -1019,6 +1349,7 @@ main() {
   test_catalog_and_release_metadata
   test_benchmark_selection_and_read_only_safety
   test_python_manager_safety
+  test_node_manager_safety
   printf '\nResults: %d passed, %d failed, %d total\n' "$_tests_passed" "$_tests_failed" "$_tests_run"
   [[ "$_tests_failed" -eq 0 ]]
 }

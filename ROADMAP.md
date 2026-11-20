@@ -976,17 +976,17 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 
 **Goal:** Support npm, pnpm, Yarn Classic and Yarn Berry.
 
-- [ ] Add client/version detection.
-- [ ] Add registry and tarball-host checks.
-- [ ] Add user-level registry configuration.
-- [ ] Preserve scoped registries, auth and publish registry values.
-- [ ] Add explicit project-level opt-in and diff preview.
-- [ ] Add metadata-only verification and rollback tests.
+- [x] Detect Node.js, npm, pnpm and Yarn versions; distinguish Yarn Classic from Berry.
+- [x] Validate credential-free HTTPS registry URLs and check npm-compatible package metadata plus the advertised tarball host using HEAD only.
+- [x] Add default user-level registry configuration through native npm, pnpm and Yarn commands.
+- [x] Preserve scoped registries, authentication values, unrelated config, package.json/publishConfig and Yarn Berry's separate npmPublishRegistry.
+- [x] Add explicit project-scope opt-in requiring a project directory and regular package.json, with a redacted current/proposed diff preview.
+- [x] Add target-specific snapshots, read-back verification, SHA-256 conflict checks, reset/restore and offline rollback tests.
 
 **Acceptance criteria**
 
-- [ ] No lockfile changes during benchmark or registry configuration.
-- [ ] Existing private scopes and tokens remain intact.
+- [x] No package archive is downloaded or installed; package manifests and lockfiles remain untouched.
+- [x] Existing private scopes, authentication entries, unrelated config and separate publish settings remain intact.
 
 ### Phase 7 — Docker / OCI support
 
@@ -1155,12 +1155,13 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Current execution state:** Phase 5 core Python package-source manager is implemented in [PR #6](https://github.com/power0matin/power-apt-boost/pull/6); PR remains open for review.  
-**Exact-head CI:** All jobs passed on `7f16fa605ed1a674252fb3451cc1ddcb25a1b38c` — ShellCheck, shfmt, Ubuntu 20.04 (168/168), Ubuntu 22.04 (168/168) and Ubuntu 24.04 (186/186). [CI run #84](https://github.com/power0matin/power-apt-boost/actions/runs/44647360924).  
-**Previous phases:** PRs #1-#5 are merged into `main`; Phase 4 is complete at `a5df05875ca3268da8a694760053ef4e583cf851`.  
-**Next permitted work unit:** Review and merge PR #6 before starting Phase 6.  
-**Live-network validation:** No live PyPI index or artifact probe was run in CI; index checks use offline input-validation tests. A curated mirror catalogue and pipx backend adapter remain separate follow-ups.  
+**Current execution state:** Phase 6 Node.js registry support is implemented in [PR #7](https://github.com/power0matin/power-apt-boost/pull/7); PR is open for review and has not been merged.  
+**Exact implementation CI:** All four jobs passed on `1e743b1f2b49eccad4fad36c87dd65da936de92b` — ShellCheck, shfmt, Ubuntu 20.04 (211/211), Ubuntu 22.04 (211/211) and Ubuntu 24.04 (229/229). [CI run #98](https://github.com/power0matin/power-apt-boost/actions/runs/44655542642).  
+**Previous phases:** PRs #1-#6 are merged into `main`; Phase 5 is merged at `d7a228aa41ee910ff21b8f7f2ff62410d82dc37b`.  
+**Next permitted work unit:** Review and merge PR #7 before starting Phase 7.  
+**Node.js validation:** CI is offline and uses command mocks for npm, pnpm and Yarn Classic/Berry. No real package managers or live registry endpoints were installed or queried in CI. The runtime registry check is opt-in and uses a user-supplied HTTPS endpoint; the tarball check uses HEAD only.  
+**Python scope:** pip, uv and Poetry configuration are managed; pipx is detected only; a curated PyPI catalogue remains a follow-up.  
+**Node.js scope:** npm, pnpm, Yarn Classic and Berry are supported for user configuration by default, with explicit project scope; private scopes and auth are preserved.  
 **Release/deployment status:** No release, tag or deployment has been created.  
-**Python scope:** pip, uv and Poetry configuration are managed; pipx is detected only; curated PyPI mirror discovery remains a follow-up.  
-**Live-network validation:** Public Ubuntu mirror discovery and real archive-signature checks were not run in CI; Python index endpoint checks are runtime opt-in and are not CI network prerequisites.  
-**Release/deployment status:** No release, tag or deployment has been created.
+**Documentation-only sync:** Subsequent Roadmap/PR metadata updates do not change the validated implementation SHA above.  
+**Earlier live validation:** Public Ubuntu mirror discovery/signature checks and live PyPI probes are not CI prerequisites; opt-in runtime checks remain separate from offline regression coverage.

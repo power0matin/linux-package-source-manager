@@ -76,6 +76,19 @@ The `main` branch currently declares script version `3.0.0`, but that version ha
 - APT proxy URLs supplied through `--proxy` cannot contain usernames or passwords; do not place credentials in command-line arguments or shell history.
 - `--clear-proxy` explicitly writes `DIRECT`; leaving proxy options unset preserves existing external APT proxy settings and existing proxy directives in the tool-managed file.
 
+## Python package-source operations
+
+- Python status reporting is read-only. Environment override **names** are shown without their values, and configured pip index URLs are displayed as host/path labels rather than raw strings.
+- User-supplied Simple API URLs must use HTTPS and cannot contain URL-embedded usernames/passwords, query strings or fragments. The tester checks metadata and one advertised distribution endpoint; it does not install packages or download a package archive in full.
+- pip configuration writes are limited to the selected user, active-virtualenv or global scope. A pre-existing `PIP_INDEX_URL` or `PIP_CONFIG_FILE` override causes a safe refusal instead of writing an ineffective configuration. Existing `PIP_EXTRA_INDEX_URL` and trusted-host settings are left untouched.
+- Global pip configuration is blocked when the selected interpreter reports the PEP 668 `EXTERNALLY-MANAGED` marker. The tool does not use `--break-system-packages`.
+- uv and Poetry edits are limited to one explicitly selected TOML file. Existing files are parsed before and after the change, app-managed blocks are uniquely marked, writes use atomic replacement, and symlinked or non-regular targets are refused. Existing private sources, project pins and unrelated TOML entries are preserved.
+- Poetry `supplemental` is the default. A `primary` source disables implicit PyPI; an `explicit` source is not automatically used unless a dependency pins that source. Power APT Boost warns about these semantics and never edits dependency declarations or lockfiles.
+- Python snapshots are stored under `$XDG_STATE_HOME/power-apt-boost/python` (default: `~/.local/state/power-apt-boost/python`). The snapshot directory is mode `0700` and its files are mode `0600`. A TOML snapshot contains a copy of the complete target file, so protect it as user configuration data; it may contain private repository metadata unrelated to the managed block.
+- Snapshot restore compares the current pip value or TOML post-change SHA-256 with the recorded post-change state. If another tool or user edited the configuration afterward, restore refuses to overwrite that newer state.
+- uv/Poetry TOML editing needs Python 3.11+ (`tomllib`) or an already-installed `tomli`. The tool does not install a parser, package manager or dependency to enable this feature.
+- pipx is detected for inventory only. Its separate application virtual environments are not changed by this phase.
+
 ## Best Practices for Users
 
 1. **Review the script** before running from a URL:

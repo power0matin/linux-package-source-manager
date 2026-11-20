@@ -717,7 +717,7 @@ SOURCES
 }
 
 test_terminal_menu_progress() {
-  local menu_output value progress_output code
+  local menu_output value code
   local menu_log="${_TEST_ROOT}/menu-output.log"
   local progress_log="${_TEST_ROOT}/progress-output.log"
 
@@ -901,8 +901,9 @@ EOF
 }
 
 test_benchmark_selection_and_read_only_safety() {
-  local before after code
+  local before after code progress_log
   local original_quiet="$QUIET" original_spinner="$NO_SPINNER" original_workers="$BENCH_WORKERS"
+  progress_log="${_TEST_ROOT}/benchmark-progress.log"
   QUIET=true
   NO_SPINNER=true
   BENCH_WORKERS=2
@@ -935,6 +936,14 @@ test_benchmark_selection_and_read_only_safety() {
   code=0
   [[ "$SELECTED_MIRROR" != "https://unverified-fixture.example/ubuntu" ]] || code=1
   assert_exit_code 0 "$code" "an unverified mirror cannot win with a lower latency score"
+
+  QUIET=false
+  _select_mirror >/dev/null 2>"$progress_log"
+  assert_file_contains "$progress_log" "[1/3] Mirror verification" "benchmark reports the first completed mirror"
+  assert_file_contains "$progress_log" "[2/3] Mirror verification" "benchmark reports the second completed mirror"
+  assert_file_contains "$progress_log" "[3/3] Mirror verification" "benchmark reports completion of every mirror"
+  assert_file_contains "$progress_log" "ETA" "benchmark reports estimated remaining time while checks are pending"
+
   unset -f _load_mirror_catalog _get_mirrors _test_mirror
   QUIET="$original_quiet"
   NO_SPINNER="$original_spinner"

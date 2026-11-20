@@ -5,11 +5,11 @@
 # Author  : Matin Shahabadi
 # GitHub  : https://github.com/power0matin/linux-package-source-manager
 # License : MIT
-# Version : 3.0.1
+# Version : 3.0.3
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/power-apt-boost.sh | sudo bash -s -- --yes
-#   sudo bash power-apt-boost.sh [OPTIONS]
+#   curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/linux-package-source-manager.sh | sudo bash -s -- --yes
+#   sudo bash linux-package-source-manager.sh [OPTIONS]
 #
 # Run with --help for full usage information.
 
@@ -19,7 +19,7 @@ IFS=$'\n\t'
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 readonly APP_NAME="Linux Package Source Manager"
-readonly APP_VERSION="3.0.2"
+readonly APP_VERSION="3.0.3"
 readonly APP_SLUG="power-apt-boost"
 readonly APP_AUTHOR="Matin Shahabadi"
 readonly APP_GITHUB="https://github.com/power0matin/linux-package-source-manager"
@@ -79,11 +79,10 @@ readonly EXIT_CANCELLED=10
 
 # Detect script invocation name for restore command
 set +u
-_SCRIPT_NAME="${BASH_SOURCE[0]}"
-set -u
-if [[ "$_SCRIPT_NAME" == "bash" ]] || [[ "$_SCRIPT_NAME" == "/usr/bin/bash" ]]; then
-  _SCRIPT_NAME="power-apt-boost.sh"
-elif [[ "$_SCRIPT_NAME" == *"power-apt-boost"* ]]; then
+_SCRIPT_NAME="${BASH_SOURCE[0]:-}"
+if [[ -z "$_SCRIPT_NAME" || "$_SCRIPT_NAME" == "bash" || "${_SCRIPT_NAME##*/}" == "bash" || "$_SCRIPT_NAME" == "/dev/stdin" ]]; then
+  _SCRIPT_NAME="linux-package-source-manager.sh"
+else
   _SCRIPT_NAME="$(basename "$_SCRIPT_NAME")"
 fi
 
@@ -4389,7 +4388,7 @@ Ubuntu-first Linux package source and mirror manager for APT, Python, Node.js an
 ${COLOR_BOLD}${COLOR_BLUE}USAGE${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME}                 # Open the interactive menu on a TTY
   sudo bash ${_SCRIPT_NAME} [OPTIONS]
-  curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/power-apt-boost.sh | sudo bash -s -- --yes
+  curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/linux-package-source-manager.sh | sudo bash -s -- --yes
 
 ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}-h, --help${COLOR_RESET}              Show this help message
@@ -4460,7 +4459,7 @@ ${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME}
 
   ${COLOR_DIM}# Apply automatically from a pipe or CI job${COLOR_RESET}
-  curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/power-apt-boost.sh | sudo bash -s -- --yes
+  curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/linux-package-source-manager.sh | sudo bash -s -- --yes
 
 
 

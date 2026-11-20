@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.3] — 2026-11-21
+
+### Changed
+
+- Renamed the public standalone script and release asset to `linux-package-source-manager.sh` to match the repository and product name.
+- Preserved the legacy `APP_SLUG`, environment variables, managed configuration markers, cache paths, lock paths and backup locations so existing installations remain compatible.
+
+### Fixed
+
+- Corrected the source header version so it matches `APP_VERSION`.
+- Rebuilt release notes with a literal `printf` format string. Markdown backticks are no longer interpreted as shell command substitutions during release publication.
+- Aligned CI and release workflows, checksum filenames, installation URLs and contributor/support documentation with the renamed entry point.
+
+### Tests
+
+- Updated CLI, source and lint checks to use the new filename and verify the version/help output.
+- Retained the Ubuntu 20.04, 22.04 and 24.04 offline regression matrix and mandatory ShellCheck/shfmt gates.
+
 ## [3.0.2] — 2026-11-21
 
 ### Fixed

@@ -59,7 +59,7 @@ The following reflects the repository inspection performed for this roadmap. It 
 
 ### Existing implementation
 
-- A single Bash entry point: `power-apt-boost.sh`.
+- A single Bash entry point: `linux-package-source-manager.sh`.
 - Ubuntu-only OS detection through `/etc/os-release`.
 - A hard-coded list of roughly 29 Ubuntu mirror URLs, including an Iran group and international groups.
 - Parallel mirror probing with up to eight workers.
@@ -70,7 +70,7 @@ The following reflects the repository inspection performed for this roadmap. It 
 - Backup and restore commands, rollback after a failed `apt-get update`, dry-run, custom mirror, list, JSON, quiet/verbose, timeout, country, IPv6 and log-file options.
 - A small shell test runner, ShellCheck/shfmt CI workflow and tag-triggered release workflow.
 
-### Known inconsistencies and risks to resolve first
+### Historical audit findings from the initial roadmap baseline
 
 These are audit findings to turn into tests and fixes, not assumptions that every runtime path will fail:
 
@@ -709,7 +709,7 @@ Do not let each adapter implement a separate, inconsistent backup or confirmatio
 
 ### 17.2 Single-file release, modular development
 
-- [ ] Keep `power-apt-boost.sh` as the public standalone release artifact.
+- [x] Publish `linux-package-source-manager.sh` as the public standalone release artifact while preserving legacy internal state identifiers and configuration paths.
 - [ ] Consider splitting development sources into modules only when the build process is deterministic and tested.
 - [ ] Add a build/assembly script that creates the single-file release from source modules.
 - [ ] Add a test that generated release content matches the tested source revision.
@@ -1163,13 +1163,13 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Repository snapshot (2026-11-21):** The latest implementation change before release preparation was merged through [PR #10](https://github.com/power0matin/linux-package-source-manager/pull/10), at commit `6abe3b348294c44c4a77fa341694cd0306b74b45`. Phase 7 Docker / OCI support was previously merged through [PR #8](https://github.com/power0matin/linux-package-source-manager/pull/8). The current rebranded source version is `3.0.1`.
+**Repository snapshot (2026-11-21):** The latest implementation change before release preparation was merged through [PR #10](https://github.com/power0matin/linux-package-source-manager/pull/10), at commit `6abe3b348294c44c4a77fa341694cd0306b74b45`. Phase 7 Docker / OCI support was previously merged through [PR #8](https://github.com/power0matin/linux-package-source-manager/pull/8). The source version is `3.0.3`; the public standalone artifact is `linux-package-source-manager.sh`.
 
-**Release target:** `v3.0.1` is a patch release over `v3.0.0`. It carries the public product rebrand, fixes the CLI's raw GitHub installation URL, and aligns the documented non-interactive install command with the explicit `--yes` safety requirement. Publication is gated on ShellCheck, shfmt and the offline regression suite on Ubuntu 20.04, 22.04 and 24.04.
+**Release target:** `v3.0.3` is the next patch release after `v3.0.2`. It standardizes the public standalone artifact name, fixes release-note generation so Markdown cannot trigger shell command substitution, aligns installation/checksum links, and is gated on ShellCheck, shfmt and the offline regression suite on Ubuntu 20.04, 22.04 and 24.04.
 
 **Implementation scope:** Python support covers pip, uv and Poetry; pipx is detected only. Node.js support covers npm, pnpm, Yarn Classic and Yarn Berry. Docker Engine APT sources are inspected separately from OCI registry mirrors; daemon changes are backed up and validated, and restart remains a separate confirmed action.
 
-**Next implementation phase:** Phase 8 — Go, Rust, PHP and Java adapters. Start only after `v3.0.1` is published and the phase scope is reviewed.
+**Next implementation phase:** Phase 8 — Go, Rust, PHP and Java adapters. Start only after `v3.0.3` is published and the phase scope is reviewed.
 
 **Deployment boundary:** A GitHub release publishes source artifacts only. It does not install packages, change APT or Docker configuration, restart services, or deploy to a VPS.
 

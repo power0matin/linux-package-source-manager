@@ -76,6 +76,8 @@ test_cli() {
   local output code
   output="$(bash "$SCRIPT" --help 2>&1)"
   assert_contains "Linux Package Source Manager" "$output" "help displays product name"
+  assert_contains "https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/power-apt-boost.sh" "$output" "help prints a valid install URL"
+  assert_contains "| sudo bash -s -- --yes" "$output" "help uses explicit non-interactive confirmation"
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"

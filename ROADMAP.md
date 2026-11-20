@@ -1005,7 +1005,7 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 - [x] CLI, JSON status and terminal UI clearly distinguish an APT repository from an OCI image registry mirror.
 
 **Implementation:** [PR #8](https://github.com/power0matin/power-apt-boost/pull/8) — open for final CI verification.  
-**Exact implementation CI:** Commit `b67dd68f8c25e2ac1ad747721079842aab0953fe` passed ShellCheck, shfmt and the offline matrix: Ubuntu 20.04 (262/262), Ubuntu 22.04 (262/262), Ubuntu 24.04 (280/280). [CI run #103 equivalent run](https://github.com/power0matin/power-apt-boost/actions/runs/44664543497).  
+**Exact implementation CI:** Commit `b67dd68f8c25e2ac1ad747721079842aab0953fe` passed ShellCheck, shfmt and the offline matrix: Ubuntu 20.04 (262/262), Ubuntu 22.04 (262/262), Ubuntu 24.04 (280/280). [CI run #110](https://github.com/power0matin/power-apt-boost/actions/runs/44664543497).  
 **Live validation boundary:** CI uses an offline Registry V2 probe stub. No public registry, pull-through-cache behavior, image pull, Docker installation or running daemon was tested or changed. `mirror.gcr.io` is documented as a partial cache, not a complete mirror.
 
 ### Phase 8 — Go, Rust, PHP and Java adapters

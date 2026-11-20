@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# Power APT Boost — Fast Ubuntu APT mirror selector and network optimizer
+# Linux Package Source Manager — Ubuntu-first package source and mirror manager
 #
 # Author  : Matin Shahabadi
-# GitHub  : https://github.com/power0matin/power-apt-boost
+# GitHub  : https://github.com/power0matin/linux-package-source-manager
 # License : MIT
 # Version : 3.0.0
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/power-apt-boost.sh | sudo bash -s -- --yes
 #   sudo bash power-apt-boost.sh [OPTIONS]
 #
 # Run with --help for full usage information.
@@ -18,11 +18,11 @@ IFS=$'\n\t'
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-readonly APP_NAME="Power APT Boost"
+readonly APP_NAME="Linux Package Source Manager"
 readonly APP_VERSION="3.0.0"
 readonly APP_SLUG="power-apt-boost"
 readonly APP_AUTHOR="Matin Shahabadi"
-readonly APP_GITHUB="https://github.com/power0matin/power-apt-boost"
+readonly APP_GITHUB="https://github.com/power0matin/linux-package-source-manager"
 readonly APP_LICENSE="MIT"
 
 _TEST_MODE="${POWER_APT_BOOST_TEST_MODE:-0}"
@@ -429,7 +429,7 @@ need_root() {
     :
   elif [[ "$_hostname_output" == *"unable to resolve host"* ]]; then
     warn "Hostname resolution issue detected — this is a system config problem"
-    warn "  (inconsistent hostname in /etc/hosts), not a Power APT Boost issue."
+    warn "  (inconsistent hostname in /etc/hosts), not a Linux Package Source Manager issue."
     warn "  The script will continue safely."
     warn "  Fix: add your hostname to /etc/hosts (e.g. '127.0.0.1 $(hostname 2>/dev/null || echo localhost)')"
   fi
@@ -1889,7 +1889,7 @@ _acquire_mutation_lock() {
   umask 077
   exec 9>"$APT_LOCK_FILE" || die "Cannot open APT mutation lock." "$EXIT_GENERAL"
   umask "$old_umask"
-  flock -n 9 || die "Another Power APT Boost operation is already modifying APT." "$EXIT_GENERAL"
+  flock -n 9 || die "Another Linux Package Source Manager operation is already modifying APT." "$EXIT_GENERAL"
   chmod 0600 "$APT_LOCK_FILE" 2>/dev/null || true
 }
 
@@ -2972,7 +2972,7 @@ _docker_apply_mirror_unlocked() {
   }
   [[ ! -L "$DOCKER_STATE_FILE" ]] || return "$EXIT_BACKUP"
   [[ ! -e "$DOCKER_STATE_FILE" ]] || {
-    error "A Power APT Boost Docker snapshot is already active. Reset it before configuring another mirror."
+    error "A Linux Package Source Manager Docker snapshot is already active. Reset it before configuring another mirror."
     return "$EXIT_USAGE"
   }
   _docker_probe_mirror "$url" || return $?
@@ -4369,7 +4369,7 @@ _print_banner() {
                                                                                                                        
 EOF
   echo "" >&2
-  printf '%b\n' "  ${COLOR_DIM}Fast Ubuntu APT mirror selector & network optimizer${COLOR_RESET}" >&2
+  printf '%b\n' "  ${COLOR_DIM}Ubuntu-first Linux package source and mirror manager${COLOR_RESET}" >&2
   printf '%b\n' "  ${COLOR_DIM}v${APP_VERSION} · ${APP_LICENSE} · ${APP_AUTHOR}${COLOR_RESET}" >&2
   printf '%b\n' "  ${COLOR_DIM}${APP_GITHUB}${COLOR_RESET}" >&2
   echo "" >&2
@@ -4377,8 +4377,8 @@ EOF
 
 _print_help() {
   cat <<EOF
-${COLOR_BOLD}${COLOR_CYAN}Power APT Boost${COLOR_RESET} v${APP_VERSION}
-Fast Ubuntu APT mirror selector and network optimizer
+${COLOR_BOLD}${COLOR_CYAN}${APP_NAME}${COLOR_RESET} v${APP_VERSION}
+Ubuntu-first Linux package source and mirror manager for APT, Python, Node.js and Docker/OCI
 
 ${COLOR_BOLD}${COLOR_BLUE}USAGE${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME}                 # Open the interactive menu on a TTY
@@ -5633,7 +5633,7 @@ _menu_backups() {
   restore)
     listing="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn || true)"
     if [[ -z "$listing" ]]; then
-      _menu_message "Backup and Restore" "No Power APT Boost backup snapshots were found."
+      _menu_message "Backup and Restore" "No Linux Package Source Manager backup snapshots were found."
       return 0
     fi
     local -a args=()
@@ -5962,7 +5962,7 @@ _menu_docker() {
       _menu_operation_result "Docker reset" "Managed Docker registry mirror reset completed." "$rc"
       ;;
     restore)
-      path="$(_menu_input "Docker snapshot path" "Enter a snapshot path from the Power APT Boost Docker backup directory" "")" || continue
+      path="$(_menu_input "Docker snapshot path" "Enter a snapshot path from the Linux Package Source Manager Docker backup directory" "")" || continue
       DOCKER_ACTION="restore"
       DOCKER_RESTORE_PATH="$path"
       rc=0

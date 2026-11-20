@@ -4813,7 +4813,6 @@ _menu_diagnostics() {
   esac
 }
 
-
 _menu_nodejs() {
   local choice rc
   while true; do

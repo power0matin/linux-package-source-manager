@@ -992,17 +992,21 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 
 **Goal:** Safely manage Docker Engine repository discovery and optional Docker Hub registry-mirror settings.
 
-- [ ] Add Docker Engine APT source inspection.
-- [ ] Add Docker Hub mirror catalog and pull endpoint checks.
-- [ ] Add safe `daemon.json` merge/validation/backup/restore.
-- [ ] Add explicit separate daemon restart confirmation.
-- [ ] Add failure/recovery tests and workload-disruption warnings.
+- [x] Add read-only Docker Engine APT source inspection, separately classified from OCI image registry mirrors.
+- [x] Add a documented Docker Hub cache candidate and HTTPS Registry V2 endpoint verification using `GET /v2/` only.
+- [x] Add safe `daemon.json` merge, Docker-native validation, restricted backup, exact restore and SHA-256 conflict checks.
+- [x] Add a separate Docker daemon restart action with an explicit confirmation and running-workload warning.
+- [x] Add offline failure/recovery tests for malformed config, preservation of existing settings, rollback conflicts and restart gating.
 
 **Acceptance criteria**
 
-- [ ] No daemon restart occurs without a separate confirmation.
-- [ ] Existing daemon settings are preserved.
-- [ ] The UI clearly distinguishes an APT repository from an OCI image registry mirror.
+- [x] No daemon restart occurs during configuration or restore; a separately confirmed action is required.
+- [x] Existing daemon settings and registry-mirror entries are preserved.
+- [x] CLI, JSON status and terminal UI clearly distinguish an APT repository from an OCI image registry mirror.
+
+**Implementation:** [PR #8](https://github.com/power0matin/power-apt-boost/pull/8) — open for final CI verification.  
+**Exact implementation CI:** Commit `b67dd68f8c25e2ac1ad747721079842aab0953fe` passed ShellCheck, shfmt and the offline matrix: Ubuntu 20.04 (262/262), Ubuntu 22.04 (262/262), Ubuntu 24.04 (280/280). [CI run #103 equivalent run](https://github.com/power0matin/power-apt-boost/actions/runs/44664543497).  
+**Live validation boundary:** CI uses an offline Registry V2 probe stub. No public registry, pull-through-cache behavior, image pull, Docker installation or running daemon was tested or changed. `mirror.gcr.io` is documented as a partial cache, not a complete mirror.
 
 ### Phase 8 — Go, Rust, PHP and Java adapters
 
@@ -1155,13 +1159,12 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Current execution state:** Phase 6 Node.js registry support is implemented in [PR #7](https://github.com/power0matin/power-apt-boost/pull/7); PR is open for review and has not been merged.  
-**Exact implementation CI:** All four jobs passed on `1e743b1f2b49eccad4fad36c87dd65da936de92b` — ShellCheck, shfmt, Ubuntu 20.04 (211/211), Ubuntu 22.04 (211/211) and Ubuntu 24.04 (229/229). [CI run #98](https://github.com/power0matin/power-apt-boost/actions/runs/44655542642).  
-**Previous phases:** PRs #1-#6 are merged into `main`; Phase 5 is merged at `d7a228aa41ee910ff21b8f7f2ff62410d82dc37b`.  
-**Next permitted work unit:** Review and merge PR #7 before starting Phase 7.  
-**Node.js validation:** CI is offline and uses command mocks for npm, pnpm and Yarn Classic/Berry. No real package managers or live registry endpoints were installed or queried in CI. The runtime registry check is opt-in and uses a user-supplied HTTPS endpoint; the tarball check uses HEAD only.  
-**Python scope:** pip, uv and Poetry configuration are managed; pipx is detected only; a curated PyPI catalogue remains a follow-up.  
-**Node.js scope:** npm, pnpm, Yarn Classic and Berry are supported for user configuration by default, with explicit project scope; private scopes and auth are preserved.  
+**Current execution state:** Phase 7 Docker Engine / OCI registry support is implemented in [PR #8](https://github.com/power0matin/power-apt-boost/pull/8); PR is open pending final exact-head CI verification.  
+**Previous phases:** PRs #1-#7 are merged into `main`; Phase 6 is merged at `9baba4a2ca553c70e7ada89f2148c3d8d862935e`.  
+**Phase 7 implementation CI:** Commit `b67dd68f8c25e2ac1ad747721079842aab0953fe` passed ShellCheck, shfmt and offline tests on Ubuntu 20.04 (262/262), 22.04 (262/262) and 24.04 (280/280). [CI run](https://github.com/power0matin/power-apt-boost/actions/runs/44664543497). The final PR head includes a documentation-only roadmap sync and is being checked separately.  
+**Next permitted work unit:** Merge PR #8 only after its final exact-head CI is green; then begin Phase 8.  
+**Python scope:** pip, uv and Poetry configuration are managed; pipx is detected only; curated PyPI catalogue discovery remains a follow-up.  
+**Node.js scope:** npm, pnpm, Yarn Classic and Berry are supported with user scope by default and explicit project scope; scoped registries and auth entries are preserved.  
+**Docker / OCI scope:** Docker Engine APT sources are inspected read-only and separately from OCI mirrors. daemon.json changes are backed up, validated and conflict-checked; Docker restart is always a separate confirmed operation. Registry V2 CI tests are offline; no live Docker pull-through cache was validated.  
 **Release/deployment status:** No release, tag or deployment has been created.  
-**Documentation-only sync:** Subsequent Roadmap/PR metadata updates do not change the validated implementation SHA above.  
-**Earlier live validation:** Public Ubuntu mirror discovery/signature checks and live PyPI probes are not CI prerequisites; opt-in runtime checks remain separate from offline regression coverage.
+**Earlier live validation:** Public Ubuntu mirror discovery/signature checks and live PyPI probes are opt-in runtime checks, not CI prerequisites.

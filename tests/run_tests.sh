@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Power APT Boost — Offline regression and safety tests
+# Linux Package Source Manager — Offline regression and safety tests
 #
 # Run: bash tests/run_tests.sh
 
@@ -75,11 +75,13 @@ trap cleanup EXIT
 test_cli() {
   local output code
   output="$(bash "$SCRIPT" --help 2>&1)"
-  assert_contains "Power APT Boost" "$output" "help displays product name"
+  assert_contains "Linux Package Source Manager" "$output" "help displays product name"
+  assert_contains "https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/power-apt-boost.sh" "$output" "help prints a valid install URL"
+  assert_contains "| sudo bash -s -- --yes" "$output" "help uses explicit non-interactive confirmation"
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"
-  assert_contains "3.0.0" "$output" "version matches script version"
+  assert_contains "3.0.1" "$output" "version matches script version"
   assert_contains "--menu" "$(bash "$SCRIPT" --help 2>&1)" "help documents interactive menu"
   assert_contains "--doctor" "$(bash "$SCRIPT" --help 2>&1)" "help documents doctor command"
   assert_contains "--yes" "$(bash "$SCRIPT" --help 2>&1)" "help documents explicit non-interactive confirmation"
@@ -1636,7 +1638,7 @@ _run_test_group() {
 }
 
 main() {
-  printf '\nPower APT Boost — Offline Test Suite\n'
+  printf '\nLinux Package Source Manager — Offline Test Suite\n'
   printf '%s\n' '===================================='
   _run_test_group 1 9 "CLI validation" test_cli
   _run_test_group 2 9 "Filesystem and configuration safety" test_filesystem_operations

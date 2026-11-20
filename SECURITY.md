@@ -4,13 +4,13 @@
 
 | Version | Support status |
 | ------- | -------------- |
-| v2.1.0 | :white_check_mark: Latest published release |
-| v2.0.x and earlier | :x: Unsupported |
-| `main` / script version `3.0.0` | Development source; not a published release |
+| v3.0.x | :white_check_mark: Supported stable release line |
+| v2.1.0 and earlier | :x: Unsupported |
+| `main` | Development source; may contain unreleased changes |
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Power APT Boost, please report it responsibly.
+If you discover a security vulnerability in Linux Package Source Manager, please report it responsibly.
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
@@ -40,14 +40,14 @@ This policy covers the `power-apt-boost.sh` script and its direct behavior. The 
 
 ## Security Considerations
 
-### What Power APT Boost Does
+### What Linux Package Source Manager Does
 
 - Writes to `/etc/apt/sources.list.d/` and `/etc/apt/apt.conf.d/`
 - Requires root privileges
 - Tests network endpoints (mirrors)
 - Creates backups in `/var/backups/power-apt-boost/`
 
-### What Power APT Boost Does NOT Do
+### What Linux Package Source Manager Does NOT Do
 
 - Exfiltrates data
 - Downloads or executes remote code
@@ -72,7 +72,7 @@ This policy covers the `power-apt-boost.sh` script and its direct behavior. The 
 - npm, pnpm, Yarn Classic and Yarn Berry are changed through their own configuration commands. Mutations target one user-level config file by default; project scope requires an explicit project directory with a regular package.json. The adapter refuses symlinked and non-regular config targets.
 - The managed operation changes only the default fetch-registry setting. Existing scoped registry entries and authentication values are not rewritten. package.json, publishConfig, workspace metadata and lockfiles are not edited. Yarn Berry's distinct npmPublishRegistry remains intact; for other tools, a default registry can also be used by publish commands when no publish-specific value is configured.
 - Known environment overrides for registry/config resolution cause mutating operations to refuse. Status output reports override names without values. The tool does not import or store registry credentials.
-- Before mutation, the selected config file is copied into a mode-0700 snapshot directory with mode-0600 contents. Restore checks the post-change SHA-256 and refuses to overwrite later edits. Reset is limited to the exact client, scope and target that Power APT Boost previously managed.
+- Before mutation, the selected config file is copied into a mode-0700 snapshot directory with mode-0600 contents. Restore checks the post-change SHA-256 and refuses to overwrite later edits. Reset is limited to the exact client, scope and target that Linux Package Source Manager previously managed.
 - Non-interactive changes require --yes; --dry-run prints the selected target and redacted current/proposed registry labels without writing configuration. Node.js operations do not require root.
 
 
@@ -91,7 +91,7 @@ This policy covers the `power-apt-boost.sh` script and its direct behavior. The 
 
 ## Release status
 
-The `main` branch currently declares script version `3.0.0`, but that version has not been published as a Git tag/release. The latest published release is `v2.1.0`. For production use, prefer the tagged release unless you have reviewed and intentionally chosen the unreleased source.
+The `main` branch may contain changes that have not been published as a tagged release. For production use, prefer the latest stable version listed on the [GitHub Releases page](https://github.com/power0matin/linux-package-source-manager/releases) unless you have reviewed and intentionally chosen unreleased source.
 
 ### Network and proxy diagnostics
 
@@ -107,7 +107,7 @@ The `main` branch currently declares script version `3.0.0`, but that version ha
 - pip configuration writes are limited to the selected user, active-virtualenv or global scope. A pre-existing `PIP_INDEX_URL` or `PIP_CONFIG_FILE` override causes a safe refusal instead of writing an ineffective configuration. Existing `PIP_EXTRA_INDEX_URL` and trusted-host settings are left untouched.
 - Global pip configuration is blocked when the selected interpreter reports the PEP 668 `EXTERNALLY-MANAGED` marker. The tool does not use `--break-system-packages`.
 - uv and Poetry edits are limited to one explicitly selected TOML file. Existing files are parsed before and after the change, app-managed blocks are uniquely marked, writes use atomic replacement, and symlinked or non-regular targets are refused. Existing private sources, project pins and unrelated TOML entries are preserved.
-- Poetry `supplemental` is the default. A `primary` source disables implicit PyPI; an `explicit` source is not automatically used unless a dependency pins that source. Power APT Boost warns about these semantics and never edits dependency declarations or lockfiles.
+- Poetry `supplemental` is the default. A `primary` source disables implicit PyPI; an `explicit` source is not automatically used unless a dependency pins that source. Linux Package Source Manager warns about these semantics and never edits dependency declarations or lockfiles.
 - Python snapshots are stored under `$XDG_STATE_HOME/power-apt-boost/python` (default: `~/.local/state/power-apt-boost/python`). The snapshot directory is mode `0700` and its files are mode `0600`. A TOML snapshot contains a copy of the complete target file, so protect it as user configuration data; it may contain private repository metadata unrelated to the managed block.
 - Snapshot restore compares the current pip value or TOML post-change SHA-256 with the recorded post-change state. If another tool or user edited the configuration afterward, restore refuses to overwrite that newer state.
 - uv/Poetry TOML editing needs Python 3.11+ (`tomllib`) or an already-installed `tomli`. The tool does not install a parser, package manager or dependency to enable this feature.

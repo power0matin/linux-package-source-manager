@@ -1,6 +1,6 @@
-# Contributing to Power APT Boost
+# Contributing to Linux Package Source Manager
 
-Thank you for considering contributing to Power APT Boost! This document provides guidelines and instructions for contributing.
+Thank you for considering contributing to Linux Package Source Manager! This document provides guidelines and instructions for contributing.
 
 ## Table of Contents
 
@@ -63,8 +63,8 @@ Feature suggestions are welcome. Please include:
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR_USERNAME/power-apt-boost.git
-cd power-apt-boost
+git clone https://github.com/YOUR_USERNAME/linux-package-source-manager.git
+cd linux-package-source-manager
 
 # Make the script executable
 chmod +x power-apt-boost.sh
@@ -174,7 +174,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) format:
 ## Project Structure
 
 ```
-power-apt-boost/
+linux-package-source-manager/
 ├── power-apt-boost.sh      # Main script (single-file for curl | bash)
 ├── tests/                   # Test suite
 ├── .github/                 # GitHub CI/CD and templates
@@ -194,7 +194,7 @@ power-apt-boost/
 
 ### Single-File Design
 
-Power APT Boost is intentionally a single Bash script. This enables:
+Linux Package Source Manager is intentionally a single Bash script. This enables:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/.../power-apt-boost.sh | sudo bash
@@ -212,4 +212,4 @@ The script uses only tools available on a default Ubuntu installation: bash, cur
 
 ## Questions?
 
-Open a [GitHub Discussion](https://github.com/power0matin/power-apt-boost/discussions) or check the [FAQ](README.md#faq) in the README.
+Open a [GitHub Discussion](https://github.com/power0matin/linux-package-source-manager/discussions) or check the [FAQ](README.md#faq) in the README.

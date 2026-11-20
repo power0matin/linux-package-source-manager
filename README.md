@@ -1,41 +1,41 @@
-<h1 align="center">Power APT Boost</h1>
+<h1 align="center">Linux Package Source Manager</h1>
 
 <!-- repo-badges:start -->
 <p align="center">
-  <a href="https://hits.sh/github.com/power0matin/power-apt-boost/"><img src="https://hits.sh/github.com/power0matin/power-apt-boost.svg?style=flat-square&amp;label=Views&amp;labelColor=18181B&amp;color=0EA5E9&amp;logo=github" alt="Repository Views"/></a>
-  <a href="https://github.com/power0matin/power-apt-boost/stargazers"><img src="https://img.shields.io/github/stars/power0matin/power-apt-boost?style=flat-square&amp;label=Stars&amp;labelColor=18181B&amp;color=F59E0B&amp;logo=github&amp;logoColor=white" alt="GitHub Stars"/></a>
-  <a href="https://github.com/power0matin/power-apt-boost/forks"><img src="https://img.shields.io/github/forks/power0matin/power-apt-boost?style=flat-square&amp;label=Forks&amp;labelColor=18181B&amp;color=6366F1&amp;logo=github&amp;logoColor=white" alt="GitHub Forks"/></a>
-  <a href="https://github.com/power0matin/power-apt-boost/issues"><img src="https://img.shields.io/github/issues/power0matin/power-apt-boost?style=flat-square&amp;label=Issues&amp;labelColor=18181B&amp;color=22C55E&amp;logo=github&amp;logoColor=white" alt="GitHub Issues"/></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/power0matin/power-apt-boost?style=flat-square&amp;label=License&amp;labelColor=18181B&amp;color=EF4444&amp;logo=github&amp;logoColor=white" alt="GitHub License"/></a>
+  <a href="https://hits.sh/github.com/power0matin/linux-package-source-manager/"><img src="https://hits.sh/github.com/power0matin/linux-package-source-manager.svg?style=flat-square&amp;label=Views&amp;labelColor=18181B&amp;color=0EA5E9&amp;logo=github" alt="Repository Views"/></a>
+  <a href="https://github.com/power0matin/linux-package-source-manager/stargazers"><img src="https://img.shields.io/github/stars/power0matin/linux-package-source-manager?style=flat-square&amp;label=Stars&amp;labelColor=18181B&amp;color=F59E0B&amp;logo=github&amp;logoColor=white" alt="GitHub Stars"/></a>
+  <a href="https://github.com/power0matin/linux-package-source-manager/forks"><img src="https://img.shields.io/github/forks/power0matin/linux-package-source-manager?style=flat-square&amp;label=Forks&amp;labelColor=18181B&amp;color=6366F1&amp;logo=github&amp;logoColor=white" alt="GitHub Forks"/></a>
+  <a href="https://github.com/power0matin/linux-package-source-manager/issues"><img src="https://img.shields.io/github/issues/power0matin/linux-package-source-manager?style=flat-square&amp;label=Issues&amp;labelColor=18181B&amp;color=22C55E&amp;logo=github&amp;logoColor=white" alt="GitHub Issues"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/power0matin/linux-package-source-manager?style=flat-square&amp;label=License&amp;labelColor=18181B&amp;color=EF4444&amp;logo=github&amp;logoColor=white" alt="GitHub License"/></a>
 </p>
 <!-- repo-badges:end -->
 
-[![CI](https://github.com/power0matin/power-apt-boost/actions/workflows/ci.yml/badge.svg)](https://github.com/power0matin/power-apt-boost/actions/workflows/ci.yml)
+[![CI](https://github.com/power0matin/linux-package-source-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/power0matin/linux-package-source-manager/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![ShellCheck](https://img.shields.io/badge/ShellCheck-passing-brightgreen.svg)](https://www.shellcheck.net/)
-[![Latest release](https://img.shields.io/github/v/release/power0matin/power-apt-boost?style=flat-square&label=latest%20release&labelColor=18181B&color=F97316)](https://github.com/power0matin/power-apt-boost/releases)
+[![Latest release](https://img.shields.io/github/v/release/power0matin/linux-package-source-manager?style=flat-square&label=latest%20release&labelColor=18181B&color=F97316)](https://github.com/power0matin/linux-package-source-manager/releases)
 
-Fast Ubuntu APT mirror selector and network optimizer.
+Ubuntu-first Linux package source and mirror manager for APT, Python, Node.js, and Docker/OCI.
 
-Power APT Boost is an Ubuntu APT mirror manager with an interactive terminal menu, safe configuration previews, validated backups, exact restore, and read-only diagnostics. Its apply path tests repository endpoints, selects a working mirror, writes managed APT configuration atomically, and verifies the result with `apt-get update`.
+Linux Package Source Manager is an Ubuntu-first Linux package source and mirror manager for servers and developer environments. It currently supports Ubuntu APT mirrors, Python indexes for pip, uv and Poetry, Node.js registries for npm, pnpm and Yarn, and Docker/OCI registry mirrors. It provides interactive terminal workflows, read-only diagnostics, safe previews, validated snapshots and conflict-aware restore.
 
-> **Release candidate:** `v3.0.0` is the current source version. The stable install command is pinned to the `v3.0.0` tag so it does not track unreleased changes.
+> **Current release:** `v3.0.1` is the current source version. The stable install command is pinned to the `v3.0.1` tag so it does not track unreleased changes.
 
 ## Quick Start
 
 On a terminal, clone the repository and open the interactive menu:
 
 ```bash
-git clone https://github.com/power0matin/power-apt-boost.git
-cd power-apt-boost
-git checkout v3.0.0
+git clone https://github.com/power0matin/linux-package-source-manager.git
+cd linux-package-source-manager
+git checkout v3.0.1
 sudo bash power-apt-boost.sh
 ```
 
 For an intentional non-interactive apply from a pipe or CI job, pass `--yes` explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v3.0.0/power-apt-boost.sh | sudo bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.1/power-apt-boost.sh | sudo bash -s -- --yes
 ```
 
 Preview a mirror change without modifying APT configuration:
@@ -79,26 +79,26 @@ sudo bash power-apt-boost.sh --dry-run
 ### One-liner (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v3.0.0/power-apt-boost.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.1/power-apt-boost.sh | sudo bash -s -- --yes
 ```
 
 ### Manual
 
 ```bash
-git clone https://github.com/power0matin/power-apt-boost.git
-cd power-apt-boost
-git checkout v3.0.0
+git clone https://github.com/power0matin/linux-package-source-manager.git
+cd linux-package-source-manager
+git checkout v3.0.1
 sudo bash power-apt-boost.sh
 ```
 
 ### Verify before running
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v3.0.0/power-apt-boost.sh | less
+curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.1/power-apt-boost.sh | less
 # Review the script, then launch an interactive menu after saving it locally:
 sudo bash power-apt-boost.sh
 # Or explicitly approve a non-interactive run:
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v3.0.0/power-apt-boost.sh | sudo bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.1/power-apt-boost.sh | sudo bash -s -- --yes
 ```
 
 ### Verify a downloaded release artifact
@@ -106,9 +106,9 @@ curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v3.0.0/
 Download the script and its published SHA-256 file, then verify the file before running it:
 
 ```bash
-VERSION="v3.0.0"
-curl -fLO "https://github.com/power0matin/power-apt-boost/releases/download/${VERSION}/power-apt-boost.sh"
-curl -fLO "https://github.com/power0matin/power-apt-boost/releases/download/${VERSION}/power-apt-boost.sh.sha256"
+VERSION="v3.0.1"
+curl -fLO "https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}/power-apt-boost.sh"
+curl -fLO "https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}/power-apt-boost.sh.sha256"
 sha256sum -c power-apt-boost.sh.sha256
 ```
 
@@ -192,7 +192,7 @@ bash power-apt-boost.sh --python-set-index https://pypi.org/simple/ --python-cli
 
 Poetry `primary` sources disable implicit PyPI; `explicit` sources require package-specific source pins. The tool never edits those dependency pins. Existing private sources and project index declarations are preserved; a duplicate source name or an existing uv default index causes a safe refusal.
 
-Reset only a source managed by Power APT Boost, or restore a snapshot after checking that the target has not changed since the snapshot:
+Reset only a source managed by Linux Package Source Manager, or restore a snapshot after checking that the target has not changed since the snapshot:
 
 ```bash
 bash power-apt-boost.sh --python-reset-index --python-client pip --python-scope user
@@ -205,7 +205,7 @@ uv and Poetry editing requires Python 3.11+ (`tomllib`) or an already-installed 
 
 ### Node.js package registries
 
-Node.js registry operations do not require root. Power APT Boost detects Node.js, npm, pnpm and Yarn Classic/Berry without installing any package manager.
+Node.js registry operations do not require root. Linux Package Source Manager detects Node.js, npm, pnpm and Yarn Classic/Berry without installing any package manager.
 
 Inspect the available tools and effective registry hosts:
 
@@ -249,7 +249,7 @@ Node.js registry URLs must use HTTPS and cannot contain embedded credentials, qu
 
 ### Docker Engine and OCI registries
 
-Power APT Boost treats the Docker Engine **APT repository** and Docker Hub **OCI image registry mirrors** as separate systems. The first provides Docker Engine packages through APT; the second changes where the daemon looks when pulling container images. This manager currently targets the system/rootful Linux daemon at `/etc/docker/daemon.json`; rootless Docker and Docker Desktop are outside this phase.
+Linux Package Source Manager treats the Docker Engine **APT repository** and Docker Hub **OCI image registry mirrors** as separate systems. The first provides Docker Engine packages through APT; the second changes where the daemon looks when pulling container images. This manager currently targets the system/rootful Linux daemon at `/etc/docker/daemon.json`; rootless Docker and Docker Desktop are outside this phase.
 
 Inspect the current setup without changing it:
 
@@ -457,7 +457,7 @@ On amd64/i386, the selected mirror serves the release, updates and backports sui
 
 ### Third-party source preservation
 
-Power APT Boost does not rewrite separate third-party source files. It refuses to replace an unmanaged or mixed `ubuntu.sources` file, and refuses to replace a managed file if an additional repository stanza has been added to it. It also preserves `sources.list` when it contains non-archive, ESM or unclassified entries. Move unrelated repositories into their own `.list` or `.sources` file rather than combining them with the tool-managed Ubuntu file.
+Linux Package Source Manager does not rewrite separate third-party source files. It refuses to replace an unmanaged or mixed `ubuntu.sources` file, and refuses to replace a managed file if an additional repository stanza has been added to it. It also preserves `sources.list` when it contains non-archive, ESM or unclassified entries. Move unrelated repositories into their own `.list` or `.sources` file rather than combining them with the tool-managed Ubuntu file.
 
 ### APT proxy and retry configuration
 
@@ -495,13 +495,13 @@ The tool does not:
 - Edit dependency declarations, package pins, hashes or lockfiles.
 - Rewrite pipx-managed application environments; pipx is detected for inventory only.
 - Change firewall rules, routes, DNS resolver configuration, VPN settings or SSH configuration.
-- Manage Node.js, Docker registry, Go, Rust or other non-Python package ecosystems.
+- Manage Go, Rust, PHP, Java or other ecosystems not listed in the current feature set.
 
 **Filesystem effects outside `/etc/apt`:** the tool creates validated snapshots under `/var/backups/power-apt-boost/` and a mutation lock under `/run/lock/`. It no longer manually deletes APT package lists or clears the archive cache. `apt-get update` still performs its normal package-index maintenance.
 
 ## Mirror Testing
 
-Power APT Boost tests each mirror against three endpoints:
+Linux Package Source Manager tests each mirror against three endpoints:
 
 ```
 /dists/<codename>/InRelease
@@ -527,7 +527,7 @@ Iranian mirrors are tested first for geographic optimization, then international
 
 ### Iranian Ubuntu Mirrors
 
-Power APT Boost includes a dedicated **Iranian mirror pool** for users located in Iran. These mirrors are tested first for geographic optimization — reducing benchmark time for Iranian users.
+Linux Package Source Manager includes a dedicated **Iranian mirror pool** for users located in Iran. These mirrors are tested first for geographic optimization — reducing benchmark time for Iranian users.
 
 Iranian mirrors included in the default pool:
 
@@ -602,7 +602,7 @@ sudo bash power-apt-boost.sh --restore
 
 ### Third-party sources warning
 
-If you have third-party APT sources in `/etc/apt/sources.list`, Power APT Boost preserves them and only removes the file if it contains only Ubuntu sources.
+If you have third-party APT sources in `/etc/apt/sources.list`, Linux Package Source Manager preserves them and only removes the file if it contains only Ubuntu sources.
 
 ## Compatibility
 
@@ -612,7 +612,7 @@ If you have third-party APT sources in `/etc/apt/sources.list`, Power APT Boost 
 | 22.04 LTS Jammy | 168 offline tests (TOML parser unavailable path) |
 | 20.04 LTS Focal | 168 offline tests (TOML parser unavailable path) |
 
-CI also runs ShellCheck and shfmt. Offline tests cover APT parsing, inventory, backup/restore, config ownership, proxy validation, architecture-specific archive selection, rollback, mirror compatibility, Python index validation, PEP 668, private-source preservation and snapshot conflict handling. TOML edit/restore paths run where Python 3.11+ `tomllib` or an existing `tomli` is available; older images verify fail-closed behavior. Live public mirror reachability, real archive-signature checks, external DNS/TLS and live PyPI mirror/artifact reachability are not CI prerequisites. [Latest Phase 5 CI run](https://github.com/power0matin/power-apt-boost/actions/runs/44647360924). Requires Bash 4.0+ and one of: curl, wget.
+CI also runs ShellCheck and shfmt. Offline tests cover APT parsing, inventory, backup/restore, config ownership, proxy validation, architecture-specific archive selection, rollback, mirror compatibility, Python index validation, PEP 668, private-source preservation and snapshot conflict handling. TOML edit/restore paths run where Python 3.11+ `tomllib` or an existing `tomli` is available; older images verify fail-closed behavior. Live public mirror reachability, real archive-signature checks, external DNS/TLS and live PyPI mirror/artifact reachability are not CI prerequisites. [Latest Phase 5 CI run](https://github.com/power0matin/linux-package-source-manager/actions/runs/44647360924). Requires Bash 4.0+ and one of: curl, wget.
 
 ## Security
 
@@ -628,8 +628,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ```bash
 # Development setup
-git clone https://github.com/power0matin/power-apt-boost.git
-cd power-apt-boost
+git clone https://github.com/power0matin/linux-package-source-manager.git
+cd linux-package-source-manager
 chmod +x power-apt-boost.sh
 
 # Lint
@@ -671,7 +671,7 @@ See [ROADMAP.md](ROADMAP.md) for planned features.
   <a href="https://next.ossinsight.io/widgets/official/analyze-repo-stars-history?repo_id=1238487780" target="_blank" style="display: block" align="center">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://next.ossinsight.io/widgets/official/analyze-repo-stars-history/thumbnail.png?repo_id=1238487780&amp;image_size=auto&amp;color_scheme=dark" width="721" height="auto">
-      <img alt="Star History of power0matin/power-apt-boost" src="https://next.ossinsight.io/widgets/official/analyze-repo-stars-history/thumbnail.png?repo_id=1238487780&amp;image_size=auto&amp;color_scheme=light" width="721" height="auto">
+      <img alt="Star History of power0matin/linux-package-source-manager" src="https://next.ossinsight.io/widgets/official/analyze-repo-stars-history/thumbnail.png?repo_id=1238487780&amp;image_size=auto&amp;color_scheme=light" width="721" height="auto">
     </picture>
   </a>
 </p>

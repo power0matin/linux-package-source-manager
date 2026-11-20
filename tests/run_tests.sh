@@ -1526,7 +1526,7 @@ PY
   YES=false
   code=0
   _docker_restart_daemon >/dev/null 2>&1 || code=$?
-  assert_exit_code 2 "$code" "Docker restart requires explicit approval in non-interactive mode"
+  assert_exit_code 10 "$code" "Docker restart cancellation requires explicit approval"
   [[ ! -e "$restart_log" ]] && code=0 || code=1
   assert_exit_code 0 "$code" "Unapproved Docker restart never calls systemctl restart"
   YES=true

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.0] — 2026-11-21
+
 ### Added
 
 - Replaced optional `whiptail` dialogs with a consistent number-driven Bash menu rendered in the active SSH terminal; operation results remain visible until Enter is pressed.
@@ -18,7 +20,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added explicit APT proxy set/clear options, APT retry configuration and bounded live DNS/TLS diagnostics.
 - Added selective restore scopes and verified backup retention cleanup.
 - Added interactive-menu controls for APT retries, proxies, network diagnostics and backup cleanup.
-- Added an interactive terminal menu with numbered Bash navigation and optional `whiptail` dialogs.
 - Added Overview, APT management, mirror benchmark, Backup/Restore, Diagnostics and session Settings screens.
 - Added read-only `--status` and `--doctor` commands with a versioned JSON report schema.
 - Added explicit `--yes` confirmation for non-interactive apply, restore and custom mirror management.
@@ -39,45 +40,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added bounded benchmark concurrency, configurable retry policy, structured endpoint metrics and deterministic scoring.
 - Added region filtering, an official-only profile and confirmed custom mirror add/enable/disable/remove actions.
 - Made no-argument execution open the menu only on a TTY; non-interactive default execution exits without changing APT configuration.
-
-### Testing
-
-- Added coverage for source inventory, duplicate detection, proxy validation, APT retry configuration, ports-archive selection, unmanaged Deb822 preservation, security-suite separation, network-only restore and verified backup pruning.
-- Added Python coverage for HTTPS/index URL validation, credential-safe display, pip environment overrides, PEP 668 global-scope blocking, pip snapshot conflict detection, uv/Poetry private-source preservation, project-pin preservation and marker-only reset.
-- Added fail-closed tests for TOML editing when neither tomllib nor an already-installed tomli is available.
-- Added offline Node.js adapter tests for URL/package validation, npm/pnpm/Yarn Classic/Berry configuration preservation, snapshot restore conflicts and project-scope boundaries.
-- Added coverage for menu selection, TTY safety, explicit approval, cancellation, status/doctor reports and JSON escaping.
-- Added offline tests for catalog schemas, cache fallback and refresh, custom mirror persistence, Release freshness, compatibility gates and deterministic benchmark selection.
-
-### Fixed
-
-- Serialized Docker daemon reset and restart operations with the Docker configuration lock.
-- Kept Docker backup permissions scoped to its dedicated directory instead of changing the shared APT backup parent.
-- Made APT snapshots fail closed, checksum-validated and aware of prior path-existence state.
-- Added exact restore for new snapshots, including removal of paths that were absent before the change, with staged recovery on restore failure.
-- Made deb822 and APT config writes atomic and preserved existing file ownership and mode.
-- Added a process-level mutation lock for apply and restore operations.
-- Removed manual APT list and archive-cache deletion; `--skip-update` now leaves package indexes untouched.
-- Unified probe timeout handling, corrected per-endpoint timing output and aligned `--list` with three-suite health tests.
-- Applied IPv6 consistently to mirror probes and generated APT configuration; made `--no-spinner` effective.
-- Replaced hostname-pattern country filtering with an explicit country/region mirror catalog.
-- Defined stable exit codes and signal-specific interruption codes.
-
-### Testing
-
-- Replaced live-network smoke tests with offline regression tests for backup, restore, atomic writes, dry-run and mirror health criteria.
-- Wired the full test runner, ShellCheck and shfmt checks into CI.
-
-### Documentation
-
-- Added an Ubuntu-first product and engineering roadmap covering APT, Python, Node.js, Docker/OCI and additional package ecosystems.
-- Clarified the difference between the `3.0.0` source version on `main` and the latest published `v2.1.0` release.
-- Corrected documentation for current filesystem side effects, exit codes, benchmark scope and backup/restore limitations.
-
-## [3.0.0] — 2026-07-19
-
-### Added
-
 - Animated braille spinner during mirror testing
 - Progress bar support for long-running operations
 - Section headers with Unicode box-drawing characters for visual hierarchy
@@ -107,12 +69,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- Serialized Docker daemon reset and restart operations with the Docker configuration lock.
+- Kept Docker backup permissions scoped to its dedicated directory instead of changing the shared APT backup parent.
+- Made APT snapshots fail closed, checksum-validated and aware of prior path-existence state.
+- Added exact restore for new snapshots, including removal of paths that were absent before the change, with staged recovery on restore failure.
+- Made deb822 and APT config writes atomic and preserved existing file ownership and mode.
+- Added a process-level mutation lock for apply and restore operations.
+- Removed manual APT list and archive-cache deletion; `--skip-update` now leaves package indexes untouched.
+- Unified probe timeout handling, corrected per-endpoint timing output and aligned `--list` with three-suite health tests.
+- Applied IPv6 consistently to mirror probes and generated APT configuration; made `--no-spinner` effective.
+- Replaced hostname-pattern country filtering with an explicit country/region mirror catalog.
+- Defined stable exit codes and signal-specific interruption codes.
 - Spinner properly cleaned up on INT/TERM/HUP signals
 - Interrupt handler stops spinner before printing cleanup message
 - Exit trap calls `_stop_spinner` to prevent orphaned processes
 - BASH_SOURCE handling for older bash versions and curl piped execution
 - ShellCheck and shfmt compliance for CI
 - Kill 0 removed from cleanup to avoid killing parent process
+
+### Testing
+
+- Added coverage for source inventory, duplicate detection, proxy validation, APT retry configuration, ports-archive selection, unmanaged Deb822 preservation, security-suite separation, network-only restore and verified backup pruning.
+- Added Python coverage for HTTPS/index URL validation, credential-safe display, pip environment overrides, PEP 668 global-scope blocking, pip snapshot conflict detection, uv/Poetry private-source preservation, project-pin preservation and marker-only reset.
+- Added fail-closed tests for TOML editing when neither tomllib nor an already-installed tomli is available.
+- Added offline Node.js adapter tests for URL/package validation, npm/pnpm/Yarn Classic/Berry configuration preservation, snapshot restore conflicts and project-scope boundaries.
+- Added coverage for menu selection, TTY safety, explicit approval, cancellation, status/doctor reports and JSON escaping.
+- Added offline tests for catalog schemas, cache fallback and refresh, custom mirror persistence, Release freshness, compatibility gates and deterministic benchmark selection.
+- Replaced live-network smoke tests with offline regression tests for backup, restore, atomic writes, dry-run and mirror health criteria.
+- Wired the full test runner, ShellCheck and shfmt checks into CI.
+
+### Documentation
+
+- Added an Ubuntu-first product and engineering roadmap covering APT, Python, Node.js, Docker/OCI and additional package ecosystems.
+- Clarified the source-version and published-release relationship in the public documentation.
+- Corrected documentation for current filesystem side effects, exit codes, benchmark scope and backup/restore limitations.
+- Pin recommended install commands to the immutable `v3.0.0` release tag.
+- Publish a SHA-256 checksum beside the standalone Bash release artifact and document checksum verification.
 
 ## [2.1.0] — 2025-07-12
 

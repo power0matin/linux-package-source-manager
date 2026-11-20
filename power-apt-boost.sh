@@ -320,6 +320,25 @@ _print_progress_bar() {
     "$bar" "$percent" >&2
 }
 
+_print_task_progress() {
+  local label="$1" completed="$2" total="$3" started_at="$4"
+  local elapsed remaining=0
+  [[ "$QUIET" != true ]] || return 0
+  ((total > 0)) || return 0
+  ((completed <= total)) || completed="$total"
+  elapsed=$((SECONDS - started_at))
+  if ((completed > 0 && completed < total)); then
+    remaining=$(((elapsed * (total - completed) + completed - 1) / completed))
+  fi
+  if ((completed < total)); then
+    printf '  [%d/%d] %s completed | elapsed %ds | ETA ~%ds\n' \
+      "$completed" "$total" "$label" "$elapsed" "$remaining" >&2
+  else
+    printf '  [%d/%d] %s completed | elapsed %ds | done\n' \
+      "$completed" "$total" "$label" "$elapsed" >&2
+  fi
+}
+
 _print_step() {
   local step_num="$1" total="$2" msg="$3"
   printf "\n  ${COLOR_BOLD}${COLOR_BLUE}[%d/%d]${COLOR_RESET} ${COLOR_BOLD}%s${COLOR_RESET}\n" \
@@ -799,9 +818,18 @@ list_mirrors() {
   _load_mirror_catalog
   _print_section_header "AVAILABLE MIRRORS"
   local mirror_url result_file result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
-  local meta mirror_id source official country
-  while IFS= read -r mirror_url; do
-    result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.list.XXXXXX")"
+  local meta mirror_id source official country completed=0 total started_at
+  local -a mirror_urls=()
+  mapfile -t mirror_urls < <(_get_mirrors)
+  total="\${#mirror_urls[@]}"
+  started_at="$SECONDS"
+  ((total > 0)) || {
+    warn "No mirrors match the current catalog profile."
+    return 0
+  }
+  printf '  Testing %d mirror(s)...\n' "$total" >&2
+  for mirror_url in "\${mirror_urls[@]}"; do
+    result_file="$(mktemp "\${TMPDIR:-/tmp}/\${APP_SLUG}.list.XXXXXX")"
     _tmp_dirs+=("$result_file")
     _test_mirror "$mirror_url" "$result_file" "$CODENAME"
     result_line="$(cat "$result_file" 2>/dev/null || true)"
@@ -814,13 +842,12 @@ list_mirrors() {
         "$mirror_id" "$avg_latency" "$score" "$redirects" "$freshness" "$signature" "$source" "$official" >&2
     else
       printf '  %-24s REJECTED reason=%s source=%s official=%s\n' \
-        "$mirror_id" "${reason:-incompatible_release}" "$source" "$official" >&2
+        "$mirror_id" "\${reason:-incompatible_release}" "$source" "$official" >&2
     fi
-  done < <(_get_mirrors)
+    ((completed += 1))
+    _print_task_progress "Mirror checks" "$completed" "$total" "$started_at"
+  done
 }
-
-# ─── HTTP Probing ─────────────────────────────────────────────────────────────
-
 _classify_curl_error() {
   local content
   content="$(cat "$1" 2>/dev/null || true)"
@@ -1102,57 +1129,76 @@ _select_mirror() {
   local mirror_list total_mirrors bench_start bench_end bench_duration
   local bench_tmpdir idx total i pid result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
   local best="" best_score="999999" best_avg="" tested=0 passed=0 failed=0
-  local -a mirrors
-  local -a pids=()
+  local completed=0 batch_count batch_completed batch_idx progress_started
+  local -a mirrors pids=() batch_indices=() completed_flags=()
 
   _load_mirror_catalog
   _print_section_header "MIRROR SELECTION"
-  msg "  Ubuntu codename:  ${COLOR_BOLD}${CODENAME}${COLOR_RESET}"
+  msg "  Ubuntu codename:  \${COLOR_BOLD}\${CODENAME}\${COLOR_RESET}"
   mirror_list="$(_get_mirrors)"
   mapfile -t mirrors <<<"$mirror_list"
-  total="${#mirrors[@]}"
+  total="\${#mirrors[@]}"
   total_mirrors="$total"
   ((total > 0)) || die "No mirrors are available for the selected catalog profile." "$EXIT_NO_MIRROR"
 
-  msg "  Mirrors to test:  ${COLOR_BOLD}${total_mirrors}${COLOR_RESET}"
-  msg "  Parallel workers: ${COLOR_BOLD}${BENCH_WORKERS}${COLOR_RESET}"
-  msg "  Retry policy:     ${COLOR_BOLD}${PROBE_RETRIES} retries per transient failure${COLOR_RESET}"
+  msg "  Mirrors to test:  \${COLOR_BOLD}\${total_mirrors}\${COLOR_RESET}"
+  msg "  Parallel workers: \${COLOR_BOLD}\${BENCH_WORKERS}\${COLOR_RESET}"
+  msg "  Retry policy:     \${COLOR_BOLD}\${PROBE_RETRIES} retries per transient failure\${COLOR_RESET}"
   msg "  Eligibility: HTTP 200 + Ubuntu suite metadata + valid archive signature"
-  echo ""
+  printf '  Progress updates are printed as each mirror finishes.\n\n' >&2
 
-  bench_start="$(date +%s)"
-  bench_tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/${APP_SLUG}.bench.XXXXXX")"
+  bench_start="$SECONDS"
+  progress_started="$SECONDS"
+  bench_tmpdir="$(mktemp -d "\${TMPDIR:-/tmp}/\${APP_SLUG}.bench.XXXXXX")"
   _tmp_dirs+=("$bench_tmpdir")
-  _start_spinner "Testing and verifying Ubuntu mirrors..."
 
   _bench_worker() {
-    local idx="$1" url="$2" codename="$3" result_file="$4"
-    _test_mirror "$url" "$result_file" "$codename" >/dev/null 2>&1
+    local worker_idx="$1" url="$2" codename="$3" result_file="$4" done_file="$5" status=0
+    _test_mirror "$url" "$result_file" "$codename" >/dev/null 2>&1 || status=$?
+    printf '%s\n' "$status" >"$done_file"
+    return 0
   }
 
   idx=0
   while ((idx < total)); do
     pids=()
-    while (("${#pids[@]}" < BENCH_WORKERS)) && ((idx < total)); do
-      _bench_worker "$idx" "${mirrors[$idx]}" "$CODENAME" "${bench_tmpdir}/${idx}.result" &
+    batch_indices=()
+    while (("\${#pids[@]}" < BENCH_WORKERS)) && ((idx < total)); do
+      batch_indices+=("$idx")
+      completed_flags[$idx]=0
+      _bench_worker "$idx" "\${mirrors[$idx]}" "$CODENAME" \
+        "\${bench_tmpdir}/\${idx}.result" "\${bench_tmpdir}/\${idx}.done" &
       pids+=("$!")
       _bg_pids+=("$!")
       ((idx += 1))
     done
 
-    for pid in "${pids[@]}"; do
+    batch_count="\${#batch_indices[@]}"
+    batch_completed=0
+    while ((batch_completed < batch_count)); do
+      for batch_idx in "\${batch_indices[@]}"; do
+        if [[ "\${completed_flags[$batch_idx]:-0}" != 1 && -f "\${bench_tmpdir}/\${batch_idx}.done" ]]; then
+          completed_flags[$batch_idx]=1
+          ((completed += 1))
+          ((batch_completed += 1))
+          _print_task_progress "Mirror verification" "$completed" "$total" "$progress_started"
+        fi
+      done
+      ((batch_completed < batch_count)) && sleep 0.1
+    done
+
+    for pid in "\${pids[@]}"; do
       wait "$pid" 2>/dev/null || true
     done
     _bg_pids=()
   done
   pids=()
 
-  bench_end="$(date +%s)"
+  bench_end="$SECONDS"
   bench_duration=$((bench_end - bench_start))
-  _stop_spinner
 
   for ((i = 0; i < total; i++)); do
-    result_line="$(cat "${bench_tmpdir}/${i}.result" 2>/dev/null || true)"
+    result_line="$(cat "\${bench_tmpdir}/\${i}.result" 2>/dev/null || true)"
     [[ -n "$result_line" ]] || {
       ((failed += 1)) || true
       continue
@@ -1162,16 +1208,16 @@ _select_mirror() {
     if [[ "$eligible" == true ]]; then
       ((passed += 1)) || true
       if awk -v candidate="$score" -v current="$best_score" 'BEGIN { exit !(candidate < current) }'; then
-        best="${mirrors[$i]}"
+        best="\${mirrors[$i]}"
         best_score="$score"
         best_avg="$avg_latency"
-      elif [[ "$score" == "$best_score" && -n "$best" && "${mirrors[$i]}" < "$best" ]]; then
-        best="${mirrors[$i]}"
+      elif [[ "$score" == "$best_score" && -n "$best" && "\${mirrors[$i]}" < "$best" ]]; then
+        best="\${mirrors[$i]}"
         best_avg="$avg_latency"
       fi
     else
       ((failed += 1)) || true
-      msg_verbose "Rejected ${mirrors[$i]}: ${reason:-incompatible_release}"
+      msg_verbose "Rejected \${mirrors[$i]}: \${reason:-incompatible_or_unverified_release}"
     fi
   done
   rm -rf "$bench_tmpdir" 2>/dev/null || true
@@ -1197,9 +1243,6 @@ _select_mirror() {
   SELECTED_MIRROR="$best"
   SELECTED_TIME="$best_avg"
 }
-
-# ─── Backup ───────────────────────────────────────────────────────────────────
-
 _create_backup() {
   local backup_dir old_umask tar_root
   old_umask="$(umask)"

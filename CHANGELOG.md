@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.1] — 2026-11-21
+
+### Changed
+
+- Rebranded the public project identity as Linux Package Source Manager across the CLI, documentation, GitHub metadata and release workflow.
+- Updated repository links, searchable descriptions and installation guidance for the renamed repository.
+
+### Fixed
+
+- Corrected the CLI help installation URL to use raw.githubusercontent.com.
+- Required explicit --yes in every documented non-interactive installation command.
+
+### Compatibility
+
+- Preserved the power-apt-boost.sh artifact name, APP_SLUG, legacy configuration markers, environment variables and existing backup/configuration paths.
+
 ## [3.0.0] — 2026-11-21
 
 ### Added
@@ -190,7 +206,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added cache cleanup
 - Added branded banner
 
-[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/power0matin/linux-package-source-manager/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/power0matin/linux-package-source-manager/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/power0matin/linux-package-source-manager/compare/v1.2.0...v2.0.0

@@ -105,7 +105,6 @@ test_cli() {
   python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["schema_version"] == 1 and d["command"] == "python-status" and "environment_overrides" in d' "$output"
   assert_exit_code 0 "$?" "Python status JSON follows its schema"
 
-
   code=0
   bash "$SCRIPT" </dev/null >/dev/null 2>&1 || code=$?
   assert_exit_code 2 "$code" "default non-interactive invocation never blocks or mutates"
@@ -846,7 +845,6 @@ test_benchmark_selection_and_read_only_safety() {
   NO_SPINNER="$original_spinner"
   BENCH_WORKERS="$original_workers"
 }
-
 
 test_python_manager_safety() {
   local valid output code path original_xdg xdg_was_set original_pip_index pip_index_was_set

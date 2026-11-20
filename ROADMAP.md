@@ -1165,7 +1165,7 @@ This roadmap is intentionally comprehensive. It does not authorize implementing 
 
 **Repository snapshot (2026-11-21):** The latest implementation change before release preparation was merged through [PR #10](https://github.com/power0matin/linux-package-source-manager/pull/10), at commit `6abe3b348294c44c4a77fa341694cd0306b74b45`. Phase 7 Docker / OCI support was previously merged through [PR #8](https://github.com/power0matin/linux-package-source-manager/pull/8). The audited source version is `3.0.0`.
 
-**Release candidate:** `v3.0.0` consolidates the work accumulated since `v2.1.0`. Publication is gated on ShellCheck, shfmt and the complete offline regression suite on Ubuntu 20.04, 22.04 and 24.04. The release workflow publishes the standalone script and its SHA-256 checksum only after every validation job succeeds.
+**Published release:** `v3.0.0` consolidates the work accumulated since `v2.1.0`. It was published after ShellCheck, shfmt and the complete offline regression suite passed on Ubuntu 20.04, 22.04 and 24.04. The release includes the standalone script and its SHA-256 checksum.
 
 **Implementation scope:** Python support covers pip, uv and Poetry; pipx is detected only. Node.js support covers npm, pnpm, Yarn Classic and Yarn Berry. Docker Engine APT sources are inspected separately from OCI registry mirrors; daemon changes are backed up and validated, and restart remains a separate confirmed action.
 

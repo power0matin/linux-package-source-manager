@@ -4383,7 +4383,7 @@ Ubuntu-first Linux package source and mirror manager for APT, Python, Node.js an
 ${COLOR_BOLD}${COLOR_BLUE}USAGE${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME}                 # Open the interactive menu on a TTY
   sudo bash ${_SCRIPT_NAME} [OPTIONS]
-  curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash -s -- --yes
+  curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/power-apt-boost.sh | sudo bash -s -- --yes
 
 ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}-h, --help${COLOR_RESET}              Show this help message
@@ -4454,7 +4454,7 @@ ${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME}
 
   ${COLOR_DIM}# Apply automatically from a pipe or CI job${COLOR_RESET}
-  curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash -s -- --yes
+  curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/power-apt-boost.sh | sudo bash -s -- --yes
 
 
 

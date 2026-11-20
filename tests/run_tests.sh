@@ -1094,7 +1094,6 @@ PY
 
 test_node_manager_safety() {
   local original_home="$HOME" original_xdg_state="${XDG_STATE_HOME-}" original_xdg_config="${XDG_CONFIG_HOME-}"
-  local original_dry_run="$DRY_RUN"
   local home_set="${HOME+x}" xdg_state_set="${XDG_STATE_HOME+x}" xdg_config_set="${XDG_CONFIG_HOME+x}"
   local -a override_names=(npm_config_registry NPM_CONFIG_REGISTRY npm_config_userconfig NPM_CONFIG_USERCONFIG
     npm_config_globalconfig NPM_CONFIG_GLOBALCONFIG pnpm_config_registry PNPM_CONFIG_REGISTRY
@@ -1175,7 +1174,7 @@ test_node_manager_safety() {
     if [[ "$1" == "--version" ]]; then printf '%s\n' "$NODE_TEST_YARN_VERSION"; return 0; fi
     if [[ "$1 $2 $3" == "config get registry" ]]; then
       local file="$PWD/.yarnrc"
-      sed -n 's/^registry[[:space:]]\\+//p' "$file" 2>/dev/null | head -n 1
+      sed -n 's/^registry[[:space:]][[:space:]]*//p' "$file" 2>/dev/null | head -n 1
       return 0
     fi
     if [[ "$1 $2 $3" == "config get npmRegistryServer" ]]; then
@@ -1290,7 +1289,7 @@ YARNRC
 
   NODE_REQUESTED=false NODE_ACTION="" NODE_CLIENT=npm NODE_SCOPE=user NODE_REGISTRY_URL=""
   NODE_PROJECT_DIR="" NODE_TEST_PACKAGE=is-number NODE_RESTORE_PATH="" NODE_TARGET_FILE="" NODE_YARN_FLAVOR=""
-  DRY_RUN="$original_dry_run"
+  DRY_RUN=true
   unset -f npm pnpm yarn _node_probe_registry _confirm_action
   unset -f _node_test_ini_set _node_test_yarn_classic_set _node_test_yarn_yaml_set
   if [[ "$home_set" == x ]]; then export HOME="$original_home"; else unset HOME; fi

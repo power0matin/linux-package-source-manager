@@ -3611,6 +3611,16 @@ ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}    --timeout SECS${COLOR_RESET}        Probe timeout (default: 20)
   ${COLOR_GREEN}    --country CODE${COLOR_RESET}        Filter mirrors by country code
   ${COLOR_GREEN}    --ipv6${COLOR_RESET}                Use IPv6 for mirror testing
+
+  \${COLOR_GREEN}    --node-status\${COLOR_RESET}         Detect Node.js/npm/pnpm/Yarn and registry hosts
+  \${COLOR_GREEN}    --node-test-registry URL\${COLOR_RESET} Test registry metadata and tarball endpoint
+  \${COLOR_GREEN}    --node-set-registry URL\${COLOR_RESET} Configure a user or explicit project registry
+  \${COLOR_GREEN}    --node-reset-registry\${COLOR_RESET}   Restore the previous app-managed config
+  \${COLOR_GREEN}    --node-restore PATH\${COLOR_RESET}    Restore a conflict-checked Node.js snapshot
+  \${COLOR_GREEN}    --node-client NAME\${COLOR_RESET}     Select npm, pnpm or yarn
+  \${COLOR_GREEN}    --node-scope SCOPE\${COLOR_RESET}     Select user or project config
+  \${COLOR_GREEN}    --node-project DIR\${COLOR_RESET}     Project directory containing package.json
+  \${COLOR_GREEN}    --node-test-package NAME\${COLOR_RESET} Package name for registry metadata checks
   ${COLOR_GREEN}    --python-status${COLOR_RESET}       Detect Python tools and pip index scopes
   ${COLOR_GREEN}    --python-test-index URL${COLOR_RESET} Test PEP 503/691 metadata and one artifact endpoint
   ${COLOR_GREEN}    --python-set-index URL${COLOR_RESET} Configure a pip, uv or Poetry source
@@ -3629,6 +3639,20 @@ ${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
 
   ${COLOR_DIM}# Apply automatically from a pipe or CI job${COLOR_RESET}
   curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash -s -- --yes
+
+
+  \${COLOR_DIM}# Inspect Node.js clients and verify registry metadata without installing packages\${COLOR_RESET}
+  bash \${_SCRIPT_NAME} --node-status --json
+  bash \${_SCRIPT_NAME} --node-test-registry https://registry.npmjs.org/
+
+  \${COLOR_DIM}# Configure npm at user scope with an explicit confirmation\${COLOR_RESET}
+  bash \${_SCRIPT_NAME} --node-set-registry https://registry.npmjs.org/ --node-client npm --yes
+
+  \${COLOR_DIM}# Explicit project scope (requires package.json)\${COLOR_RESET}
+  bash \${_SCRIPT_NAME} --node-set-registry https://registry.npmjs.org/ --node-client pnpm --node-scope project --node-project /path/to/project --yes
+
+  \${COLOR_DIM}# Restore the previous app-managed registry setting\${COLOR_RESET}
+  bash \${_SCRIPT_NAME} --node-reset-registry --node-client npm --yes
 
   ${COLOR_DIM}# Read-only status and diagnostics${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME} --status
@@ -3886,6 +3910,56 @@ _parse_args() {
       USE_IPV6=true
       shift
       ;;
+
+    --node-status)
+      NODE_REQUESTED=true
+      NODE_ACTION=status
+      shift
+      ;;
+    --node-test-registry)
+      [[ -n "\${2:-}" ]] || die "Option $1 requires a registry URL." "$EXIT_USAGE"
+      NODE_REQUESTED=true
+      NODE_ACTION=test
+      NODE_REGISTRY_URL="$2"
+      shift 2
+      ;;
+    --node-set-registry)
+      [[ -n "\${2:-}" ]] || die "Option $1 requires a registry URL." "$EXIT_USAGE"
+      NODE_REQUESTED=true
+      NODE_ACTION=set
+      NODE_REGISTRY_URL="$2"
+      shift 2
+      ;;
+    --node-reset-registry)
+      NODE_REQUESTED=true
+      NODE_ACTION=reset
+      shift
+      ;;
+    --node-restore)
+      [[ -n "\${2:-}" ]] || die "Option $1 requires a snapshot path." "$EXIT_USAGE"
+      NODE_REQUESTED=true
+      NODE_ACTION=restore
+      NODE_RESTORE_PATH="$2"
+      shift 2
+      ;;
+    --node-client)
+      case "\${2:-}" in npm | pnpm | yarn) NODE_CLIENT="$2" ;; *) die "Node.js client must be npm, pnpm or yarn." "$EXIT_USAGE" ;; esac
+      shift 2
+      ;;
+    --node-scope)
+      case "\${2:-}" in user | project) NODE_SCOPE="$2" ;; *) die "Node.js scope must be user or project." "$EXIT_USAGE" ;; esac
+      shift 2
+      ;;
+    --node-project)
+      [[ -n "\${2:-}" ]] || die "Option $1 requires a project directory." "$EXIT_USAGE"
+      NODE_PROJECT_DIR="$2"
+      shift 2
+      ;;
+    --node-test-package)
+      [[ -n "\${2:-}" ]] || die "Option $1 requires a package name." "$EXIT_USAGE"
+      NODE_TEST_PACKAGE="$2"
+      shift 2
+      ;;
     --python-status)
       PYTHON_REQUESTED=true
       PYTHON_ACTION="status"
@@ -3960,9 +4034,23 @@ _parse_args() {
   [[ "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || ((mode_count += 1))
   [[ -z "$PRUNE_BACKUPS_KEEP" ]] || ((mode_count += 1))
   [[ "$PYTHON_REQUESTED" != true ]] || ((mode_count += 1))
-  ((mode_count <= 1)) || die "Choose only one command mode: menu, status, doctor, list, restore, backup pruning or mirror management." "$EXIT_USAGE"
+  [[ "$NODE_REQUESTED" != true ]] || ((mode_count += 1))
+  ((mode_count <= 1)) || die "Choose only one command mode: menu, status, doctor, list, restore, backup pruning, mirror management, Python or Node.js." "$EXIT_USAGE"
   [[ "$RESTORE_SCOPE" == all || "$RESTORE" == true ]] || die "--restore-scope requires --restore." "$EXIT_USAGE"
   [[ "$NETWORK_DIAGNOSTICS" != true || "$DOCTOR_REQUESTED" == true ]] || die "--network-diagnostics can only be used with --doctor." "$EXIT_USAGE"
+
+  if [[ "$NODE_REQUESTED" == true ]]; then
+    [[ "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$LIST_REQUESTED" != true && "$RESTORE" != true && "$MIRROR_MANAGEMENT_REQUESTED" != true && -z "$PRUNE_BACKUPS_KEEP" && "$STATUS_REQUESTED" != true && "$DOCTOR_REQUESTED" != true && "$MENU_REQUESTED" != true && "$PYTHON_REQUESTED" != true ]] || die "Node.js commands cannot be combined with other command modes." "$EXIT_USAGE"
+    [[ "$JSON_OUTPUT" != true || "$NODE_ACTION" == status ]] || die "--json is supported only with --node-status." "$EXIT_USAGE"
+    [[ "$DRY_RUN" != true || "$NODE_ACTION" == set || "$NODE_ACTION" == reset ]] || die "--dry-run is supported only with Node.js set/reset." "$EXIT_USAGE"
+    [[ "$NODE_ACTION" == set || "$NODE_ACTION" == reset || "$NODE_ACTION" == restore || "$NODE_ACTION" == status || "$NODE_ACTION" == test ]] || die "Select a Node.js action first." "$EXIT_USAGE"
+    [[ "$NODE_ACTION" == restore || "$NODE_SCOPE" != project || -n "$NODE_PROJECT_DIR" ]] || die "Project scope requires --node-project DIR." "$EXIT_USAGE"
+    [[ "$NODE_ACTION" == restore || "$NODE_SCOPE" == project || -z "$NODE_PROJECT_DIR" ]] || die "--node-project requires --node-scope project." "$EXIT_USAGE"
+    [[ "$NODE_ACTION" == test || "$NODE_ACTION" == set || "$NODE_TEST_PACKAGE" == is-number ]] || die "--node-test-package applies only to registry test/set." "$EXIT_USAGE"
+  else
+    [[ "$NODE_ACTION" == "" && "$NODE_CLIENT" == npm && "$NODE_SCOPE" == user && "$NODE_REGISTRY_URL" == "" && "$NODE_PROJECT_DIR" == "" && "$NODE_TEST_PACKAGE" == is-number && "$NODE_RESTORE_PATH" == "" ]] || die "Node.js options require a Node.js command." "$EXIT_USAGE"
+  fi
+
   if [[ "$PYTHON_REQUESTED" == true ]]; then
     [[ "$ACTION_REQUESTED" != true || "$DRY_RUN" == true ]] || die "Python commands cannot be combined with APT apply options." "$EXIT_USAGE"
     [[ "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$LIST_REQUESTED" != true && "$RESTORE" != true && "$MIRROR_MANAGEMENT_REQUESTED" != true && -z "$PRUNE_BACKUPS_KEEP" && "$STATUS_REQUESTED" != true && "$DOCTOR_REQUESTED" != true && "$MENU_REQUESTED" != true ]] || die "Python commands cannot be combined with APT commands." "$EXIT_USAGE"
@@ -4677,6 +4765,63 @@ _menu_diagnostics() {
   esac
 }
 
+
+_menu_nodejs() {
+  local choice rc
+  while true; do
+    choice="$(_menu_choose "Node.js Package Registries" "No package installs or lockfile edits" \
+      "status" "Inspect Node.js clients and registry hosts" \
+      "test" "Test registry metadata and tarball host" \
+      "configure" "Configure npm, pnpm or Yarn" \
+      "reset" "Reset app-managed registry" \
+      "back" "Back")" || return 0
+    case "$choice" in
+    status)
+      _node_status_report
+      _menu_message "Node.js" "Read-only inspection completed."
+      ;;
+    test)
+      NODE_ACTION=test
+      NODE_REGISTRY_URL="$(_menu_input "Registry URL" "Credential-free HTTPS registry URL" "https://registry.npmjs.org/")" || continue
+      NODE_TEST_PACKAGE="$(_menu_input "Test package" "Package name" "is-number")" || continue
+      rc=0
+      _run_node_manager || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Registry test" "Operation returned $rc."
+      ;;
+    configure)
+      NODE_CLIENT="$(_menu_choose "Node.js client" "Select package manager" "npm" "npm" "pnpm" "pnpm" "yarn" "Yarn Classic/Berry" "back" "Cancel")" || continue
+      [[ "$NODE_CLIENT" != back ]] || continue
+      NODE_REGISTRY_URL="$(_menu_input "Registry URL" "Credential-free HTTPS registry URL" "https://registry.npmjs.org/")" || continue
+      NODE_SCOPE="$(_menu_choose "Registry scope" "User is default; project is explicit" "user" "User config" "project" "Project config" "back" "Cancel")" || continue
+      [[ "$NODE_SCOPE" != back ]] || continue
+      NODE_PROJECT_DIR=""
+      if [[ "$NODE_SCOPE" == project ]]; then
+        NODE_PROJECT_DIR="$(_menu_input "Project directory" "Directory containing package.json" "$PWD")" || continue
+      fi
+      NODE_ACTION=set
+      rc=0
+      _run_node_manager || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Node.js" "Operation returned $rc."
+      ;;
+    reset)
+      NODE_CLIENT="$(_menu_choose "Reset Node.js" "Select package manager" "npm" "npm" "pnpm" "pnpm" "yarn" "Yarn" "back" "Cancel")" || continue
+      [[ "$NODE_CLIENT" != back ]] || continue
+      NODE_SCOPE="$(_menu_choose "Reset scope" "Choose saved scope" "user" "User" "project" "Project" "back" "Cancel")" || continue
+      [[ "$NODE_SCOPE" != back ]] || continue
+      NODE_PROJECT_DIR=""
+      if [[ "$NODE_SCOPE" == project ]]; then
+        NODE_PROJECT_DIR="$(_menu_input "Project directory" "Directory containing package.json" "$PWD")" || continue
+      fi
+      NODE_ACTION=reset
+      rc=0
+      _run_node_manager || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Node.js" "Operation returned $rc."
+      ;;
+    back) return 0 ;;
+    esac
+  done
+}
+
 _menu_python() {
   local choice scope rc
   while true; do
@@ -4860,6 +5005,7 @@ _menu_main() {
         "overview" "Overview" \
         "apt" "APT management" \
         "python" "Python package sources" \
+        "node" "Node.js package registries" \
         "benchmark" "Mirror benchmark" \
         "backups" "Backup and Restore" \
         "diagnostics" "Diagnostics" \
@@ -4870,6 +5016,7 @@ _menu_main() {
     overview) _menu_overview ;;
     apt) _menu_apt ;;
     python) _menu_python ;;
+    node) _menu_nodejs ;;
     benchmark) _menu_benchmark ;;
     backups) _menu_backups ;;
     diagnostics) _menu_diagnostics ;;
@@ -4887,6 +5034,13 @@ main() {
     mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
     : >"$LOG_FILE"
     _log_to_file "Session started: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  fi
+
+  if [[ "$NODE_REQUESTED" == true ]]; then
+    local node_status=0
+    _run_node_manager || node_status=$?
+    [[ "$node_status" -eq "$EXIT_CANCELLED" ]] && node_status="$EXIT_OK"
+    exit "$node_status"
   fi
 
   if [[ "$PYTHON_REQUESTED" == true ]]; then

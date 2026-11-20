@@ -160,7 +160,7 @@ PYTHON_ACTION=""
 PYTHON_CLIENT="pip"
 PYTHON_SCOPE="auto"
 PYTHON_INDEX_URL=""
-PYTHON_PROJECT_FILE="uv.toml"
+PYTHON_PROJECT_FILE=""
 PYTHON_SOURCE_NAME="power-apt-boost"
 PYTHON_PRIORITY="supplemental"
 PYTHON_RESTORE_PATH=""
@@ -2041,11 +2041,12 @@ _python_snapshot_create() {
   local client="$1" scope="$2" target="$3" existed="$4" old_value="${5:-}"
   local base snapshot
   base="$(_python_backup_base)"
-  [[ ! -L "$base" ]] || {
-    error "Python snapshot base must not be a symlink."
+  [[ "$base" == /* && ! -L "$base" ]] || {
+    error "Python snapshot base must be an absolute, non-symlink path."
     return "$EXIT_BACKUP"
   }
   mkdir -p "$base" && chmod 0700 "$base" || return "$EXIT_BACKUP"
+  base="$(realpath -e -- "$base")" || return "$EXIT_BACKUP"
   snapshot="$(mktemp -d "$base/snapshot.XXXXXXXX")" || return "$EXIT_BACKUP"
   chmod 0700 "$snapshot"
   printf '%s\n' "$client" >"$snapshot/client"
@@ -2081,6 +2082,8 @@ _python_snapshot_mark_after() {
 _python_restore_snapshot() {
   local snapshot="$1" base client scope target before after current temp item
   base="$(_python_backup_base)"
+  [[ "$base" == /* && -d "$base" && ! -L "$base" ]] || return "$EXIT_USAGE"
+  base="$(realpath -e -- "$base" 2>/dev/null)" || return "$EXIT_USAGE"
   [[ ! -L "$snapshot" ]] || return "$EXIT_USAGE"
   snapshot="$(readlink -f -- "$snapshot" 2>/dev/null)" || return "$EXIT_USAGE"
   [[ "$snapshot" == "$base/"* && -d "$snapshot" && ! -L "$snapshot" ]] || {
@@ -2102,6 +2105,7 @@ _python_restore_snapshot() {
   [[ "$after" == true || "$after" == false ]] || return "$EXIT_RESTORE"
 
   if [[ "$client" == pip ]]; then
+    case "$scope" in user | site | global) ;; *) return "$EXIT_RESTORE" ;; esac
     [[ -z "${PIP_CONFIG_FILE+x}" && -z "${PIP_INDEX_URL+x}" ]] || {
       error "PIP_CONFIG_FILE or PIP_INDEX_URL overrides pip; unset it before restore."
       return "$EXIT_RESTORE"
@@ -2127,7 +2131,10 @@ _python_restore_snapshot() {
     return 0
   fi
 
-  [[ "$client" == uv || "$client" == poetry ]] || return "$EXIT_RESTORE"
+  case "$client:$scope" in
+  uv:user | uv:global | uv:project | poetry:project) ;;
+  *) return "$EXIT_RESTORE" ;;
+  esac
   [[ "$target" == /* && "$target" != *$'\n'* && ! -L "$target" ]] || return "$EXIT_RESTORE"
   if [[ "$after" == true ]]; then
     [[ -f "$target" && ! -L "$target" && -f "$snapshot/after-sha256" ]] || return "$EXIT_RESTORE"
@@ -2193,7 +2200,7 @@ end = "# END POWER APT BOOST MANAGED PYTHON SOURCE"
 managed_pattern = re.compile(r"(?ms)^" + re.escape(begin) + r"\r?\n.*?^" + re.escape(end) + r"\r?\n?")
 blocks = managed_pattern.findall(original)
 
-if mode == "remove":
+if mode in ("remove", "remove-preview"):
     if len(blocks) != 1:
         print("Expected exactly one managed Python source block; nothing was changed.", file=sys.stderr)
         raise SystemExit(2)
@@ -2204,6 +2211,9 @@ if mode == "remove":
         print("Removing the managed block would leave invalid TOML; nothing was changed.", file=sys.stderr)
         raise SystemExit(2)
     updated = updated.rstrip() + ("\n" if updated.strip() else "")
+    if mode == "remove-preview":
+        sys.stdout.write(blocks[0])
+        raise SystemExit(0)
 elif mode in ("preview", "write"):
     if blocks:
         print("A managed source block already exists; reset it before adding another.", file=sys.stderr)
@@ -2554,6 +2564,12 @@ _python_apply_toml() {
     _python_toml_edit preview "$client" "$scope" "$target" "$url" "$PYTHON_SOURCE_NAME" "$PYTHON_PRIORITY"
     return $?
   fi
+  if [[ "$action" == remove ]]; then
+    _python_toml_edit remove-preview "$client" "$scope" "$target" "" "$PYTHON_SOURCE_NAME" "$PYTHON_PRIORITY" >/dev/null || {
+      error "No valid managed source block is available to reset."
+      return "$EXIT_USAGE"
+    }
+  fi
   [[ -f "$target" ]] && existed=true
   snapshot="$(_python_snapshot_create "$client" "$scope" "$target" "$existed")" || return "$EXIT_BACKUP"
   _python_toml_edit "$action" "$client" "$scope" "$target" "$url" "$PYTHON_SOURCE_NAME" "$PYTHON_PRIORITY" || return "$EXIT_USAGE"
@@ -2603,6 +2619,16 @@ _run_python_manager() {
         _python_apply_toml preview "$url" || return $?
       fi
     else
+      if [[ "$PYTHON_CLIENT" == pip ]]; then
+        local pip_state
+        pip_state="$(_python_backup_base)/pip-$PYTHON_SCOPE.state"
+        [[ -f "$pip_state" && ! -L "$pip_state" ]] || {
+          error "No app-managed pip source exists in this scope."
+          return "$EXIT_USAGE"
+        }
+      else
+        _python_apply_toml remove-preview "" || return $?
+      fi
       printf 'Preview: reset app-managed %s source in scope %s; no change made.\n' "$PYTHON_CLIENT" "$PYTHON_SCOPE"
     fi
     return 0
@@ -3325,7 +3351,7 @@ _parse_args() {
     [[ "$PYTHON_CLIENT" == poetry || "$PYTHON_PRIORITY" == supplemental ]] || die "--python-priority applies only to Poetry." "$EXIT_USAGE"
     [[ "$PYTHON_CLIENT" != pip || "$PYTHON_SOURCE_NAME" == power-apt-boost ]] || die "--python-source-name applies only to uv/Poetry." "$EXIT_USAGE"
   else
-    [[ "$PYTHON_ACTION" == "" && "$PYTHON_CLIENT" == pip && "$PYTHON_SCOPE" == auto && "$PYTHON_INDEX_URL" == "" && "$PYTHON_PROJECT_FILE" == uv.toml && "$PYTHON_SOURCE_NAME" == power-apt-boost && "$PYTHON_PRIORITY" == supplemental && "$PYTHON_RESTORE_PATH" == "" ]] || die "Python options require a Python command." "$EXIT_USAGE"
+    [[ "$PYTHON_ACTION" == "" && "$PYTHON_CLIENT" == pip && "$PYTHON_SCOPE" == auto && "$PYTHON_INDEX_URL" == "" && "$PYTHON_PROJECT_FILE" == "" && "$PYTHON_SOURCE_NAME" == power-apt-boost && "$PYTHON_PRIORITY" == supplemental && "$PYTHON_RESTORE_PATH" == "" ]] || die "Python options require a Python command." "$EXIT_USAGE"
   fi
 
   if [[ "$MENU_REQUESTED" == true ]]; then

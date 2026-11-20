@@ -99,6 +99,9 @@ test_cli() {
   bash "$SCRIPT" --node-scope invalid --node-status >/dev/null 2>&1 || code=$?
   assert_exit_code 2 "$code" "unknown Node.js scope is rejected"
   code=0
+  bash "$SCRIPT" --node-status --node-reset-registry >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "conflicting Node.js actions are rejected before execution"
+  code=0
   bash "$SCRIPT" --node-test-registry http://registry.npmjs.org/ >/dev/null 2>&1 || code=$?
   assert_exit_code 2 "$code" "insecure Node.js registry is rejected before network access"
   code=0
@@ -1136,7 +1139,11 @@ test_node_manager_safety() {
   _node_validate_registry_url "https://registry.example/#fragment" >/dev/null 2>&1 || code=$?
   assert_exit_code 1 "$code" "Node.js registry rejects fragments"
   output="$(_node_url_label "https://user:secret@registry.example:8443/path/?token=hidden#fragment")"
-  assert_equal "https://registry.example:8443/path/" "$output" "Node.js registry display masks credentials and query data"
+  assert_equal "https://registry.example:8443" "$output" "Node.js registry display exposes only the origin"
+  output="$(_node_url_label "https://registry.example/tenant-secret/path/")"
+  assert_equal "https://registry.example" "$output" "Node.js registry display never exposes path credentials"
+  output="$(_node_url_label "undefined")"
+  assert_equal "not configured" "$output" "Node.js registry display handles unset values"
   output="$(_node_validate_package_name "@acme/valid-package")"
   assert_equal "@acme/valid-package" "$output" "Node.js package validator accepts scoped package names"
   code=0
@@ -1263,6 +1270,21 @@ NPMRC
   after="$(sha256sum "$path")"
   assert_equal "$before" "$after" "pnpm project rollback restores the original .npmrc"
 
+  XDG_CONFIG_HOME="${_TEST_ROOT}/external-xdg-config"
+  export XDG_CONFIG_HOME
+  mkdir -p "$XDG_CONFIG_HOME/pnpm"
+  path="$XDG_CONFIG_HOME/pnpm/rc"
+  printf '%s\n' "registry=https://pnpm.before.example/" >"$path"
+  NODE_CLIENT=pnpm NODE_SCOPE=user NODE_PROJECT_DIR=""
+  before="$(sha256sum "$path")"
+  _node_apply_registry set "https://pnpm.after.example/" >/dev/null
+  assert_file_contains "$path" "registry=https://pnpm.after.example/" "pnpm user scope honors an external XDG_CONFIG_HOME"
+  _node_apply_registry reset >/dev/null
+  after="$(sha256sum "$path")"
+  assert_equal "$before" "$after" "pnpm external XDG config is restored exactly"
+
+  XDG_CONFIG_HOME="$HOME/.config"
+  export XDG_CONFIG_HOME
   path="$HOME/.yarnrc"
   cat >"$path" <<'YARNRC'
 registry https://classic.before.example

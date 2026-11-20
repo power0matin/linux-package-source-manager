@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.2] — 2026-11-21
+
+### Fixed
+
+- Accept the immutable Ubuntu base-suite InRelease metadata when its signed Date is older than seven days and it does not publish a Valid-Until field; moving updates/security suites retain the seven-day freshness gate.
+- Preserve mandatory Ubuntu archive signature verification, suite/codename matching, future-date rejection and explicit Valid-Until expiry checks.
+
+### Tests
+
+- Added regression coverage for the original Ubuntu Noble base Release metadata dated 25 April 2024, plus stale dynamic-suite rejection.
+
 ## [3.0.1] — 2026-11-21
 
 ### Changed

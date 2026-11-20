@@ -4,7 +4,7 @@
 > **Prepared:** 2026-11-19  
 > **Project:** [power0matin/linux-package-source-manager](https://github.com/power0matin/linux-package-source-manager)  
 > **Initial roadmap audit baseline (2026-11-19):** `main` at `56eaf13e76e276bbaae160e59a0aca506490f02d`  
-> **Current script version string:** `3.0.1`
+> **Current script version string:** `3.0.2`
 
 This document is the implementation plan for evolving Linux Package Source Manager into an **Ubuntu-first package-source and mirror manager for servers and developer environments**. It expands the existing Ubuntu APT mirror selector to cover the package ecosystems commonly used on Ubuntu servers, including Python, Node.js, Docker/OCI, Go, Rust, PHP, Java and selected additional ecosystems.
 

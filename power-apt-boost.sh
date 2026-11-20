@@ -4088,7 +4088,10 @@ _parse_args() {
   [[ "$NETWORK_DIAGNOSTICS" != true || "$DOCTOR_REQUESTED" == true ]] || die "--network-diagnostics can only be used with --doctor." "$EXIT_USAGE"
 
   if [[ "$NODE_REQUESTED" == true ]]; then
+    [[ "$ACTION_REQUESTED" != true || "$DRY_RUN" == true ]] || die "Node.js commands cannot be combined with APT apply options." "$EXIT_USAGE"
     [[ "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$LIST_REQUESTED" != true && "$RESTORE" != true && "$MIRROR_MANAGEMENT_REQUESTED" != true && -z "$PRUNE_BACKUPS_KEEP" && "$STATUS_REQUESTED" != true && "$DOCTOR_REQUESTED" != true && "$MENU_REQUESTED" != true && "$PYTHON_REQUESTED" != true ]] || die "Node.js commands cannot be combined with other command modes." "$EXIT_USAGE"
+    [[ "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true && -z "$COUNTRY_FILTER" && "$USE_IPV6" != true && "$BENCH_WORKERS" -eq "$DEFAULT_BENCH_WORKERS" && "$PROBE_RETRIES" -eq 1 ]] || die "Node.js commands cannot be combined with APT mirror benchmark options." "$EXIT_USAGE"
+    [[ "$NETWORK_DIAGNOSTICS" != true && "$APT_RETRIES" -eq 3 && -z "$APT_PROXY" && "$CLEAR_APT_PROXY" != true ]] || die "Node.js commands cannot be combined with APT network options." "$EXIT_USAGE"
     [[ "$JSON_OUTPUT" != true || "$NODE_ACTION" == status ]] || die "--json is supported only with --node-status." "$EXIT_USAGE"
     [[ "$DRY_RUN" != true || "$NODE_ACTION" == set || "$NODE_ACTION" == reset ]] || die "--dry-run is supported only with Node.js set/reset." "$EXIT_USAGE"
     [[ "$NODE_ACTION" == set || "$NODE_ACTION" == reset || "$NODE_ACTION" == restore || "$NODE_ACTION" == status || "$NODE_ACTION" == test ]] || die "Select a Node.js action first." "$EXIT_USAGE"

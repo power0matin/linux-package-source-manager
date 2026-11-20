@@ -63,7 +63,7 @@ Feature suggestions are welcome. Please include:
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR_USERNAME/power-apt-boost.git
+git clone https://github.com/YOUR_USERNAME/linux-package-source-manager.git
 cd linux-package-source-manager
 
 # Make the script executable
@@ -174,7 +174,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) format:
 ## Project Structure
 
 ```
-power-apt-boost/
+linux-package-source-manager/
 ├── power-apt-boost.sh      # Main script (single-file for curl | bash)
 ├── tests/                   # Test suite
 ├── .github/                 # GitHub CI/CD and templates

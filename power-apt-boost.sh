@@ -3315,17 +3315,17 @@ _parse_args() {
       USE_IPV6=true
       shift
       ;;
-    --python-status) PYTHON_REQUESTED=true; PYTHON_ACTION=status; shift ;;
+    --python-status) PYTHON_REQUESTED=true; PYTHON_ACTION="status"; shift ;;
     --python-test-index)
       [[ -n "${2:-}" ]] || die "Option $1 requires an index URL." "$EXIT_USAGE"
       PYTHON_REQUESTED=true; PYTHON_ACTION="test"; PYTHON_INDEX_URL="$2"; shift 2 ;;
     --python-set-index)
       [[ -n "${2:-}" ]] || die "Option $1 requires an index URL." "$EXIT_USAGE"
       PYTHON_REQUESTED=true; PYTHON_ACTION="set"; PYTHON_INDEX_URL="$2"; shift 2 ;;
-    --python-reset-index) PYTHON_REQUESTED=true; PYTHON_ACTION=reset; shift ;;
+    --python-reset-index) PYTHON_REQUESTED=true; PYTHON_ACTION="reset"; shift ;;
     --python-restore)
       [[ -n "${2:-}" ]] || die "Option $1 requires a snapshot path." "$EXIT_USAGE"
-      PYTHON_REQUESTED=true; PYTHON_ACTION=restore; PYTHON_RESTORE_PATH="$2"; shift 2 ;;
+      PYTHON_REQUESTED=true; PYTHON_ACTION="restore"; PYTHON_RESTORE_PATH="$2"; shift 2 ;;
     --python-client)
       case "${2:-}" in pip | uv | poetry) PYTHON_CLIENT="$2" ;; *) die "Invalid Python client." "$EXIT_USAGE" ;; esac
       shift 2 ;;
@@ -4126,7 +4126,7 @@ _menu_python() {
     reset)
       PYTHON_CLIENT="$(_menu_choose "Reset Python" "Choose client" "pip" "pip" "uv" "uv" "poetry" "Poetry" "back" "Cancel")" || continue
       [[ "$PYTHON_CLIENT" != back ]] || continue
-      PYTHON_ACTION=reset
+      PYTHON_ACTION="reset"
       PYTHON_SCOPE=auto
       if [[ "$PYTHON_CLIENT" == poetry ]]; then
         PYTHON_SCOPE=project

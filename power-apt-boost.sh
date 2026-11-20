@@ -2367,8 +2367,14 @@ from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_ope
 class HTTPSOnlyRedirect(HTTPRedirectHandler):
     def redirect_request(self, request, file_pointer, code, message, headers, new_url):
         target = urljoin(request.full_url, new_url)
-        if urlsplit(request.full_url).scheme.lower() == "https" and urlsplit(target).scheme.lower() != "https":
-            raise ValueError("HTTPS downgrade redirect blocked")
+        parsed = urlsplit(target)
+        if urlsplit(request.full_url).scheme.lower() == "https" and (
+            parsed.scheme.lower() != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError("redirect target must remain credential-free HTTPS")
         return super().redirect_request(request, file_pointer, code, message, headers, target)
 
 base = sys.argv[1]

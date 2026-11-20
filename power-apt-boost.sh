@@ -155,6 +155,16 @@ REPORT_LATEST_BACKUP=""
 REPORT_CHECK_NAMES=()
 REPORT_CHECK_STATUSES=()
 REPORT_CHECK_DETAILS=()
+PYTHON_REQUESTED=false
+PYTHON_ACTION=""
+PYTHON_CLIENT="pip"
+PYTHON_SCOPE="auto"
+PYTHON_INDEX_URL=""
+PYTHON_PROJECT_FILE=""
+PYTHON_SOURCE_NAME="power-apt-boost"
+PYTHON_PRIORITY="supplemental"
+PYTHON_RESTORE_PATH=""
+PYTHON_TARGET_FILE=""
 
 _tmp_dirs=()
 _bg_pids=()
@@ -1880,6 +1890,828 @@ DRYRUN
   fi
 }
 
+# ─── Python Package Source Management ────────────────────────────────────────
+
+_python_validate_index_url() {
+  python3 - "$1" <<'PY'
+import sys
+from urllib.parse import urlsplit, urlunsplit
+raw = sys.argv[1]
+if not raw or any(ch.isspace() or ord(ch) < 32 for ch in raw):
+    raise SystemExit(1)
+try:
+    parsed = urlsplit(raw)
+    if parsed.scheme.lower() != "https" or not parsed.hostname:
+        raise SystemExit(1)
+    if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
+        raise SystemExit(1)
+    if parsed.port is not None and not 1 <= parsed.port <= 65535:
+        raise SystemExit(1)
+    path = parsed.path.rstrip("/")
+    if path.split("/")[-1].lower() != "simple":
+        raise SystemExit(1)
+    print(urlunsplit(("https", parsed.netloc, path + "/", "", "")))
+except (ValueError, UnicodeError):
+    raise SystemExit(1)
+PY
+}
+
+_python_url_label() {
+  [[ -n "$1" ]] || {
+    printf '%s' "not configured"
+    return 0
+  }
+  python3 - "$1" <<'PY'
+import sys
+from urllib.parse import urlsplit
+try:
+    parsed = urlsplit(sys.argv[1])
+    host = parsed.hostname or "unknown"
+    if parsed.port:
+        host += f":{parsed.port}"
+    print(f"{parsed.scheme}://{host}{parsed.path}")
+except ValueError:
+    print("<invalid-url>")
+PY
+}
+
+_python_is_externally_managed() {
+  [[ "${POWER_APT_BOOST_TEST_EXTERNALLY_MANAGED:-}" == true ]] && return 0
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 - <<'PY' >/dev/null 2>&1
+import sysconfig
+from pathlib import Path
+stdlib = sysconfig.get_path("stdlib")
+raise SystemExit(0 if stdlib and (Path(stdlib) / "EXTERNALLY-MANAGED").is_file() else 1)
+PY
+}
+
+_python_override_names() {
+  local name found=false
+  for name in PIP_INDEX_URL PIP_EXTRA_INDEX_URL PIP_CONFIG_FILE UV_CONFIG_FILE UV_DEFAULT_INDEX UV_INDEX; do
+    if [[ -n "${!name+x}" ]]; then
+      printf '%s\n' "$name"
+      found=true
+    fi
+  done
+  while IFS= read -r name; do
+    [[ -z "$name" ]] || {
+      printf '%s\n' "$name"
+      found=true
+    }
+  done < <(env | sed -n 's/^\(UV_INDEX_[A-Za-z0-9_]*\)=.*/\1/p; s/^\(POETRY_REPOSITORIES_[A-Za-z0-9_]*_URL\)=.*/\1/p' | sort -u)
+  [[ "$found" == true ]] || printf '%s\n' none
+}
+
+_python_pip_flag() {
+  case "$1" in
+  user) printf '%s' --user ;;
+  site) printf '%s' --site ;;
+  global) printf '%s' --global ;;
+  *) return 1 ;;
+  esac
+}
+
+_python_pip_get() {
+  local flag
+  flag="$(_python_pip_flag "$1")" || return 2
+  python3 -m pip config "$flag" get global.index-url
+}
+
+_python_pip_set() {
+  local flag
+  flag="$(_python_pip_flag "$1")" || return 2
+  python3 -m pip config "$flag" set global.index-url "$2"
+}
+
+_python_pip_unset() {
+  local flag
+  flag="$(_python_pip_flag "$1")" || return 2
+  python3 -m pip config "$flag" unset global.index-url
+}
+
+_python_resolve_pip_scope() {
+  case "$PYTHON_SCOPE" in
+  auto)
+    if [[ -n "${VIRTUAL_ENV:-}" ]]; then PYTHON_SCOPE=site; else PYTHON_SCOPE=user; fi
+    ;;
+  user | site | global) ;;
+  *)
+    error "Invalid pip configuration scope."
+    return "$EXIT_USAGE"
+    ;;
+  esac
+
+  if [[ "$PYTHON_SCOPE" == site ]]; then
+    [[ -n "${VIRTUAL_ENV:-}" && -d "$VIRTUAL_ENV" ]] || {
+      error "The pip site scope requires an active virtual environment."
+      return "$EXIT_USAGE"
+    }
+    local active_prefix venv_prefix
+    active_prefix="$(python3 -c 'import os,sys; print(os.path.realpath(sys.prefix))' 2>/dev/null)" || return "$EXIT_GENERAL"
+    venv_prefix="$(readlink -f -- "$VIRTUAL_ENV" 2>/dev/null)" || return "$EXIT_USAGE"
+    [[ "$active_prefix" == "$venv_prefix" ]] || {
+      error "The selected Python interpreter does not belong to VIRTUAL_ENV."
+      return "$EXIT_USAGE"
+    }
+  fi
+
+  if [[ "$PYTHON_SCOPE" == global ]]; then
+    [[ "$(id -u)" -eq 0 ]] || {
+      error "The pip global scope requires root."
+      return "$EXIT_NOT_ROOT"
+    }
+    _python_is_externally_managed && {
+      error "PEP 668 marks this interpreter as externally managed; global Python configuration is blocked."
+      return "$EXIT_USAGE"
+    }
+  fi
+
+  [[ -z "${PIP_CONFIG_FILE+x}" && -z "${PIP_INDEX_URL+x}" ]] || {
+    error "PIP_CONFIG_FILE or PIP_INDEX_URL overrides pip configuration; unset it before editing."
+    return "$EXIT_USAGE"
+  }
+  command -v python3 >/dev/null 2>&1 || return "$EXIT_GENERAL"
+  python3 -m pip --version >/dev/null 2>&1 || {
+    error "pip is not installed for this interpreter; no package will be installed automatically."
+    return "$EXIT_GENERAL"
+  }
+}
+
+_python_backup_base() {
+  printf '%s' "${XDG_STATE_HOME:-$HOME/.local/state}/${APP_SLUG}/python"
+}
+
+_python_snapshot_create() {
+  local client="$1" scope="$2" target="$3" existed="$4" old_value="${5:-}"
+  local base snapshot
+  base="$(_python_backup_base)"
+  [[ "$base" == /* && ! -L "$base" ]] || {
+    error "Python snapshot base must be an absolute, non-symlink path."
+    return "$EXIT_BACKUP"
+  }
+  mkdir -p "$base" && chmod 0700 "$base" || return "$EXIT_BACKUP"
+  base="$(realpath -e -- "$base")" || return "$EXIT_BACKUP"
+  snapshot="$(mktemp -d "$base/snapshot.XXXXXXXX")" || return "$EXIT_BACKUP"
+  chmod 0700 "$snapshot"
+  printf '%s\n' "$client" >"$snapshot/client"
+  printf '%s\n' "$scope" >"$snapshot/scope"
+  printf '%s\n' "$target" >"$snapshot/target"
+  printf '%s\n' "$existed" >"$snapshot/before-exists"
+  if [[ "$client" == pip ]]; then
+    [[ "$existed" != true ]] || printf '%s' "$old_value" >"$snapshot/before-value"
+  elif [[ "$existed" == true ]]; then
+    cp -p -- "$target" "$snapshot/original" || {
+      rm -rf -- "$snapshot"
+      return "$EXIT_BACKUP"
+    }
+  fi
+  chmod 0600 "$snapshot/"* 2>/dev/null || true
+  printf '%s\n' "$snapshot"
+}
+
+_python_snapshot_mark_after() {
+  local snapshot="$1" client="$2" target="$3" value="${4:-}"
+  if [[ "$client" == pip ]]; then
+    printf '%s\n' true >"$snapshot/after-exists"
+    printf '%s' "$value" >"$snapshot/after-value"
+  elif [[ -f "$target" && ! -L "$target" ]]; then
+    printf '%s\n' true >"$snapshot/after-exists"
+    sha256sum "$target" | awk '{print $1}' >"$snapshot/after-sha256"
+  else
+    printf '%s\n' false >"$snapshot/after-exists"
+  fi
+  chmod 0600 "$snapshot/"* 2>/dev/null || true
+}
+
+_python_restore_snapshot() {
+  local snapshot="$1" base client scope target before after current temp item
+  base="$(_python_backup_base)"
+  [[ "$base" == /* && -d "$base" && ! -L "$base" ]] || return "$EXIT_USAGE"
+  base="$(realpath -e -- "$base" 2>/dev/null)" || return "$EXIT_USAGE"
+  [[ ! -L "$snapshot" ]] || return "$EXIT_USAGE"
+  snapshot="$(readlink -f -- "$snapshot" 2>/dev/null)" || return "$EXIT_USAGE"
+  [[ "$snapshot" == "$base/"* && -d "$snapshot" && ! -L "$snapshot" ]] || {
+    error "Snapshot must be an app-owned directory under $base."
+    return "$EXIT_USAGE"
+  }
+  for item in client scope target before-exists after-exists; do
+    [[ -f "$snapshot/$item" && ! -L "$snapshot/$item" ]] || {
+      error "Python snapshot metadata is incomplete."
+      return "$EXIT_RESTORE"
+    }
+  done
+  client="$(cat "$snapshot/client")"
+  scope="$(cat "$snapshot/scope")"
+  target="$(cat "$snapshot/target")"
+  before="$(cat "$snapshot/before-exists")"
+  after="$(cat "$snapshot/after-exists")"
+  [[ "$before" == true || "$before" == false ]] || return "$EXIT_RESTORE"
+  [[ "$after" == true || "$after" == false ]] || return "$EXIT_RESTORE"
+
+  if [[ "$client" == pip ]]; then
+    case "$scope" in user | site | global) ;; *) return "$EXIT_RESTORE" ;; esac
+    [[ -z "${PIP_CONFIG_FILE+x}" && -z "${PIP_INDEX_URL+x}" ]] || {
+      error "PIP_CONFIG_FILE or PIP_INDEX_URL overrides pip; unset it before restore."
+      return "$EXIT_RESTORE"
+    }
+    current=""
+    if current="$(_python_pip_get "$scope" 2>/dev/null)"; then
+      [[ "$after" == true && -f "$snapshot/after-value" && "$current" == "$(cat "$snapshot/after-value")" ]] || {
+        error "The pip index changed after this snapshot; refusing to overwrite a newer value."
+        return "$EXIT_RESTORE"
+      }
+    else
+      [[ "$after" == false ]] || {
+        error "The pip index no longer matches this snapshot."
+        return "$EXIT_RESTORE"
+      }
+    fi
+    if [[ "$before" == true ]]; then
+      [[ -f "$snapshot/before-value" && ! -L "$snapshot/before-value" ]] || return "$EXIT_RESTORE"
+      _python_pip_set "$scope" "$(cat "$snapshot/before-value")" >/dev/null || return "$EXIT_RESTORE"
+    else
+      _python_pip_unset "$scope" >/dev/null 2>&1 || true
+    fi
+    return 0
+  fi
+
+  case "$client:$scope" in
+  uv:user | uv:global | uv:project | poetry:project) ;;
+  *) return "$EXIT_RESTORE" ;;
+  esac
+  [[ "$target" == /* && "$target" != *$'\n'* && ! -L "$target" ]] || return "$EXIT_RESTORE"
+  if [[ "$after" == true ]]; then
+    [[ -f "$target" && ! -L "$target" && -f "$snapshot/after-sha256" ]] || return "$EXIT_RESTORE"
+    current="$(sha256sum "$target" | awk '{print $1}')"
+    [[ "$current" == "$(cat "$snapshot/after-sha256")" ]] || {
+      error "The TOML file changed after this snapshot; refusing to overwrite newer edits."
+      return "$EXIT_RESTORE"
+    }
+  else
+    [[ ! -e "$target" && ! -L "$target" ]] || return "$EXIT_RESTORE"
+  fi
+
+  if [[ "$before" == true ]]; then
+    [[ -f "$snapshot/original" && ! -L "$snapshot/original" ]] || return "$EXIT_RESTORE"
+    temp="$(mktemp "$(dirname "$target")/.pab-restore.XXXXXXXX")" || return "$EXIT_RESTORE"
+    if cp -p -- "$snapshot/original" "$temp"; then
+      if ! mv -f -- "$temp" "$target"; then
+        rm -f -- "$temp"
+        return "$EXIT_RESTORE"
+      fi
+    else
+      rm -f -- "$temp"
+      return "$EXIT_RESTORE"
+    fi
+  else
+    rm -f -- "$target" || return "$EXIT_RESTORE"
+  fi
+  info "Python configuration restored from snapshot."
+}
+
+_python_toml_edit() {
+  local mode="$1" client="$2" scope="$3" target="$4" url="${5:-}" name="${6:-power-apt-boost}" priority="${7:-supplemental}"
+  python3 - "$mode" "$client" "$scope" "$target" "$url" "$name" "$priority" <<'PY'
+import json
+import os
+import re
+import stat
+import sys
+import tempfile
+from pathlib import Path
+
+try:
+    import tomllib
+except ImportError:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        print("TOML editing requires Python 3.11+ or an already-installed tomli module; no file was changed.", file=sys.stderr)
+        raise SystemExit(2)
+
+mode, client, scope, raw_path, url, name, priority = sys.argv[1:]
+path = Path(raw_path)
+if path.is_symlink() or (path.exists() and not path.is_file()):
+    print("Refusing to edit a symlink or non-regular TOML file.", file=sys.stderr)
+    raise SystemExit(2)
+if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", name):
+    print("Invalid source name.", file=sys.stderr)
+    raise SystemExit(2)
+try:
+    original = path.read_text(encoding="utf-8") if path.exists() else ""
+    parsed = tomllib.loads(original)
+except (OSError, UnicodeError, tomllib.TOMLDecodeError):
+    print("Existing TOML is invalid or unreadable; refusing to modify it.", file=sys.stderr)
+    raise SystemExit(2)
+
+begin = "# BEGIN POWER APT BOOST MANAGED PYTHON SOURCE"
+end = "# END POWER APT BOOST MANAGED PYTHON SOURCE"
+managed_pattern = re.compile(r"(?ms)^" + re.escape(begin) + r"\r?\n.*?^" + re.escape(end) + r"\r?\n?")
+blocks = managed_pattern.findall(original)
+
+if mode in ("remove", "remove-preview"):
+    if len(blocks) != 1:
+        print("Expected exactly one managed Python source block; nothing was changed.", file=sys.stderr)
+        raise SystemExit(2)
+    updated = managed_pattern.sub("", original, count=1)
+    try:
+        tomllib.loads(updated)
+    except tomllib.TOMLDecodeError:
+        print("Removing the managed block would leave invalid TOML; nothing was changed.", file=sys.stderr)
+        raise SystemExit(2)
+    updated = updated.rstrip() + ("\n" if updated.strip() else "")
+    if mode == "remove-preview":
+        sys.stdout.write(blocks[0])
+        raise SystemExit(0)
+elif mode in ("preview", "write"):
+    if blocks:
+        print("A managed source block already exists; reset it before adding another.", file=sys.stderr)
+        raise SystemExit(2)
+    if client == "uv":
+        if scope == "project" and path.name == "pyproject.toml":
+            tool = parsed.get("tool", {})
+            uv = tool.get("uv", {}) if isinstance(tool, dict) else {}
+            indexes = uv.get("index", []) if isinstance(uv, dict) else None
+            table = "[[tool.uv.index]]"
+        else:
+            indexes = parsed.get("index", [])
+            table = "[[index]]"
+        if not isinstance(indexes, list):
+            print("Existing uv index structure is unsupported.", file=sys.stderr)
+            raise SystemExit(2)
+        for item in indexes:
+            if isinstance(item, dict):
+                if str(item.get("name", "")).lower() == name.lower():
+                    print("The uv index name already exists; preserving it.", file=sys.stderr)
+                    raise SystemExit(2)
+                if item.get("default") is True:
+                    print("An explicit uv default index already exists; refusing to replace it.", file=sys.stderr)
+                    raise SystemExit(2)
+        managed_block = f'{begin}\n{table}\nname = {json.dumps(name)}\nurl = {json.dumps(url)}\ndefault = true\n{end}\n'
+    elif client == "poetry":
+        if scope != "project" or path.name != "pyproject.toml":
+            print("Poetry sources require a project pyproject.toml.", file=sys.stderr)
+            raise SystemExit(2)
+        tool = parsed.get("tool", {})
+        poetry = tool.get("poetry", {}) if isinstance(tool, dict) else {}
+        sources = poetry.get("source", []) if isinstance(poetry, dict) else None
+        if not isinstance(sources, list):
+            print("Existing Poetry source structure is unsupported.", file=sys.stderr)
+            raise SystemExit(2)
+        if any(isinstance(entry, dict) and str(entry.get("name", "")).lower() == name.lower() for entry in sources):
+            print("The Poetry source name already exists; preserving it.", file=sys.stderr)
+            raise SystemExit(2)
+        if priority not in ("primary", "supplemental", "explicit"):
+            print("Invalid Poetry source priority.", file=sys.stderr)
+            raise SystemExit(2)
+        managed_block = f'{begin}\n[[tool.poetry.source]]\nname = {json.dumps(name)}\nurl = {json.dumps(url)}\npriority = {json.dumps(priority)}\n{end}\n'
+    else:
+        raise SystemExit(2)
+    updated = original.rstrip() + ("\n\n" if original.strip() else "") + managed_block
+    try:
+        tomllib.loads(updated)
+    except tomllib.TOMLDecodeError:
+        print("Generated TOML is invalid; no file was changed.", file=sys.stderr)
+        raise SystemExit(2)
+    if mode == "preview":
+        sys.stdout.write(managed_block)
+        raise SystemExit(0)
+else:
+    raise SystemExit(2)
+
+if mode == "remove" and not updated.strip():
+    path.unlink(missing_ok=True)
+    print("Managed source removed.")
+    raise SystemExit(0)
+
+path.parent.mkdir(parents=True, exist_ok=True)
+old_stat = path.stat() if path.exists() else None
+fd, temp_name = tempfile.mkstemp(prefix="." + path.name + ".pab-", dir=str(path.parent))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+        handle.write(updated)
+        handle.flush()
+        os.fsync(handle.fileno())
+        if old_stat:
+            os.fchmod(handle.fileno(), stat.S_IMODE(old_stat.st_mode))
+            if os.geteuid() == 0:
+                try:
+                    os.fchown(handle.fileno(), old_stat.st_uid, old_stat.st_gid)
+                except PermissionError:
+                    pass
+        else:
+            os.fchmod(handle.fileno(), 0o600)
+    os.replace(temp_name, path)
+    dir_fd = os.open(str(path.parent), os.O_RDONLY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+except Exception:
+    try:
+        os.unlink(temp_name)
+    except OSError:
+        pass
+    raise
+print("TOML configuration updated atomically.")
+PY
+}
+
+_python_resolve_toml_target() {
+  local client="$1" scope="$2" requested="$3" base
+  case "$client:$scope" in
+  uv:user)
+    base="${XDG_CONFIG_HOME:-$HOME/.config}/uv"
+    [[ ! -L "$base" ]] || return 1
+    base="$(realpath -m -- "$base")" || return 1
+    PYTHON_TARGET_FILE="$base/uv.toml"
+    ;;
+  uv:global)
+    [[ "$(id -u)" -eq 0 ]] || return "$EXIT_NOT_ROOT"
+    base="/etc/uv"
+    [[ ! -L "$base" ]] || return 1
+    base="$(realpath -m -- "$base")" || return 1
+    PYTHON_TARGET_FILE="$base/uv.toml"
+    ;;
+  uv:project)
+    requested="${requested:-uv.toml}"
+    [[ "$requested" != *$'\n'* && "$requested" != *$'\r'* ]] || return 1
+    [[ "$requested" == uv.toml || "$requested" == pyproject.toml || "$requested" == */uv.toml || "$requested" == */pyproject.toml ]] || return 1
+    [[ ! -L "$requested" ]] || return 1
+    base="$(cd "$(dirname "$requested")" 2>/dev/null && pwd -P)" || return 1
+    PYTHON_TARGET_FILE="$base/$(basename "$requested")"
+    if [[ "$(basename "$PYTHON_TARGET_FILE")" == pyproject.toml && -f "$base/uv.toml" ]]; then
+      error "A sibling uv.toml takes precedence; refusing to edit an ignored pyproject.toml."
+      return 1
+    fi
+    ;;
+  poetry:project)
+    requested="${requested:-pyproject.toml}"
+    [[ "$requested" != *$'\n'* && "$requested" != *$'\r'* ]] || return 1
+    [[ "$requested" == pyproject.toml || "$requested" == */pyproject.toml ]] || return 1
+    [[ ! -L "$requested" ]] || return 1
+    base="$(cd "$(dirname "$requested")" 2>/dev/null && pwd -P)" || return 1
+    PYTHON_TARGET_FILE="$base/$(basename "$requested")"
+    ;;
+  *) return 1 ;;
+  esac
+  [[ ! -L "$PYTHON_TARGET_FILE" && (! -e "$PYTHON_TARGET_FILE" || -f "$PYTHON_TARGET_FILE") ]]
+}
+
+_python_test_index() {
+  local index_url rc=0
+  index_url="$(_python_validate_index_url "$1")" || {
+    error "Use HTTPS PEP 503/691 URL ending in /simple/, without credentials, query or fragment."
+    return "$EXIT_USAGE"
+  }
+  if python3 - "$index_url" "$TIMEOUT_TOTAL" <<'PY'; then
+import json
+import ssl
+import sys
+from html.parser import HTMLParser
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlsplit
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
+
+class HTTPSOnlyRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        target = urljoin(request.full_url, new_url)
+        parsed = urlsplit(target)
+        if urlsplit(request.full_url).scheme.lower() == "https" and (
+            parsed.scheme.lower() != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError("redirect target must remain credential-free HTTPS")
+        return super().redirect_request(request, file_pointer, code, message, headers, target)
+
+base = sys.argv[1]
+timeout = min(max(int(sys.argv[2]), 1), 60)
+opener = build_opener(HTTPSHandler(context=ssl.create_default_context()), HTTPSOnlyRedirect())
+
+class Links(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.hrefs = []
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() == "a":
+            href = dict(attrs).get("href")
+            if href:
+                self.hrefs.append(href)
+
+def safe_https(value):
+    parsed = urlsplit(value)
+    return parsed.scheme.lower() == "https" and bool(parsed.hostname) and parsed.username is None and parsed.password is None
+
+def host(value):
+    return urlsplit(value).hostname or "unknown"
+
+try:
+    project_url = base.rstrip("/") + "/pip/"
+    request = Request(project_url, headers={"Accept": "application/vnd.pypi.simple.v1+json, text/html;q=0.9", "User-Agent": "Power-APT-Boost/3.0"})
+    with opener.open(request, timeout=timeout) as response:
+        metadata_url = response.geturl()
+        body = response.read(4 * 1024 * 1024 + 1)
+        content_type = response.headers.get("Content-Type", "").lower()
+    if not safe_https(metadata_url) or len(body) > 4 * 1024 * 1024:
+        raise ValueError("unsafe redirect or oversized metadata")
+    artifact_url = ""
+    hash_present = False
+    if "json" in content_type:
+        document = json.loads(body.decode("utf-8"))
+        files = document.get("files") if isinstance(document, dict) else None
+        if not isinstance(files, list):
+            raise ValueError("not a PEP 691 project document")
+        for entry in files:
+            if isinstance(entry, dict) and isinstance(entry.get("url"), str):
+                artifact_url = urljoin(metadata_url, entry["url"])
+                hashes = entry.get("hashes", {})
+                hash_present = isinstance(hashes, dict) and bool(hashes.get("sha256"))
+                break
+    else:
+        parser = Links()
+        parser.feed(body.decode("utf-8", errors="replace"))
+        for href in parser.hrefs:
+            candidate = urljoin(metadata_url, href)
+            if urlsplit(candidate).path.lower().endswith((".whl", ".zip", ".tar.gz", ".tar.bz2", ".tar.xz")):
+                artifact_url = candidate
+                hash_present = "sha256=" in urlsplit(candidate).fragment.lower()
+                break
+    if not artifact_url or not safe_https(artifact_url):
+        raise ValueError("no HTTPS distribution file was advertised")
+    try:
+        with opener.open(Request(artifact_url, method="HEAD"), timeout=timeout) as response:
+            final_url = response.geturl()
+            status = response.status
+    except HTTPError as exc:
+        if exc.code not in (405, 501):
+            raise
+        ranged = Request(artifact_url, headers={"Range": "bytes=0-0"})
+        with opener.open(ranged, timeout=timeout) as response:
+            final_url = response.geturl()
+            status = response.status
+            response.read(1)
+    if not safe_https(final_url) or not 200 <= int(status) < 400:
+        raise ValueError("artifact endpoint did not respond successfully over HTTPS")
+    print("METADATA=PASS")
+    print("ARTIFACT=PASS")
+    print("METADATA_HOST=" + host(metadata_url))
+    print("ARTIFACT_HOST=" + host(final_url))
+    print("SHA256_METADATA=" + ("present" if hash_present else "not-advertised"))
+except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+    code = getattr(exc, "code", None)
+    print("METADATA=FAIL")
+    print("ARTIFACT=NOT_CHECKED")
+    print("REASON=" + (f"HTTP {code}" if code else type(exc).__name__))
+    raise SystemExit(1)
+PY
+    info "Python metadata and one artifact endpoint are reachable; no package was installed."
+  else
+    rc=$?
+    error "Python index verification failed; no configuration was changed."
+  fi
+  return "$rc"
+}
+
+_python_status_report() {
+  local py="not found" pip="not installed" pipx="not installed" uv="not installed" poetry="not installed"
+  local venv="none" managed=false user_index="" site_index="" global_index="" overrides name
+  command -v python3 >/dev/null 2>&1 && py="$(python3 --version 2>&1)"
+  if command -v python3 >/dev/null 2>&1; then
+    pip="$(python3 -m pip --version 2>/dev/null || printf '%s' "not installed for python3")"
+    _python_is_externally_managed && managed=true
+    if python3 -m pip --version >/dev/null 2>&1; then
+      user_index="$(_python_pip_get user 2>/dev/null || true)"
+      site_index="$(_python_pip_get site 2>/dev/null || true)"
+      global_index="$(_python_pip_get global 2>/dev/null || true)"
+    fi
+  fi
+  command -v pipx >/dev/null 2>&1 && pipx="$(pipx --version 2>&1 | head -n 1)"
+  command -v uv >/dev/null 2>&1 && uv="$(uv --version 2>&1 | head -n 1)"
+  command -v poetry >/dev/null 2>&1 && poetry="$(poetry --version 2>&1 | head -n 1)"
+  [[ -z "${VIRTUAL_ENV:-}" ]] || venv="$VIRTUAL_ENV"
+  overrides="$(_python_override_names)"
+
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    printf '{"schema_version":1,"command":"python-status",'
+    printf '"python3":%s,"pip":%s,"pipx":%s,"uv":%s,"poetry":%s,' \
+      "$(_json_quote "$py")" "$(_json_quote "$pip")" "$(_json_quote "$pipx")" "$(_json_quote "$uv")" "$(_json_quote "$poetry")"
+    printf '"virtual_env":%s,"externally_managed":%s,' "$(_json_quote "$venv")" "$managed"
+    printf '"pip_index_hosts":{"user":%s,"site":%s,"global":%s},"environment_overrides":[' \
+      "$(_json_quote "$(_python_url_label "$user_index")")" "$(_json_quote "$(_python_url_label "$site_index")")" "$(_json_quote "$(_python_url_label "$global_index")")"
+    local first=true
+    while IFS= read -r name; do
+      [[ "$name" == none ]] && continue
+      [[ "$first" == true ]] || printf ','
+      printf '%s' "$(_json_quote "$name")"
+      first=false
+    done <<<"$overrides"
+    printf ']}\n'
+    return 0
+  fi
+
+  _print_section_header "Python Package Sources"
+  printf 'Python: %s\npip: %s\npipx: %s\nuv: %s\nPoetry: %s\nVIRTUAL_ENV: %s\nPEP 668: %s\n' \
+    "$py" "$pip" "$pipx" "$uv" "$poetry" "$venv" "$managed"
+  printf 'pip index hosts: user=%s | venv=%s | global=%s\n' \
+    "$(_python_url_label "$user_index")" "$(_python_url_label "$site_index")" "$(_python_url_label "$global_index")"
+  printf 'Environment overrides (names only):\n'
+  while IFS= read -r name; do printf '  - %s\n' "$name"; done <<<"$overrides"
+  [[ -z "${PIP_EXTRA_INDEX_URL+x}" ]] || warn "PIP_EXTRA_INDEX_URL remains configured; it may cause multi-index resolution."
+  msg "Diagnostics do not install packages or edit dependency/lock files."
+}
+
+_python_apply_pip() {
+  local action="$1" url="${2:-}" scope="$PYTHON_SCOPE" old_value="" existed=false snapshot state temp
+  _python_resolve_pip_scope || return $?
+  scope="$PYTHON_SCOPE"
+  state="$(_python_backup_base)/pip-$scope.state"
+  [[ ! -L "$state" ]] || return "$EXIT_BACKUP"
+  if [[ "$action" == set ]]; then
+    [[ ! -e "$state" ]] || {
+      error "An app-managed pip index already exists; reset it first."
+      return "$EXIT_USAGE"
+    }
+    old_value="$(_python_pip_get "$scope" 2>/dev/null)" && existed=true || existed=false
+    [[ "$existed" != true || "$old_value" != "$url" ]] || {
+      info "pip already uses this index."
+      return 0
+    }
+    snapshot="$(_python_snapshot_create pip "$scope" global.index-url "$existed" "$old_value")" || return "$EXIT_BACKUP"
+    if ! _python_pip_set "$scope" "$url" >/dev/null; then
+      if [[ "$existed" == true ]]; then _python_pip_set "$scope" "$old_value" >/dev/null 2>&1 || true; else _python_pip_unset "$scope" >/dev/null 2>&1 || true; fi
+      error "pip rejected the update; best-effort rollback was attempted."
+      return "$EXIT_GENERAL"
+    fi
+    if [[ "$(_python_pip_get "$scope" 2>/dev/null || true)" != "$url" ]]; then
+      if [[ "$existed" == true ]]; then
+        _python_pip_set "$scope" "$old_value" >/dev/null 2>&1 || true
+      else
+        _python_pip_unset "$scope" >/dev/null 2>&1 || true
+      fi
+      error "pip read-back failed; the prior scoped value was restored where possible."
+      return "$EXIT_GENERAL"
+    fi
+    _python_snapshot_mark_after "$snapshot" pip "" "$url"
+    mkdir -p "$(dirname "$state")" || return "$EXIT_BACKUP"
+    temp="$(mktemp "$(dirname "$state")/.pip-state.XXXXXXXX")" || return "$EXIT_BACKUP"
+    printf '%s\n' "$snapshot" >"$temp"
+    chmod 0600 "$temp"
+    mv -f -- "$temp" "$state"
+    printf 'Snapshot: %s\n' "$snapshot"
+    info "pip index configured in $scope scope; unrelated settings were preserved."
+  else
+    [[ -f "$state" && ! -L "$state" ]] || {
+      error "No app-managed pip index exists in this scope."
+      return "$EXIT_USAGE"
+    }
+    snapshot="$(cat "$state")"
+    _python_restore_snapshot "$snapshot" || return $?
+    rm -f -- "$state"
+    info "pip index reset to its previous value."
+  fi
+}
+
+_python_apply_toml() {
+  local action="$1" url="${2:-}" client="$PYTHON_CLIENT" scope="$PYTHON_SCOPE"
+  local target snapshot existed=false env_name
+  command -v "$client" >/dev/null 2>&1 || {
+    error "$client is not installed; no tool will be installed."
+    return "$EXIT_GENERAL"
+  }
+  if [[ "$client" == uv ]]; then
+    case "$scope" in auto) scope=user ;; user | global | project) ;; *) return "$EXIT_USAGE" ;; esac
+    [[ -z "${UV_CONFIG_FILE+x}" && -z "${UV_DEFAULT_INDEX+x}" && -z "${UV_INDEX+x}" ]] || {
+      error "UV_CONFIG_FILE/UV_DEFAULT_INDEX/UV_INDEX overrides uv configuration; unset before editing."
+      return "$EXIT_USAGE"
+    }
+    while IFS= read -r env_name; do
+      [[ -z "$env_name" ]] || {
+        error "$env_name overrides uv configuration."
+        return "$EXIT_USAGE"
+      }
+    done < <(env | sed -n 's/^\(UV_INDEX_[A-Za-z0-9_]*\)=.*/\1/p')
+  else
+    case "$scope" in
+    auto | project) scope=project ;;
+    *)
+      error "Poetry sources are project-scoped."
+      return "$EXIT_USAGE"
+      ;;
+    esac
+    while IFS= read -r env_name; do
+      [[ -z "$env_name" ]] || {
+        error "$env_name overrides Poetry repositories."
+        return "$EXIT_USAGE"
+      }
+    done < <(env | sed -n 's/^\(POETRY_REPOSITORIES_[A-Za-z0-9_]*_URL\)=.*/\1/p')
+  fi
+
+  _python_resolve_toml_target "$client" "$scope" "$PYTHON_PROJECT_FILE" || return "$EXIT_USAGE"
+  target="$PYTHON_TARGET_FILE"
+  if [[ "$action" == preview || "$action" == remove-preview ]]; then
+    _python_toml_edit "$action" "$client" "$scope" "$target" "$url" "$PYTHON_SOURCE_NAME" "$PYTHON_PRIORITY"
+    return $?
+  fi
+  if [[ "$action" == remove ]]; then
+    _python_toml_edit remove-preview "$client" "$scope" "$target" "" "$PYTHON_SOURCE_NAME" "$PYTHON_PRIORITY" >/dev/null || {
+      error "No valid managed source block is available to reset."
+      return "$EXIT_USAGE"
+    }
+  fi
+  [[ -f "$target" ]] && existed=true
+  snapshot="$(_python_snapshot_create "$client" "$scope" "$target" "$existed")" || return "$EXIT_BACKUP"
+  _python_toml_edit "$action" "$client" "$scope" "$target" "$url" "$PYTHON_SOURCE_NAME" "$PYTHON_PRIORITY" || return "$EXIT_USAGE"
+  _python_snapshot_mark_after "$snapshot" "$client" "$target"
+  printf 'Snapshot: %s\n' "$snapshot"
+  if [[ "$action" == write ]]; then
+    [[ "$client" != poetry || "$PYTHON_PRIORITY" != primary ]] || warn "Poetry primary disables implicit PyPI; review namespace coverage."
+    [[ "$client" != poetry || "$PYTHON_PRIORITY" != explicit ]] || warn "Poetry explicit sources require package-specific source pins; dependency files were not changed."
+    info "$client source added; unrelated TOML and lockfiles were preserved."
+  else
+    info "$client managed source removed; unrelated TOML was preserved."
+  fi
+}
+
+_run_python_manager() {
+  local url="" confirmation
+  case "$PYTHON_ACTION" in
+  status)
+    _python_status_report
+    return 0
+    ;;
+  test)
+    _python_test_index "$PYTHON_INDEX_URL"
+    return $?
+    ;;
+  restore)
+    _confirm_action "Restore Python snapshot $PYTHON_RESTORE_PATH?" || return "$EXIT_CANCELLED"
+    _python_restore_snapshot "$PYTHON_RESTORE_PATH"
+    return $?
+    ;;
+  set | reset) ;;
+  *)
+    error "No Python action was selected."
+    return "$EXIT_USAGE"
+    ;;
+  esac
+
+  if [[ "$PYTHON_ACTION" == set ]]; then
+    url="$(_python_validate_index_url "$PYTHON_INDEX_URL")" || {
+      error "Invalid Python index URL."
+      return "$EXIT_USAGE"
+    }
+  fi
+  case "$PYTHON_CLIENT" in
+  pip) _python_resolve_pip_scope || return $? ;;
+  uv | poetry) ;;
+  *)
+    error "Python client must be pip, uv or poetry."
+    return "$EXIT_USAGE"
+    ;;
+  esac
+  if [[ "$PYTHON_CLIENT" == pip && -n "${PIP_EXTRA_INDEX_URL+x}" ]]; then
+    warn "PIP_EXTRA_INDEX_URL is preserved and may cause multi-index resolution."
+  fi
+  if [[ "$PYTHON_ACTION" == set ]]; then _python_test_index "$url" || return $?; fi
+
+  if [[ "$DRY_RUN" == true ]]; then
+    if [[ "$PYTHON_ACTION" == set ]]; then
+      if [[ "$PYTHON_CLIENT" == pip ]]; then
+        printf 'Preview: pip index -> %s (scope %s)\n' "$(_python_url_label "$url")" "$PYTHON_SCOPE"
+      else
+        _python_apply_toml preview "$url" || return $?
+      fi
+    else
+      if [[ "$PYTHON_CLIENT" == pip ]]; then
+        local pip_state
+        pip_state="$(_python_backup_base)/pip-$PYTHON_SCOPE.state"
+        [[ -f "$pip_state" && ! -L "$pip_state" ]] || {
+          error "No app-managed pip source exists in this scope."
+          return "$EXIT_USAGE"
+        }
+      else
+        _python_apply_toml remove-preview "" || return $?
+      fi
+      printf 'Preview: reset app-managed %s source in scope %s; no change made.\n' "$PYTHON_CLIENT" "$PYTHON_SCOPE"
+    fi
+    return 0
+  fi
+
+  confirmation="Only the selected Python source configuration changes. No package, dependency or lockfile is modified."
+  [[ "$PYTHON_CLIENT" != poetry || "$PYTHON_ACTION" != set || "$PYTHON_PRIORITY" != primary ]] || confirmation="Poetry primary disables implicit PyPI. Continue only if that is intentional."
+  _confirm_action "$confirmation" || return "$EXIT_CANCELLED"
+  if [[ "$PYTHON_CLIENT" == pip ]]; then
+    _python_apply_pip "$PYTHON_ACTION" "$url"
+  elif [[ "$PYTHON_ACTION" == set ]]; then
+    _python_apply_toml write "$url"
+  else
+    _python_apply_toml remove
+  fi
+}
+
 # ─── Output ──────────────────────────────────────────────────────────────────# ─── Output ───────────────────────────────────────────────────────────────────
 
 _json_quote() {
@@ -2250,7 +3082,17 @@ ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}    --timeout SECS${COLOR_RESET}        Probe timeout (default: 20)
   ${COLOR_GREEN}    --country CODE${COLOR_RESET}        Filter mirrors by country code
   ${COLOR_GREEN}    --ipv6${COLOR_RESET}                Use IPv6 for mirror testing
-  ${COLOR_GREEN}    --log-file PATH${COLOR_RESET}       Write log to file
+  ${COLOR_GREEN}    --python-status${COLOR_RESET}       Detect Python tools and pip index scopes
+  ${COLOR_GREEN}    --python-test-index URL${COLOR_RESET} Test PEP 503/691 metadata and one artifact endpoint
+  ${COLOR_GREEN}    --python-set-index URL${COLOR_RESET} Configure a pip, uv or Poetry source
+  ${COLOR_GREEN}    --python-reset-index${COLOR_RESET}  Remove only the app-managed Python source
+  ${COLOR_GREEN}    --python-restore PATH${COLOR_RESET} Restore a conflict-checked Python snapshot
+  ${COLOR_GREEN}    --python-client NAME${COLOR_RESET}  Select pip, uv or poetry
+  ${COLOR_GREEN}    --python-scope SCOPE${COLOR_RESET}  Select auto, user, site, global or project
+  ${COLOR_GREEN}    --python-project PATH${COLOR_RESET} Set uv/Poetry project TOML path
+  ${COLOR_GREEN}    --python-source-name NAME${COLOR_RESET} Set uv/Poetry source name
+  ${COLOR_GREEN}    --python-priority VALUE${COLOR_RESET} Poetry priority: supplemental, primary or explicit
+
 
 ${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
   ${COLOR_DIM}# Open the interactive menu${COLOR_RESET}
@@ -2515,12 +3357,60 @@ _parse_args() {
       USE_IPV6=true
       shift
       ;;
-    --log-file)
-      [[ -n "${2:-}" ]] || die "Option $1 requires a file path." "$EXIT_USAGE"
-      LOG_FILE="$2"
-      LOG_ENABLED=true
+    --python-status)
+      PYTHON_REQUESTED=true
+      PYTHON_ACTION="status"
+      shift
+      ;;
+    --python-test-index)
+      [[ -n "${2:-}" ]] || die "Option $1 requires an index URL." "$EXIT_USAGE"
+      PYTHON_REQUESTED=true
+      PYTHON_ACTION="test"
+      PYTHON_INDEX_URL="$2"
       shift 2
       ;;
+    --python-set-index)
+      [[ -n "${2:-}" ]] || die "Option $1 requires an index URL." "$EXIT_USAGE"
+      PYTHON_REQUESTED=true
+      PYTHON_ACTION="set"
+      PYTHON_INDEX_URL="$2"
+      shift 2
+      ;;
+    --python-reset-index)
+      PYTHON_REQUESTED=true
+      PYTHON_ACTION="reset"
+      shift
+      ;;
+    --python-restore)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a snapshot path." "$EXIT_USAGE"
+      PYTHON_REQUESTED=true
+      PYTHON_ACTION="restore"
+      PYTHON_RESTORE_PATH="$2"
+      shift 2
+      ;;
+    --python-client)
+      case "${2:-}" in pip | uv | poetry) PYTHON_CLIENT="$2" ;; *) die "Invalid Python client." "$EXIT_USAGE" ;; esac
+      shift 2
+      ;;
+    --python-scope)
+      case "${2:-}" in auto | user | site | global | project) PYTHON_SCOPE="$2" ;; *) die "Invalid Python scope." "$EXIT_USAGE" ;; esac
+      shift 2
+      ;;
+    --python-project)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a path." "$EXIT_USAGE"
+      PYTHON_PROJECT_FILE="$2"
+      shift 2
+      ;;
+    --python-source-name)
+      [[ -n "${2:-}" ]] || die "Option $1 requires a source name." "$EXIT_USAGE"
+      PYTHON_SOURCE_NAME="$2"
+      shift 2
+      ;;
+    --python-priority)
+      case "${2:-}" in primary | supplemental | explicit) PYTHON_PRIORITY="$2" ;; *) die "Invalid Poetry priority." "$EXIT_USAGE" ;; esac
+      shift 2
+      ;;
+
     -*)
       error "Unknown option: $1. Run --help for usage."
       exit "$EXIT_USAGE"
@@ -2540,9 +3430,21 @@ _parse_args() {
   [[ "$RESTORE" != true ]] || ((mode_count += 1))
   [[ "$MIRROR_MANAGEMENT_REQUESTED" != true ]] || ((mode_count += 1))
   [[ -z "$PRUNE_BACKUPS_KEEP" ]] || ((mode_count += 1))
+  [[ "$PYTHON_REQUESTED" != true ]] || ((mode_count += 1))
   ((mode_count <= 1)) || die "Choose only one command mode: menu, status, doctor, list, restore, backup pruning or mirror management." "$EXIT_USAGE"
   [[ "$RESTORE_SCOPE" == all || "$RESTORE" == true ]] || die "--restore-scope requires --restore." "$EXIT_USAGE"
   [[ "$NETWORK_DIAGNOSTICS" != true || "$DOCTOR_REQUESTED" == true ]] || die "--network-diagnostics can only be used with --doctor." "$EXIT_USAGE"
+  if [[ "$PYTHON_REQUESTED" == true ]]; then
+    [[ "$ACTION_REQUESTED" != true || "$DRY_RUN" == true ]] || die "Python commands cannot be combined with APT apply options." "$EXIT_USAGE"
+    [[ "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$LIST_REQUESTED" != true && "$RESTORE" != true && "$MIRROR_MANAGEMENT_REQUESTED" != true && -z "$PRUNE_BACKUPS_KEEP" && "$STATUS_REQUESTED" != true && "$DOCTOR_REQUESTED" != true && "$MENU_REQUESTED" != true ]] || die "Python commands cannot be combined with APT commands." "$EXIT_USAGE"
+    [[ "$JSON_OUTPUT" != true || "$PYTHON_ACTION" == status ]] || die "--json is supported only with --python-status." "$EXIT_USAGE"
+    [[ "$PYTHON_ACTION" == set || "$PYTHON_ACTION" == reset ]] || [[ "$DRY_RUN" != true ]] || die "--dry-run is supported only with Python set/reset." "$EXIT_USAGE"
+    [[ "$PYTHON_ACTION" == set || "$PYTHON_ACTION" == reset || "$PYTHON_ACTION" == restore || "$PYTHON_ACTION" == status || "$PYTHON_ACTION" == test ]] || die "Select a Python action first." "$EXIT_USAGE"
+    [[ "$PYTHON_CLIENT" == poetry || "$PYTHON_PRIORITY" == supplemental ]] || die "--python-priority applies only to Poetry." "$EXIT_USAGE"
+    [[ "$PYTHON_CLIENT" != pip || "$PYTHON_SOURCE_NAME" == power-apt-boost ]] || die "--python-source-name applies only to uv/Poetry." "$EXIT_USAGE"
+  else
+    [[ "$PYTHON_ACTION" == "" && "$PYTHON_CLIENT" == pip && "$PYTHON_SCOPE" == auto && "$PYTHON_INDEX_URL" == "" && "$PYTHON_PROJECT_FILE" == "" && "$PYTHON_SOURCE_NAME" == power-apt-boost && "$PYTHON_PRIORITY" == supplemental && "$PYTHON_RESTORE_PATH" == "" ]] || die "Python options require a Python command." "$EXIT_USAGE"
+  fi
 
   if [[ "$MENU_REQUESTED" == true ]]; then
     [[ "$YES" != true && "$JSON_OUTPUT" != true && "$ACTION_REQUESTED" != true && "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true ]] || die "--menu cannot be combined with CLI operation flags." "$EXIT_USAGE"
@@ -3246,6 +4148,74 @@ _menu_diagnostics() {
   esac
 }
 
+_menu_python() {
+  local choice scope rc
+  while true; do
+    choice="$(_menu_choose "Python Package Sources" "No package installs or lockfile edits" \
+      "status" "Inspect Python tools" "test" "Test PyPI-compatible index" \
+      "pip" "Configure pip" "uv" "Configure uv" "poetry" "Add Poetry source" \
+      "reset" "Reset app-managed source" "back" "Back")" || return 0
+    case "$choice" in
+    status)
+      _python_status_report
+      _menu_message "Python" "Read-only inspection completed."
+      ;;
+    test)
+      PYTHON_INDEX_URL="$(_menu_input "Python index" "HTTPS PEP 503/691 URL" "https://pypi.org/simple/")" || continue
+      _python_test_index "$PYTHON_INDEX_URL"
+      _menu_message "Index test" "Check completed."
+      ;;
+    pip | uv | poetry)
+      PYTHON_CLIENT="$choice"
+      PYTHON_ACTION="set"
+      PYTHON_INDEX_URL="$(_menu_input "Index URL" "HTTPS index ending in /simple/" "")" || continue
+      PYTHON_SCOPE=auto
+      PYTHON_PRIORITY=supplemental
+      if [[ "$choice" == uv ]]; then
+        scope="$(_menu_choose "uv scope" "Choose scope" "user" "User" "project" "Project" "global" "System" "back" "Cancel")" || continue
+        [[ "$scope" != back ]] || continue
+        PYTHON_SCOPE="$scope"
+        if [[ "$scope" == project ]]; then PYTHON_PROJECT_FILE="$(_menu_input "uv project" "uv.toml or pyproject.toml" "uv.toml")" || continue; fi
+      elif [[ "$choice" == poetry ]]; then
+        PYTHON_SCOPE=project
+        scope="$(_menu_choose "Poetry priority" "Supplemental preserves implicit PyPI" "supplemental" "Supplemental" "explicit" "Explicit" "primary" "Primary (disables PyPI)" "back" "Cancel")" || continue
+        [[ "$scope" != back ]] || continue
+        PYTHON_PRIORITY="$scope"
+        PYTHON_PROJECT_FILE="$(_menu_input "Poetry project" "pyproject.toml path" "pyproject.toml")" || continue
+      else
+        scope="$(_menu_choose "pip scope" "Auto selects active venv" "auto" "Auto" "user" "User" "site" "Active venv" "global" "System" "back" "Cancel")" || continue
+        [[ "$scope" != back ]] || continue
+        PYTHON_SCOPE="$scope"
+      fi
+      rc=0
+      _run_python_manager || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Python" "Operation returned $rc."
+      ;;
+    reset)
+      PYTHON_CLIENT="$(_menu_choose "Reset Python" "Choose client" "pip" "pip" "uv" "uv" "poetry" "Poetry" "back" "Cancel")" || continue
+      [[ "$PYTHON_CLIENT" != back ]] || continue
+      PYTHON_ACTION="reset"
+      PYTHON_SCOPE=auto
+      if [[ "$PYTHON_CLIENT" == poetry ]]; then
+        PYTHON_SCOPE=project
+        PYTHON_PROJECT_FILE="$(_menu_input "Project" "pyproject.toml path" "pyproject.toml")" || continue
+      elif [[ "$PYTHON_CLIENT" == uv ]]; then
+        PYTHON_SCOPE="$(_menu_choose "uv scope" "Choose scope" "user" "User" "project" "Project" "global" "System" "back" "Cancel")" || continue
+        [[ "$PYTHON_SCOPE" != back ]] || continue
+        if [[ "$PYTHON_SCOPE" == project ]]; then PYTHON_PROJECT_FILE="$(_menu_input "uv project" "uv.toml or pyproject.toml" "uv.toml")" || continue; fi
+      else
+        PYTHON_SCOPE="$(_menu_choose "pip scope" "Choose scope" "user" "User" "site" "Active venv" "global" "System" "back" "Cancel")" || continue
+        [[ "$PYTHON_SCOPE" != back ]] || continue
+      fi
+      rc=0
+      _run_python_manager || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Python" "Operation returned $rc."
+      ;;
+    back) return 0 ;;
+    esac
+  done
+}
+
 _country_code_supported() {
   local requested="$1" entry country mirror_url
   for entry in "${_MIRROR_CATALOG[@]}"; do
@@ -3360,6 +4330,7 @@ _menu_main() {
       _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \
         "overview" "Overview" \
         "apt" "APT management" \
+        "python" "Python package sources" \
         "benchmark" "Mirror benchmark" \
         "backups" "Backup and Restore" \
         "diagnostics" "Diagnostics" \
@@ -3369,6 +4340,7 @@ _menu_main() {
     case "$choice" in
     overview) _menu_overview ;;
     apt) _menu_apt ;;
+    python) _menu_python ;;
     benchmark) _menu_benchmark ;;
     backups) _menu_backups ;;
     diagnostics) _menu_diagnostics ;;
@@ -3386,6 +4358,13 @@ main() {
     mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
     : >"$LOG_FILE"
     _log_to_file "Session started: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  fi
+
+  if [[ "$PYTHON_REQUESTED" == true ]]; then
+    local python_status=0
+    _run_python_manager || python_status=$?
+    [[ "$python_status" -eq "$EXIT_CANCELLED" ]] && python_status="$EXIT_OK"
+    exit "$python_status"
   fi
 
   if [[ "$STATUS_REQUESTED" == true ]]; then

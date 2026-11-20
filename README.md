@@ -53,6 +53,9 @@ sudo bash power-apt-boost.sh --dry-run
 - Ubuntu Release origin, suite, codename, metadata-age and archive-signature verification for main, updates and security
 - Deterministic benchmark score: average endpoint latency plus 50 ms per redirect
 - Numbered terminal menu, with optional `whiptail` dialogs when installed
+- Python package-source screen for pip, uv and Poetry; pipx is detected but its app environments are not changed
+- Read-only Python tool inventory and HTTPS PEP 503/691 index plus artifact checks without installing packages
+- Scoped pip index configuration and managed uv/Poetry TOML source blocks with preview, snapshots and conflict-safe restore
 - Overview, APT management, mirror benchmark, Backup/Restore, Diagnostics and session Settings screens
 - Safe apply and restore previews with confirmation; `--yes` is required to bypass prompts in non-interactive sessions
 - Fail-closed APT snapshots with SHA-256 validation and exact restore for new snapshots
@@ -128,6 +131,57 @@ sudo bash power-apt-boost.sh --doctor --json
 ```
 
 `--status` reports the detected OS, APT source files, current managed mirror and available backups. `--doctor` checks local dependencies, permissions, the Ubuntu archive keyring and backup visibility. These commands do not change the system.
+
+### Python package sources
+
+Python package-source commands do not require root for user or project scopes. They never install packages, edit dependency declarations, or update lockfiles.
+
+Inspect detected tools and pip index scopes:
+
+```bash
+bash power-apt-boost.sh --python-status
+bash power-apt-boost.sh --python-status --json
+```
+
+Test a PyPI-compatible Simple API endpoint without installing a package. The check reads the `pip` project metadata and verifies one advertised distribution endpoint:
+
+```bash
+bash power-apt-boost.sh --python-test-index https://pypi.org/simple/
+```
+
+Preview and then configure the pip user index:
+
+```bash
+bash power-apt-boost.sh --python-set-index https://pypi.org/simple/ --python-client pip --python-scope user --dry-run
+bash power-apt-boost.sh --python-set-index https://pypi.org/simple/ --python-client pip --python-scope user
+```
+
+For an active virtual environment, use `--python-scope site`; `auto` selects the active venv when present and otherwise selects user scope. The global scope requires root and is blocked when PEP 668 marks the interpreter as externally managed.
+
+Configure uv in user or project scope:
+
+```bash
+bash power-apt-boost.sh --python-set-index https://pypi.org/simple/ --python-client uv --python-scope user --dry-run
+bash power-apt-boost.sh --python-set-index https://pypi.org/simple/ --python-client uv --python-scope project --python-project pyproject.toml --dry-run
+```
+
+Add a Poetry source to a project file. Supplemental is the default and preserves the implicit PyPI source:
+
+```bash
+bash power-apt-boost.sh --python-set-index https://pypi.org/simple/ --python-client poetry --python-scope project --python-project pyproject.toml --python-priority supplemental --dry-run
+```
+
+Poetry `primary` sources disable implicit PyPI; `explicit` sources require package-specific source pins. The tool never edits those dependency pins. Existing private sources and project index declarations are preserved; a duplicate source name or an existing uv default index causes a safe refusal.
+
+Reset only a source managed by Power APT Boost, or restore a snapshot after checking that the target has not changed since the snapshot:
+
+```bash
+bash power-apt-boost.sh --python-reset-index --python-client pip --python-scope user
+bash power-apt-boost.sh --python-reset-index --python-client uv --python-scope project --python-project pyproject.toml
+bash power-apt-boost.sh --python-restore /path/to/python/snapshot
+```
+
+uv and Poetry editing requires Python 3.11+ (`tomllib`) or an already-installed `tomli` module. No TOML parser or package manager is installed automatically. pipx is included in tool detection only; this phase deliberately does not rewrite the separate virtual environments managed by pipx.
 
 ### Apply a mirror
 
@@ -217,6 +271,16 @@ sudo bash power-apt-boost.sh --verbose
 | `--country CODE` | Filter mirrors by supported two-letter country code |
 | `--ipv6` | Use IPv6 for mirror testing and generated APT config |
 | `--log-file PATH` | Write log to file |
+| `--python-status` | Inspect Python, pip, pipx, uv, Poetry, venv and pip index scopes |
+| `--python-test-index URL` | Test HTTPS PEP 503/691 metadata and one distribution endpoint without installing it |
+| `--python-set-index URL` | Set the selected pip/uv/Poetry source after preview and confirmation |
+| `--python-reset-index` | Restore/remove only a source previously managed by this tool |
+| `--python-restore PATH` | Restore a conflict-checked Python configuration snapshot |
+| `--python-client NAME` | Select `pip`, `uv` or `poetry` (default `pip`) |
+| `--python-scope SCOPE` | Select `auto`, `user`, `site`, `global` or `project` |
+| `--python-project PATH` | Select the `uv.toml` / `pyproject.toml` target |
+| `--python-source-name NAME` | Name the managed uv/Poetry source |
+| `--python-priority VALUE` | Poetry priority: `supplemental`, `primary` or `explicit` |
 
 ## What It Does
 
@@ -317,11 +381,13 @@ Restore scope can be `all`, `sources` or `network`. A network-only restore does 
 
 ## What It Does NOT Change
 
-The current tool is an APT source/configuration utility. It does not:
+The tool does not:
 
-- Install, upgrade or remove application packages.
+- Install, upgrade or remove application packages or Python dependencies.
+- Edit dependency declarations, package pins, hashes or lockfiles.
+- Rewrite pipx-managed application environments; pipx is detected for inventory only.
 - Change firewall rules, routes, DNS resolver configuration, VPN settings or SSH configuration.
-- Manage Python, Node.js, Docker registry, Go, Rust or other non-APT package-manager configuration.
+- Manage Node.js, Docker registry, Go, Rust or other non-Python package ecosystems.
 
 **Filesystem effects outside `/etc/apt`:** the tool creates validated snapshots under `/var/backups/power-apt-boost/` and a mutation lock under `/run/lock/`. It no longer manually deletes APT package lists or clears the archive cache. `apt-get update` still performs its normal package-index maintenance.
 
@@ -434,11 +500,11 @@ If you have third-party APT sources in `/etc/apt/sources.list`, Power APT Boost 
 
 | Ubuntu Version | Current CI coverage |
 |---------------|---------------------|
-| 24.04 LTS Noble | 145 offline tests |
-| 22.04 LTS Jammy | 145 offline tests |
-| 20.04 LTS Focal | 145 offline tests |
+| 24.04 LTS Noble | 186 offline tests (includes TOML edit/restore coverage) |
+| 22.04 LTS Jammy | 168 offline tests (TOML parser unavailable path) |
+| 20.04 LTS Focal | 168 offline tests (TOML parser unavailable path) |
 
-CI also runs ShellCheck and shfmt. Offline tests cover source parsing, inventory, backup/restore, config ownership, proxy validation, architecture-specific archive selection, rollback and mirror compatibility. Live mirror connectivity, real archive-signature checks and external DNS/TLS availability are not CI prerequisites; network diagnostics are opt-in at runtime. [Latest Phase 4 CI run](https://github.com/power0matin/power-apt-boost/actions/runs/44633115521). Requires Bash 4.0+ and one of: curl, wget.
+CI also runs ShellCheck and shfmt. Offline tests cover APT parsing, inventory, backup/restore, config ownership, proxy validation, architecture-specific archive selection, rollback, mirror compatibility, Python index validation, PEP 668, private-source preservation and snapshot conflict handling. TOML edit/restore paths run where Python 3.11+ `tomllib` or an existing `tomli` is available; older images verify fail-closed behavior. Live public mirror reachability, real archive-signature checks, external DNS/TLS and live PyPI mirror/artifact reachability are not CI prerequisites. [Latest Phase 5 CI run](https://github.com/power0matin/power-apt-boost/actions/runs/44647360924). Requires Bash 4.0+ and one of: curl, wget.
 
 ## Security
 

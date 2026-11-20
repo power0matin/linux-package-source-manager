@@ -1153,7 +1153,7 @@ _select_mirror() {
   _tmp_dirs+=("$bench_tmpdir")
 
   _bench_worker() {
-    local worker_idx="$1" url="$2" codename="$3" result_file="$4" done_file="$5" status=0
+    local url="$1" codename="$2" result_file="$3" done_file="$4" status=0
     _test_mirror "$url" "$result_file" "$codename" >/dev/null 2>&1 || status=$?
     printf '%s\n' "$status" >"$done_file"
     return 0
@@ -1165,8 +1165,8 @@ _select_mirror() {
     batch_indices=()
     while (("${#pids[@]}" < BENCH_WORKERS)) && ((idx < total)); do
       batch_indices+=("$idx")
-      completed_flags[$idx]=0
-      _bench_worker "$idx" "${mirrors[$idx]}" "$CODENAME" \
+      completed_flags[idx]=0
+      _bench_worker "${mirrors[$idx]}" "$CODENAME" \
         "${bench_tmpdir}/${idx}.result" "${bench_tmpdir}/${idx}.done" &
       pids+=("$!")
       _bg_pids+=("$!")
@@ -1178,7 +1178,7 @@ _select_mirror() {
     while ((batch_completed < batch_count)); do
       for batch_idx in "${batch_indices[@]}"; do
         if [[ "${completed_flags[$batch_idx]:-0}" != 1 && -f "${bench_tmpdir}/${batch_idx}.done" ]]; then
-          completed_flags[$batch_idx]=1
+          completed_flags[batch_idx]=1
           ((completed += 1))
           ((batch_completed += 1))
           _print_task_progress "Mirror verification" "$completed" "$total" "$progress_started"

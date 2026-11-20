@@ -65,6 +65,16 @@ This policy covers the `power-apt-boost.sh` script and its direct behavior. The 
 - The tool refuses to replace unmanaged or mixed source files, non-tool-owned managed-config files and symlinked targets. Separate third-party source files are read for inventory but are not rewritten.
 - `--dry-run` benchmarks and previews without applying persistent APT configuration changes.
 
+## Node.js registry operations
+
+- Node.js status reporting displays version information and registry host/path labels. Environment override names may be listed, but their values are never printed.
+- Registry URLs must use HTTPS and cannot contain embedded credentials, query strings or fragments. Redirects must remain credential-free HTTPS. Registry metadata responses are size-limited; the checker reads npm package metadata and sends a HEAD request to the advertised tarball endpoint. It does not download the package archive, run package scripts or install dependencies.
+- npm, pnpm, Yarn Classic and Yarn Berry are changed through their own configuration commands. Mutations target one user-level config file by default; project scope requires an explicit project directory with a regular package.json. The adapter refuses symlinked and non-regular config targets.
+- The managed operation changes only the default fetch-registry setting. Existing scoped registry entries and authentication values are not rewritten. package.json, publishConfig, workspace metadata and lockfiles are not edited. Yarn Berry's distinct npmPublishRegistry remains intact; for other tools, a default registry can also be used by publish commands when no publish-specific value is configured.
+- Known environment overrides for registry/config resolution cause mutating operations to refuse. Status output reports override names without values. The tool does not import or store registry credentials.
+- Before mutation, the selected config file is copied into a mode-0700 snapshot directory with mode-0600 contents. Restore checks the post-change SHA-256 and refuses to overwrite later edits. Reset is limited to the exact client, scope and target that Power APT Boost previously managed.
+- Non-interactive changes require --yes; --dry-run prints the selected target and redacted current/proposed registry labels without writing configuration. Node.js operations do not require root.
+
 ## Release status
 
 The `main` branch currently declares script version `3.0.0`, but that version has not been published as a Git tag/release. The latest published release is `v2.1.0`. For production use, prefer the tagged release unless you have reviewed and intentionally chosen the unreleased source.

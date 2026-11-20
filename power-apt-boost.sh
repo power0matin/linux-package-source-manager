@@ -2517,8 +2517,13 @@ _python_apply_pip() {
       error "pip rejected the update; best-effort rollback was attempted."
       return "$EXIT_GENERAL"
     fi
-    [[ "$(_python_pip_get "$scope" 2>/dev/null || true)" == "$url" ]] || {
-      error "pip read-back failed; restore is available in the snapshot."
+    if [[ "$(_python_pip_get "$scope" 2>/dev/null || true)" != "$url" ]]; then
+      if [[ "$existed" == true ]]; then
+        _python_pip_set "$scope" "$old_value" >/dev/null 2>&1 || true
+      else
+        _python_pip_unset "$scope" >/dev/null 2>&1 || true
+      fi
+      error "pip read-back failed; the prior scoped value was restored where possible."
       return "$EXIT_GENERAL"
     }
     _python_snapshot_mark_after "$snapshot" pip "" "$url"
@@ -2560,8 +2565,8 @@ _python_apply_toml() {
 
   _python_resolve_toml_target "$client" "$scope" "$PYTHON_PROJECT_FILE" || return "$EXIT_USAGE"
   target="$PYTHON_TARGET_FILE"
-  if [[ "$action" == preview ]]; then
-    _python_toml_edit preview "$client" "$scope" "$target" "$url" "$PYTHON_SOURCE_NAME" "$PYTHON_PRIORITY"
+  if [[ "$action" == preview || "$action" == remove-preview ]]; then
+    _python_toml_edit "$action" "$client" "$scope" "$target" "$url" "$PYTHON_SOURCE_NAME" "$PYTHON_PRIORITY"
     return $?
   fi
   if [[ "$action" == remove ]]; then

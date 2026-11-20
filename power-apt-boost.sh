@@ -2014,7 +2014,19 @@ _node_check_overrides() {
 
 _node_snapshot_target_valid() {
   local client="$1" scope="$2" target="$3" dir xdg
-  [[ "$target" == /* && "$target" != *
+  [[ "$target" == /* && "$target" != *$'\n'* && "$target" != *$'\r'* && ! -L "$target" ]] || return 1
+  dir="$(dirname "$target")"
+  [[ "$(realpath -m -- "$dir" 2>/dev/null)" == "$dir" ]] || return 1
+  case "$client:$scope" in
+  npm:user) [[ "$target" == "$HOME/"* && "$(basename "$target")" == .npmrc ]] ;;
+  npm:project | pnpm:project) [[ "$(basename "$target")" == .npmrc && -f "$dir/package.json" && ! -L "$dir/package.json" ]] ;;
+  pnpm:user)
+    xdg="\${XDG_CONFIG_HOME:-$HOME/.config}"
+    [[ "$xdg" == /* ]] || return 1
+    xdg="$(realpath -m -- "$xdg" 2>/dev/null)" || return 1
+    [[ "$target" == "$xdg/pnpm/rc" ]]
+    ;;
+  yarn:user) [[ "$target" == "$HOME/.yarnrc" || "$target" == "$HOME/.yarnrc.yml" ]] ;;
   yarn:project)
     [[ -f "$dir/package.json" && ! -L "$dir/package.json" ]] || return 1
     [[ "$(basename "$target")" == .yarnrc || "$(basename "$target")" == .yarnrc.yml ]]

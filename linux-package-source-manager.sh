@@ -79,11 +79,10 @@ readonly EXIT_CANCELLED=10
 
 # Detect script invocation name for restore command
 set +u
-_SCRIPT_NAME="${BASH_SOURCE[0]}"
-set -u
-if [[ "$_SCRIPT_NAME" == "bash" ]] || [[ "$_SCRIPT_NAME" == "/usr/bin/bash" ]]; then
+_SCRIPT_NAME="${BASH_SOURCE[0]:-}"
+if [[ -z "$_SCRIPT_NAME" || "$_SCRIPT_NAME" == "bash" || "${_SCRIPT_NAME##*/}" == "bash" || "$_SCRIPT_NAME" == "/dev/stdin" ]]; then
   _SCRIPT_NAME="linux-package-source-manager.sh"
-elif [[ "$_SCRIPT_NAME" == *"linux-package-source-manager"* || "$_SCRIPT_NAME" == *"power-apt-boost"* ]]; then
+else
   _SCRIPT_NAME="$(basename "$_SCRIPT_NAME")"
 fi
 

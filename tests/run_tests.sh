@@ -873,6 +873,15 @@ test_python_manager_safety() {
   assert_exit_code 0 "$code" "PEP 668 guard recognizes externally-managed test marker"
   unset POWER_APT_BOOST_TEST_EXTERNALLY_MANAGED
 
+  _python_is_externally_managed() { return 0; }
+  id() { printf '%s\\n' 0; }
+  PYTHON_SCOPE=global
+  code=0
+  _python_resolve_pip_scope >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "PEP 668 blocks global pip configuration"
+  unset -f _python_is_externally_managed id
+  PYTHON_SCOPE=auto
+
   original_xdg="${XDG_STATE_HOME-}"
   xdg_was_set="${XDG_STATE_HOME+x}"
   original_pip_index="${PIP_INDEX_URL-}"
@@ -881,6 +890,13 @@ test_python_manager_safety() {
   pip_config_was_set="${PIP_CONFIG_FILE+x}"
   export XDG_STATE_HOME="${_TEST_ROOT}/python-state"
   unset PIP_INDEX_URL PIP_CONFIG_FILE
+  export PIP_INDEX_URL="https://user:secret@example.com/simple/"
+  PYTHON_SCOPE=user
+  code=0
+  _python_resolve_pip_scope >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "pip configuration refuses an environment index override"
+  unset PIP_INDEX_URL
+  PYTHON_SCOPE=auto
 
   FAKE_PIP_INDEX="https://new.example/simple/"
   _python_pip_get() { printf '%s' "$FAKE_PIP_INDEX"; }
@@ -905,7 +921,18 @@ test_python_manager_safety() {
 
   path="${_TEST_ROOT}/python-toml/pyproject.toml"
   mkdir -p "$(dirname "$path")"
-  printf '[project]\nname = "fixture-project"\n' >"$path"
+  cat >"$path" <<'TOML'
+[project]
+name = "fixture-project"
+
+[[tool.uv.index]]
+name = "private"
+url = "https://private.example/simple/"
+default = false
+
+[tool.uv.sources]
+private-package = { index = "private" }
+TOML
   before="$(sha256sum "$path")"
   if python3 -c 'import tomllib' >/dev/null 2>&1 || python3 -c 'import tomli' >/dev/null 2>&1; then
     output="$(_python_toml_edit preview uv project "$path" "https://pypi.org/simple/" "pab-test" supplemental)"
@@ -916,6 +943,8 @@ test_python_manager_safety() {
     _python_toml_edit write uv project "$path" "https://pypi.org/simple/" "pab-test" supplemental >/dev/null
     assert_file_contains "$path" "[[tool.uv.index]]" "uv project source is written to the correct TOML table"
     assert_file_contains "$path" 'name = "fixture-project"' "uv edit preserves unrelated project metadata"
+    assert_file_contains "$path" 'url = "https://private.example/simple/"' "uv edit preserves an existing private index"
+    assert_file_contains "$path" 'private-package = { index = "private" }' "uv edit preserves explicit project index pins"
     code=0
     _python_toml_edit write uv project "$path" "https://other.example/simple/" "pab-test" supplemental >/dev/null 2>&1 || code=$?
     assert_exit_code 2 "$code" "uv refuses a duplicate managed index/source name"
@@ -927,10 +956,20 @@ test_python_manager_safety() {
     assert_exit_code 1 "$code" "uv reset removes only the managed source block"
 
     path="${_TEST_ROOT}/python-toml/poetry-pyproject.toml"
-    printf '[tool.poetry]\nname = "fixture-poetry"\n' >"$path"
+    cat >"$path" <<'TOML'
+[tool.poetry]
+name = "fixture-poetry"
+
+[[tool.poetry.source]]
+name = "private"
+url = "https://private.example/simple/"
+priority = "explicit"
+TOML
     _python_toml_edit write poetry project "$path" "https://pypi.org/simple/" "pab-test" supplemental >/dev/null
     assert_file_contains "$path" 'priority = "supplemental"' "Poetry source uses the supplemental priority"
     assert_file_contains "$path" 'name = "fixture-poetry"' "Poetry edit preserves existing project metadata"
+    assert_file_contains "$path" 'url = "https://private.example/simple/"' "Poetry edit preserves private source URLs"
+    assert_file_contains "$path" 'priority = "explicit"' "Poetry edit preserves private source priority"
     _python_toml_edit remove poetry project "$path" "" "pab-test" supplemental >/dev/null
     code=0
     grep -q "BEGIN POWER APT BOOST MANAGED PYTHON SOURCE" "$path" || code=1

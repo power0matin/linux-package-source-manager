@@ -1069,19 +1069,27 @@ _node_test_yarn_classic_set() {
 }
 
 _node_test_yarn_yaml_set() {
-  local file="$1" key="$2" value="$3" tmp
-  mkdir -p "$(dirname "$file")"
-  [[ -f "$file" ]] || : >"$file"
-  tmp="$(mktemp "$(dirname "$file")/.node-test.XXXXXXXX")" || return 1
-  awk -v key="$key" -v value="$value" '
-    BEGIN { found=0; prefix=key ":" }
-    index($0,prefix)==1 { if (!found) printf "%s: \\"%s\\"\\n", key, value; found=1; next }
-    { print }
-    END { if (!found) printf "%s: \\"%s\\"\\n", key, value }
-  ' "$file" >"$tmp" && cat "$tmp" >"$file"
-  local rc=$?
-  rm -f -- "$tmp"
-  return "$rc"
+  local file="$1" key="$2" value="$3"
+  python3 - "$file" "$key" "$value" <<'PY'
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+key, value = sys.argv[2:]
+lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+updated = []
+found = False
+for line in lines:
+    if line.startswith(key + ":"):
+        if not found:
+            updated.append(f'{key}: "{value}"')
+            found = True
+    else:
+        updated.append(line)
+if not found:
+    updated.append(f'{key}: "{value}"')
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text("\\n".join(updated) + "\\n", encoding="utf-8")
+PY
 }
 
 test_node_manager_safety() {

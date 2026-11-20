@@ -165,6 +165,20 @@ PYTHON_SOURCE_NAME="power-apt-boost"
 PYTHON_PRIORITY="supplemental"
 PYTHON_RESTORE_PATH=""
 PYTHON_TARGET_FILE=""
+NODE_REQUESTED=false
+NODE_ACTION=""
+NODE_CLIENT="npm"
+NODE_SCOPE="user"
+NODE_REGISTRY_URL=""
+NODE_PROJECT_DIR=""
+NODE_TEST_PACKAGE="is-number"
+NODE_RESTORE_PATH=""
+NODE_TARGET_FILE=""
+NODE_YARN_FLAVOR=""
+NODE_METADATA_HOST=""
+NODE_TARBALL_HOST=""
+NODE_PACKAGE_VERSION=""
+NODE_PACKAGE_INTEGRITY=""
 
 _tmp_dirs=()
 _bg_pids=()
@@ -1888,6 +1902,519 @@ DRYRUN
     fi
     die "apt-get update failed. Previous APT configuration restored; run apt-get update after resolving connectivity." "$EXIT_NETWORK"
   fi
+}
+
+
+# ─── Node.js Registry Management ──────────────────────────────────────────────
+
+_node_backup_base() {
+  printf '%s' "${XDG_STATE_HOME:-$HOME/.local/state}/${APP_SLUG}/nodejs"
+}
+
+_node_validate_registry_url() {
+  python3 - "$1" <<'PY'
+import sys
+from urllib.parse import urlsplit, urlunsplit
+raw = sys.argv[1]
+if not raw or any(ch.isspace() or ord(ch) < 32 for ch in raw):
+    raise SystemExit(1)
+try:
+    p = urlsplit(raw)
+    if p.scheme.lower() != "https" or not p.hostname or p.username is not None or p.password is not None:
+        raise SystemExit(1)
+    if p.query or p.fragment or (p.port is not None and not 1 <= p.port <= 65535):
+        raise SystemExit(1)
+    if any(part in (".", "..") for part in p.path.split("/")):
+        raise SystemExit(1)
+    print(urlunsplit(("https", p.netloc, p.path.rstrip("/") + "/", "", "")))
+except (ValueError, UnicodeError):
+    raise SystemExit(1)
+PY
+}
+
+_node_url_label() {
+  [[ -n "$1" ]] || { printf '%s' "not configured"; return 0; }
+  python3 - "$1" <<'PY'
+import sys
+from urllib.parse import urlsplit
+try:
+    p = urlsplit(sys.argv[1])
+    host = p.hostname or "unknown"
+    if p.port:
+        host += f":{p.port}"
+    print(f"{p.scheme}://{host}{p.path}")
+except ValueError:
+    print("<invalid-url>")
+PY
+}
+
+_node_validate_package_name() {
+  python3 - "$1" <<'PY'
+import re, sys
+value = sys.argv[1]
+if not re.fullmatch(r"(?:@[A-Za-z0-9._~-]+/)?[A-Za-z0-9._~-]+", value) or value in (".", ".."):
+    raise SystemExit(1)
+print(value)
+PY
+}
+
+_node_yarn_flavor() {
+  local version major
+  version="$(yarn --version 2>/dev/null)" || return 1
+  version="${version#v}"
+  major="${version%%.*}"
+  [[ "$major" =~ ^[0-9]+$ ]] || return 1
+  if ((major == 1)); then NODE_YARN_FLAVOR=classic
+  elif ((major >= 2)); then NODE_YARN_FLAVOR=berry
+  else return 1
+  fi
+}
+
+_node_client_version() {
+  command -v "$1" >/dev/null 2>&1 || return 1
+  case "$1" in
+  node) node --version 2>/dev/null ;;
+  npm) npm --version 2>/dev/null ;;
+  pnpm) pnpm --version 2>/dev/null ;;
+  yarn) yarn --version 2>/dev/null ;;
+  *) return 1 ;;
+  esac
+}
+
+_node_override_names() {
+  local name found=false
+  for name in npm_config_registry NPM_CONFIG_REGISTRY npm_config_userconfig NPM_CONFIG_USERCONFIG \
+    npm_config_globalconfig NPM_CONFIG_GLOBALCONFIG pnpm_config_registry PNPM_CONFIG_REGISTRY \
+    YARN_NPM_REGISTRY_SERVER YARN_RC_FILENAME YARN_IGNORE_PATH; do
+    if [[ -n "${!name+x}" ]]; then printf '%s\n' "$name"; found=true; fi
+  done
+  [[ "$found" == true ]] || printf '%s\n' none
+}
+
+_node_check_overrides() {
+  [[ "$(_node_override_names)" == none ]] || {
+    error "Node.js config environment overrides are set. Unset them before editing."
+    return "$EXIT_USAGE"
+  }
+}
+
+_node_snapshot_target_valid() {
+  local client="$1" scope="$2" target="$3" dir
+  [[ "$target" == /* && "$target" != *$'\n'* && "$target" != *$'\r'* && ! -L "$target" ]] || return 1
+  dir="$(dirname "$target")"
+  case "$client:$scope" in
+  npm:user) [[ "$target" == "$HOME/"* && "$(basename "$target")" == .npmrc ]] ;;
+  npm:project | pnpm:project) [[ "$(basename "$target")" == .npmrc && -f "$dir/package.json" && ! -L "$dir/package.json" ]] ;;
+  pnpm:user) [[ "$target" == "$HOME/"* && "$(basename "$target")" == rc && "$dir" == */pnpm ]] ;;
+  yarn:user) [[ "$target" == "$HOME/.yarnrc" || "$target" == "$HOME/.yarnrc.yml" ]] ;;
+  yarn:project)
+    [[ -f "$dir/package.json" && ! -L "$dir/package.json" ]] || return 1
+    [[ "$(basename "$target")" == .yarnrc || "$(basename "$target")" == .yarnrc.yml ]]
+    ;;
+  *) return 1 ;;
+  esac
+}
+
+_node_resolve_target() {
+  local client="$1" scope="$2" requested="${3:-}" raw="" base=""
+  NODE_PROJECT_DIR=""
+  if [[ "$scope" == project ]]; then
+    [[ -n "$requested" && "$requested" != *$'\n'* && "$requested" != *$'\r'* && ! -L "$requested" ]] || return "$EXIT_USAGE"
+    base="$(cd "$requested" 2>/dev/null && pwd -P)" || return "$EXIT_USAGE"
+    [[ -f "$base/package.json" && ! -L "$base/package.json" ]] || {
+      error "Project scope requires a regular package.json."
+      return "$EXIT_USAGE"
+    }
+    NODE_PROJECT_DIR="$base"
+    case "$client:$NODE_YARN_FLAVOR" in
+    npm:* | pnpm:*) NODE_TARGET_FILE="$base/.npmrc" ;;
+    yarn:classic) NODE_TARGET_FILE="$base/.yarnrc" ;;
+    yarn:berry) NODE_TARGET_FILE="$base/.yarnrc.yml" ;;
+    *) return "$EXIT_USAGE" ;;
+    esac
+  else
+    case "$client" in
+    npm) raw="$(npm config get userconfig 2>/dev/null)" || return "$EXIT_GENERAL" ;;
+    pnpm)
+      raw="$(pnpm config get globalconfig 2>/dev/null || true)"
+      [[ -n "$raw" && "$raw" != undefined && "$raw" != null ]] || raw="${XDG_CONFIG_HOME:-$HOME/.config}/pnpm/rc"
+      ;;
+    yarn)
+      _node_yarn_flavor || return "$EXIT_GENERAL"
+      if [[ "$NODE_YARN_FLAVOR" == classic ]]; then raw="$HOME/.yarnrc"; else raw="$HOME/.yarnrc.yml"; fi
+      ;;
+    *) return "$EXIT_USAGE" ;;
+    esac
+    [[ -n "$raw" && "$raw" != *$'\n'* && "$raw" != *$'\r'* ]] || return "$EXIT_USAGE"
+    case "$raw" in
+    "~/"*) raw="$HOME/${raw#~/}" ;;
+    /*) ;;
+    *) raw="$HOME/$raw" ;;
+    esac
+    base="$(dirname "$raw")"
+    [[ ! -L "$base" ]] || { error "Refusing a symlinked Node.js config directory."; return "$EXIT_USAGE"; }
+    NODE_TARGET_FILE="$(realpath -m -- "$base")/$(basename "$raw")"
+  fi
+  [[ "$NODE_TARGET_FILE" == /* && ! -L "$NODE_TARGET_FILE" && (! -e "$NODE_TARGET_FILE" || -f "$NODE_TARGET_FILE") ]] || {
+    error "Refusing a symlink or non-regular Node.js config target."
+    return "$EXIT_USAGE"
+  }
+  _node_snapshot_target_valid "$client" "$scope" "$NODE_TARGET_FILE"
+}
+
+_node_state_path() {
+  printf '%s/state-%s-%s' "$(_node_backup_base)" "$1" "$2"
+}
+
+_node_snapshot_create() {
+  local client="$1" scope="$2" target="$3" existed=false base snapshot
+  _node_snapshot_target_valid "$client" "$scope" "$target" || return "$EXIT_BACKUP"
+  [[ ! -e "$target" || -f "$target" ]] || return "$EXIT_BACKUP"
+  [[ ! -f "$target" ]] || existed=true
+  base="$(_node_backup_base)"
+  [[ "$base" == /* && ! -L "$base" ]] || return "$EXIT_BACKUP"
+  mkdir -p "$base" && chmod 0700 "$base" || return "$EXIT_BACKUP"
+  base="$(realpath -e -- "$base")" || return "$EXIT_BACKUP"
+  snapshot="$(mktemp -d "$base/snapshot.XXXXXXXX")" || return "$EXIT_BACKUP"
+  chmod 0700 "$snapshot"
+  printf '%s\n' "$client" >"$snapshot/client"
+  printf '%s\n' "$scope" >"$snapshot/scope"
+  printf '%s\n' "$target" >"$snapshot/target"
+  printf '%s\n' "$existed" >"$snapshot/before-exists"
+  if [[ "$existed" == true ]]; then
+    cp -p -- "$target" "$snapshot/original" || { rm -rf -- "$snapshot"; return "$EXIT_BACKUP"; }
+  fi
+  chmod 0600 "$snapshot/"* 2>/dev/null || true
+  printf '%s\n' "$snapshot"
+}
+
+_node_snapshot_mark_after() {
+  local snapshot="$1" target="$2"
+  [[ -d "$snapshot" && ! -L "$snapshot" && ! -L "$target" ]] || return "$EXIT_BACKUP"
+  if [[ -f "$target" ]]; then
+    printf '%s\n' true >"$snapshot/after-exists"
+    sha256sum "$target" | awk '{print $1}' >"$snapshot/after-sha256"
+  elif [[ ! -e "$target" ]]; then
+    printf '%s\n' false >"$snapshot/after-exists"
+  else
+    return "$EXIT_BACKUP"
+  fi
+  chmod 0600 "$snapshot/"* 2>/dev/null
+}
+
+_node_restore_snapshot() {
+  local snapshot="$1" base client scope target before after current temp item state
+  base="$(_node_backup_base)"
+  [[ "$base" == /* && -d "$base" && ! -L "$base" ]] || return "$EXIT_USAGE"
+  base="$(realpath -e -- "$base" 2>/dev/null)" || return "$EXIT_USAGE"
+  [[ ! -L "$snapshot" ]] || return "$EXIT_USAGE"
+  snapshot="$(readlink -f -- "$snapshot" 2>/dev/null)" || return "$EXIT_USAGE"
+  [[ "$snapshot" == "$base/"* && -d "$snapshot" && ! -L "$snapshot" ]] || return "$EXIT_USAGE"
+  for item in client scope target before-exists after-exists; do
+    [[ -f "$snapshot/$item" && ! -L "$snapshot/$item" ]] || return "$EXIT_RESTORE"
+  done
+  client="$(cat "$snapshot/client")"
+  scope="$(cat "$snapshot/scope")"
+  target="$(cat "$snapshot/target")"
+  before="$(cat "$snapshot/before-exists")"
+  after="$(cat "$snapshot/after-exists")"
+  [[ "$before" == true || "$before" == false ]] || return "$EXIT_RESTORE"
+  [[ "$after" == true || "$after" == false ]] || return "$EXIT_RESTORE"
+  case "$client" in npm | pnpm | yarn) ;; *) return "$EXIT_RESTORE" ;; esac
+  case "$scope" in user | project) ;; *) return "$EXIT_RESTORE" ;; esac
+  _node_snapshot_target_valid "$client" "$scope" "$target" || return "$EXIT_RESTORE"
+  if [[ "$after" == true ]]; then
+    [[ -f "$target" && ! -L "$target" && -f "$snapshot/after-sha256" ]] || return "$EXIT_RESTORE"
+    current="$(sha256sum "$target" | awk '{print $1}')"
+    [[ "$current" == "$(cat "$snapshot/after-sha256")" ]] || {
+      error "Node.js config changed after this snapshot; refusing to overwrite newer edits."
+      return "$EXIT_RESTORE"
+    }
+  else
+    [[ ! -e "$target" && ! -L "$target" ]] || return "$EXIT_RESTORE"
+  fi
+  if [[ "$before" == true ]]; then
+    [[ -f "$snapshot/original" && ! -L "$snapshot/original" ]] || return "$EXIT_RESTORE"
+    mkdir -p "$(dirname "$target")" || return "$EXIT_RESTORE"
+    temp="$(mktemp "$(dirname "$target")/.pab-node-restore.XXXXXXXX")" || return "$EXIT_RESTORE"
+    if cp -p -- "$snapshot/original" "$temp"; then
+      mv -f -- "$temp" "$target" || { rm -f -- "$temp"; return "$EXIT_RESTORE"; }
+    else
+      rm -f -- "$temp"
+      return "$EXIT_RESTORE"
+    fi
+  else
+    rm -f -- "$target" || return "$EXIT_RESTORE"
+  fi
+  state="$(_node_state_path "$client" "$scope")"
+  if [[ -f "$state" && ! -L "$state" && "$(cat "$state")" == "$snapshot" ]]; then
+    rm -f -- "$state" || return "$EXIT_RESTORE"
+  fi
+  info "Node.js configuration restored from snapshot."
+}
+
+_node_registry_get() {
+  local client="$1" scope="$2" project="${3:-}"
+  case "$client" in
+  npm)
+    if [[ "$scope" == project ]]; then (cd "$project" && npm config get registry --location=project) 2>/dev/null
+    else npm config get registry --location=user 2>/dev/null; fi
+    ;;
+  pnpm)
+    if [[ "$scope" == project ]]; then (cd "$project" && pnpm config get registry --location=project) 2>/dev/null
+    else pnpm config get registry --location=global 2>/dev/null; fi
+    ;;
+  yarn)
+    _node_yarn_flavor || return 1
+    if [[ "$NODE_YARN_FLAVOR" == classic ]]; then
+      if [[ "$scope" == project ]]; then (cd "$project" && yarn config get registry) 2>/dev/null
+      else yarn config get registry --global 2>/dev/null; fi
+    else
+      if [[ "$scope" == project ]]; then (cd "$project" && yarn config get npmRegistryServer) 2>/dev/null
+      else yarn config get npmRegistryServer --home 2>/dev/null; fi
+    fi
+    ;;
+  *) return 1 ;;
+  esac
+}
+
+_node_registry_set() {
+  local client="$1" scope="$2" project="$3" url="$4"
+  case "$client:$scope" in
+  npm:user) npm config set registry "$url" --location=user >/dev/null 2>&1 ;;
+  npm:project) (cd "$project" && npm config set registry "$url" --location=project >/dev/null 2>&1) ;;
+  pnpm:user) pnpm config set registry "$url" --location=global >/dev/null 2>&1 ;;
+  pnpm:project) (cd "$project" && pnpm config set registry "$url" --location=project >/dev/null 2>&1) ;;
+  yarn:user)
+    _node_yarn_flavor || return 1
+    if [[ "$NODE_YARN_FLAVOR" == classic ]]; then yarn config set registry "$url" --global >/dev/null 2>&1
+    else yarn config set npmRegistryServer "$url" --home >/dev/null 2>&1; fi
+    ;;
+  yarn:project)
+    _node_yarn_flavor || return 1
+    if [[ "$NODE_YARN_FLAVOR" == classic ]]; then (cd "$project" && yarn config set registry "$url" >/dev/null 2>&1)
+    else (cd "$project" && yarn config set npmRegistryServer "$url" >/dev/null 2>&1); fi
+    ;;
+  *) return "$EXIT_USAGE" ;;
+  esac
+}
+
+_node_probe_registry() {
+  local registry="$1" package="$2" timeout="${3:-$TIMEOUT_TOTAL}" output
+  if output="$(python3 - "$registry" "$package" "$timeout" 2>/dev/null <<'PY'
+import json, re, sys
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urljoin, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+registry, package, raw_timeout = sys.argv[1:]
+timeout = min(max(int(raw_timeout), 1), 60)
+class HTTPSOnlyRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        target = urljoin(request.full_url, new_url)
+        p = urlsplit(target)
+        if p.scheme.lower() != "https" or not p.hostname or p.username is not None or p.password is not None:
+            raise ValueError("unsafe redirect")
+        return super().redirect_request(request, file_pointer, code, message, headers, target)
+def valid_https(value):
+    p = urlsplit(value)
+    return p.scheme.lower() == "https" and bool(p.hostname) and p.username is None and p.password is None and (p.port is None or 1 <= p.port <= 65535)
+def host(value):
+    p = urlsplit(value)
+    value = (p.hostname or "unknown") + ((":" + str(p.port)) if p.port else "")
+    if not re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]{1,5})?", value):
+        raise ValueError("invalid host metadata")
+    return value
+try:
+    metadata_url = registry.rstrip("/") + "/" + quote(package, safe="@")
+    opener = build_opener(HTTPSOnlyRedirect())
+    request = Request(metadata_url, headers={"Accept":"application/vnd.npm.install-v1+json, application/json;q=0.9","User-Agent":"Power-APT-Boost/3.0"})
+    with opener.open(request, timeout=timeout) as response:
+        final_metadata_url = response.geturl()
+        payload = response.read(4 * 1024 * 1024 + 1)
+    if not valid_https(final_metadata_url) or len(payload) > 4 * 1024 * 1024:
+        raise ValueError("unsafe or oversized metadata")
+    document = json.loads(payload.decode("utf-8"))
+    tags = document.get("dist-tags", {}) if isinstance(document, dict) else {}
+    latest = tags.get("latest") if isinstance(tags, dict) else None
+    versions = document.get("versions", {}) if isinstance(document, dict) else {}
+    version_data = versions.get(latest) if isinstance(versions, dict) and isinstance(latest, str) else None
+    dist = version_data.get("dist") if isinstance(version_data, dict) else None
+    tarball = dist.get("tarball") if isinstance(dist, dict) else None
+    if not isinstance(latest, str) or not re.fullmatch(r"[A-Za-z0-9.+_-]{1,128}", latest) or not isinstance(tarball, str):
+        raise ValueError("latest package metadata incomplete")
+    tarball_url = urljoin(final_metadata_url, tarball)
+    if not valid_https(tarball_url):
+        raise ValueError("tarball is not credential-free HTTPS")
+    head = Request(tarball_url, method="HEAD", headers={"User-Agent":"Power-APT-Boost/3.0"})
+    try:
+        with opener.open(head, timeout=timeout) as response:
+            final_tarball_url, status = response.geturl(), response.status
+    except HTTPError as exc:
+        if exc.code not in (405, 501):
+            raise
+        ranged = Request(tarball_url, headers={"Range":"bytes=0-0","User-Agent":"Power-APT-Boost/3.0"})
+        with opener.open(ranged, timeout=timeout) as response:
+            final_tarball_url, status = response.geturl(), response.status
+            response.read(1)
+    if not valid_https(final_tarball_url) or not 200 <= int(status) < 400:
+        raise ValueError("tarball endpoint failed")
+    integrity = dist.get("integrity", "") if isinstance(dist, dict) else ""
+    print("METADATA_HOST=" + host(final_metadata_url))
+    print("VERSION=" + latest)
+    print("TARBALL_HOST=" + host(final_tarball_url))
+    print("INTEGRITY=" + ("sha512" if isinstance(integrity, str) and integrity.startswith("sha512-") else "not-advertised"))
+except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+    print("REASON=" + type(exc).__name__)
+    raise SystemExit(1)
+PY
+)"; then
+    NODE_METADATA_HOST="$(sed -n 's/^METADATA_HOST=//p' <<<"$output" | head -n 1)"
+    NODE_TARBALL_HOST="$(sed -n 's/^TARBALL_HOST=//p' <<<"$output" | head -n 1)"
+    NODE_PACKAGE_VERSION="$(sed -n 's/^VERSION=//p' <<<"$output" | head -n 1)"
+    NODE_PACKAGE_INTEGRITY="$(sed -n 's/^INTEGRITY=//p' <<<"$output" | head -n 1)"
+    [[ -n "$NODE_METADATA_HOST" && -n "$NODE_TARBALL_HOST" && -n "$NODE_PACKAGE_VERSION" ]] || return "$EXIT_NETWORK"
+    info "Registry metadata and advertised tarball endpoint are reachable over HTTPS."
+    printf 'Metadata host: %s\nTarball host: %s\nVersion: %s\nIntegrity metadata: %s\n' "$NODE_METADATA_HOST" "$NODE_TARBALL_HOST" "$NODE_PACKAGE_VERSION" "$NODE_PACKAGE_INTEGRITY"
+    msg "Only metadata and a tarball endpoint were checked; no package archive was downloaded or installed."
+  else
+    error "Node.js registry verification failed. No configuration was changed."
+    return "$EXIT_NETWORK"
+  fi
+}
+
+_node_status_report() {
+  local node_version npm_version pnpm_version yarn_version yarn_flavor="not installed"
+  local npm_registry="not configured" pnpm_registry="not configured" yarn_registry="not configured"
+  local overrides first=true name
+  node_version="$(_node_client_version node 2>/dev/null || printf '%s' 'not installed')"
+  npm_version="$(_node_client_version npm 2>/dev/null || printf '%s' 'not installed')"
+  pnpm_version="$(_node_client_version pnpm 2>/dev/null || printf '%s' 'not installed')"
+  yarn_version="$(_node_client_version yarn 2>/dev/null || printf '%s' 'not installed')"
+  if [[ "$yarn_version" != "not installed" ]]; then _node_yarn_flavor && yarn_flavor="$NODE_YARN_FLAVOR"; fi
+  [[ "$npm_version" == "not installed" ]] || npm_registry="$(_node_url_label "$(_node_registry_get npm user 2>/dev/null || true)")"
+  [[ "$pnpm_version" == "not installed" ]] || pnpm_registry="$(_node_url_label "$(_node_registry_get pnpm user 2>/dev/null || true)")"
+  [[ "$yarn_version" == "not installed" ]] || yarn_registry="$(_node_url_label "$(_node_registry_get yarn user 2>/dev/null || true)")"
+  overrides="$(_node_override_names)"
+  if [[ "$JSON_OUTPUT" == true ]]; then
+    printf '{"schema_version":1,"command":"node-status",'
+    printf '"node":%s,"npm":%s,"pnpm":%s,"yarn":%s,"yarn_flavor":%s,' "$(_json_quote "$node_version")" "$(_json_quote "$npm_version")" "$(_json_quote "$pnpm_version")" "$(_json_quote "$yarn_version")" "$(_json_quote "$yarn_flavor")"
+    printf '"registry_hosts":{"npm":%s,"pnpm":%s,"yarn":%s},"environment_overrides":[' "$(_json_quote "$npm_registry")" "$(_json_quote "$pnpm_registry")" "$(_json_quote "$yarn_registry")"
+    while IFS= read -r name; do
+      [[ "$name" == none ]] && continue
+      [[ "$first" == true ]] || printf ','
+      printf '%s' "$(_json_quote "$name")"
+      first=false
+    done <<<"$overrides"
+    printf ']}\n'
+    return 0
+  fi
+  _print_section_header "Node.js Package Registries"
+  printf 'Node.js: %s\nnpm: %s\npnpm: %s\nYarn: %s (%s)\n' "$node_version" "$npm_version" "$pnpm_version" "$yarn_version" "$yarn_flavor"
+  printf 'Registry hosts: npm=%s | pnpm=%s | yarn=%s\n' "$npm_registry" "$pnpm_registry" "$yarn_registry"
+  printf 'Environment overrides (names only):\n'
+  while IFS= read -r name; do printf '  - %s\n' "$name"; done <<<"$overrides"
+  msg "Scoped registries, authentication entries and publishConfig are not displayed or rewritten."
+  msg "Diagnostics do not install packages or edit package manifests or lockfiles."
+}
+
+_node_apply_registry() {
+  local action="$1" url="${2:-}" project="${NODE_PROJECT_DIR:-}" target state snapshot temp current normalized package
+  state="$(_node_state_path "$NODE_CLIENT" "$NODE_SCOPE")"
+  [[ ! -L "$state" ]] || return "$EXIT_BACKUP"
+  if [[ "$action" == reset ]]; then
+    [[ -f "$state" ]] || { error "No app-managed registry exists in this scope."; return "$EXIT_USAGE"; }
+    snapshot="$(cat "$state")"
+    if [[ "$DRY_RUN" == true ]]; then
+      printf 'Preview: restore previous %s %s config from %s; no change made.\n' "$NODE_CLIENT" "$NODE_SCOPE" "$snapshot"
+      return 0
+    fi
+    _confirm_action "Restore previous $NODE_CLIENT $NODE_SCOPE registry config?" || return "$EXIT_CANCELLED"
+    _node_restore_snapshot "$snapshot"
+    return $?
+  fi
+
+  command -v "$NODE_CLIENT" >/dev/null 2>&1 || {
+    error "$NODE_CLIENT is not installed; no package manager will be installed."
+    return "$EXIT_GENERAL"
+  }
+  case "$NODE_CLIENT" in npm | pnpm | yarn) ;; *) return "$EXIT_USAGE" ;; esac
+  case "$NODE_SCOPE" in user | project) ;; *) return "$EXIT_USAGE" ;; esac
+  [[ "$NODE_CLIENT" != yarn ]] || _node_yarn_flavor || return "$EXIT_GENERAL"
+  _node_resolve_target "$NODE_CLIENT" "$NODE_SCOPE" "$project" || return $?
+  target="$NODE_TARGET_FILE"
+  _node_check_overrides || return $?
+  url="$(_node_validate_registry_url "$url")" || {
+    error "Use credential-free HTTPS registry URL without query or fragment."
+    return "$EXIT_USAGE"
+  }
+  package="$(_node_validate_package_name "$NODE_TEST_PACKAGE")" || {
+    error "Invalid npm package name."
+    return "$EXIT_USAGE"
+  }
+  _node_probe_registry "$url" "$package" "$TIMEOUT_TOTAL" || return $?
+  [[ ! -e "$state" ]] || {
+    error "An app-managed registry already exists in this scope; reset it first."
+    return "$EXIT_USAGE"
+  }
+  if [[ "$DRY_RUN" == true ]]; then
+    printf 'Preview: set %s registry in %s scope to %s\nTarget: %s\nNo config changed.\n' "$NODE_CLIENT" "$NODE_SCOPE" "$(_node_url_label "$url")" "$target"
+    return 0
+  fi
+  _confirm_action "Set $NODE_CLIENT $NODE_SCOPE registry to $(_node_url_label "$url")?" || return "$EXIT_CANCELLED"
+  snapshot="$(_node_snapshot_create "$NODE_CLIENT" "$NODE_SCOPE" "$target")" || return "$EXIT_BACKUP"
+  if ! _node_registry_set "$NODE_CLIENT" "$NODE_SCOPE" "$project" "$url"; then
+    _node_snapshot_mark_after "$snapshot" "$target" || return "$EXIT_RESTORE"
+    _node_restore_snapshot "$snapshot" || return "$EXIT_RESTORE"
+    error "Registry command failed; previous config was restored."
+    return "$EXIT_GENERAL"
+  fi
+  _node_snapshot_mark_after "$snapshot" "$target" || {
+    error "Config changed but its recovery snapshot could not be finalized: $snapshot"
+    return "$EXIT_RESTORE"
+  }
+  current="$(_node_registry_get "$NODE_CLIENT" "$NODE_SCOPE" "$project" 2>/dev/null || true)"
+  normalized="$(_node_validate_registry_url "$current" 2>/dev/null || true)"
+  if [[ "$normalized" != "$url" ]]; then
+    _node_restore_snapshot "$snapshot" || return "$EXIT_RESTORE"
+    error "Registry read-back mismatch; previous config was restored."
+    return "$EXIT_GENERAL"
+  fi
+  temp="$(mktemp "$(_node_backup_base)/.state.XXXXXXXX")" || {
+    _node_restore_snapshot "$snapshot" || return "$EXIT_RESTORE"
+    return "$EXIT_BACKUP"
+  }
+  printf '%s\n' "$snapshot" >"$temp"
+  chmod 0600 "$temp"
+  if ! mv -f -- "$temp" "$state"; then
+    rm -f -- "$temp"
+    _node_restore_snapshot "$snapshot" || return "$EXIT_RESTORE"
+    return "$EXIT_BACKUP"
+  fi
+  printf 'Snapshot: %s\n' "$snapshot"
+  info "$NODE_CLIENT registry configured in $NODE_SCOPE scope; unrelated config was preserved."
+  msg "Only the fetch registry changes. Private scopes, auth entries and publish registry remain intact."
+  msg "package.json, publishConfig and lockfiles are not modified."
+}
+
+_run_node_manager() {
+  local url=""
+  case "$NODE_ACTION" in
+  status) _node_status_report ;;
+  test)
+    url="$(_node_validate_registry_url "$NODE_REGISTRY_URL")" || {
+      error "Use credential-free HTTPS registry URL without query or fragment."
+      return "$EXIT_USAGE"
+    }
+    NODE_TEST_PACKAGE="$(_node_validate_package_name "$NODE_TEST_PACKAGE")" || return "$EXIT_USAGE"
+    _node_probe_registry "$url" "$NODE_TEST_PACKAGE" "$TIMEOUT_TOTAL"
+    ;;
+  restore)
+    _confirm_action "Restore Node.js snapshot $NODE_RESTORE_PATH?" || return "$EXIT_CANCELLED"
+    _node_restore_snapshot "$NODE_RESTORE_PATH"
+    ;;
+  set | reset) _node_apply_registry "$NODE_ACTION" "$NODE_REGISTRY_URL" ;;
+  *) error "No Node.js action was selected."; return "$EXIT_USAGE" ;;
+  esac
 }
 
 # ─── Python Package Source Management ────────────────────────────────────────

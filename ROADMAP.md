@@ -4,7 +4,7 @@
 > **Prepared:** 2026-11-19  
 > **Project:** [power0matin/linux-package-source-manager](https://github.com/power0matin/linux-package-source-manager)  
 > **Initial roadmap audit baseline (2026-11-19):** `main` at `56eaf13e76e276bbaae160e59a0aca506490f02d`  
-> **Current script version string:** `3.0.0`
+> **Current script version string:** `3.0.1`
 
 This document is the implementation plan for evolving Linux Package Source Manager into an **Ubuntu-first package-source and mirror manager for servers and developer environments**. It expands the existing Ubuntu APT mirror selector to cover the package ecosystems commonly used on Ubuntu servers, including Python, Node.js, Docker/OCI, Go, Rust, PHP, Java and selected additional ecosystems.
 
@@ -846,7 +846,7 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 
 - [ ] Re-read current `main`, default branch, open PRs, tags, releases and recent CI before editing.
 - [ ] Capture the current public CLI/help output and exit-code behavior.
-- [ ] Resolve the `3.0.0` script vs `2.1.0` public release/tag/badge mismatch.
+- [x] Resolve the `3.0.0` script vs `2.1.0` public release/tag/badge mismatch.
 - [ ] Reconcile README, CHANGELOG, SECURITY, SUPPORT and ROADMAP claims.
 - [ ] Decide and document supported Ubuntu releases and architectures.
 - [ ] Create a feature inventory: implemented, partially implemented, broken/inconsistent, not implemented.
@@ -1163,13 +1163,13 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Repository snapshot (2026-11-21):** The latest implementation change before release preparation was merged through [PR #10](https://github.com/power0matin/linux-package-source-manager/pull/10), at commit `6abe3b348294c44c4a77fa341694cd0306b74b45`. Phase 7 Docker / OCI support was previously merged through [PR #8](https://github.com/power0matin/linux-package-source-manager/pull/8). The audited source version is `3.0.0`.
+**Repository snapshot (2026-11-21):** The latest implementation change before release preparation was merged through [PR #10](https://github.com/power0matin/linux-package-source-manager/pull/10), at commit `6abe3b348294c44c4a77fa341694cd0306b74b45`. Phase 7 Docker / OCI support was previously merged through [PR #8](https://github.com/power0matin/linux-package-source-manager/pull/8). The current rebranded source version is `3.0.1`.
 
-**Published release:** `v3.0.0` consolidates the work accumulated since `v2.1.0`. It was published after ShellCheck, shfmt and the complete offline regression suite passed on Ubuntu 20.04, 22.04 and 24.04. The release includes the standalone script and its SHA-256 checksum.
+**Release target:** `v3.0.1` is a patch release over `v3.0.0`. It carries the public product rebrand, fixes the CLI's raw GitHub installation URL, and aligns the documented non-interactive install command with the explicit `--yes` safety requirement. Publication is gated on ShellCheck, shfmt and the offline regression suite on Ubuntu 20.04, 22.04 and 24.04.
 
 **Implementation scope:** Python support covers pip, uv and Poetry; pipx is detected only. Node.js support covers npm, pnpm, Yarn Classic and Yarn Berry. Docker Engine APT sources are inspected separately from OCI registry mirrors; daemon changes are backed up and validated, and restart remains a separate confirmed action.
 
-**Next implementation phase:** Phase 8 — Go, Rust, PHP and Java adapters. Start only after `v3.0.0` is published and the phase scope is reviewed.
+**Next implementation phase:** Phase 8 — Go, Rust, PHP and Java adapters. Start only after `v3.0.1` is published and the phase scope is reviewed.
 
 **Deployment boundary:** A GitHub release publishes source artifacts only. It does not install packages, change APT or Docker configuration, restart services, or deploy to a VPS.
 

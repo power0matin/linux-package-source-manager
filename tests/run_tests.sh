@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Power APT Boost — Offline regression and safety tests
+# Linux Package Source Manager — Offline regression and safety tests
 #
 # Run: bash tests/run_tests.sh
 
@@ -75,7 +75,7 @@ trap cleanup EXIT
 test_cli() {
   local output code
   output="$(bash "$SCRIPT" --help 2>&1)"
-  assert_contains "Power APT Boost" "$output" "help displays product name"
+  assert_contains "Linux Package Source Manager" "$output" "help displays product name"
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"
@@ -1636,7 +1636,7 @@ _run_test_group() {
 }
 
 main() {
-  printf '\nPower APT Boost — Offline Test Suite\n'
+  printf '\nLinux Package Source Manager — Offline Test Suite\n'
   printf '%s\n' '===================================='
   _run_test_group 1 9 "CLI validation" test_cli
   _run_test_group 2 9 "Filesystem and configuration safety" test_filesystem_operations

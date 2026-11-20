@@ -5074,70 +5074,77 @@ _resolve_backup_path() {
   printf '%s\n' "$backup_path"
 }
 
+_menu_clear_screen() {
+  if [[ -t 2 && -n "\${TERM:-}" && "$TERM" != dumb ]]; then
+    printf '\033[2J\033[H' >&2
+  fi
+}
+
 _menu_choose() {
-  local title="$1"
-  local prompt="$2"
+  local title="$1" prompt="$2" answer="" numeric i
   shift 2
-  local -a tags=() labels=() whiptail_args=()
+  local -a tags=() labels=()
   while (($# >= 2)); do
     tags+=("$1")
     labels+=("$2")
-    whiptail_args+=("$1" "$2")
     shift 2
   done
+  (("\${#tags[@]}" > 0)) || return 1
 
-  if command -v whiptail >/dev/null 2>&1; then
-    whiptail --title "$title" --menu "$prompt" 22 78 12 "${whiptail_args[@]}" 3>&1 1>&2 2>&3
-    return $?
-  fi
-
-  printf '\n%s\n%s\n' "$title" "$prompt" >&2
-  local i
-  for ((i = 0; i < ${#tags[@]}; i++)); do
-    printf '  %d) %s\n' "$((i + 1))" "${labels[$i]}" >&2
+  _menu_clear_screen
+  printf '\n%s\n%s\n\n' "$title" "$prompt" >&2
+  for ((i = 0; i < \${#tags[@]}; i++)); do
+    printf '  %2d) %s\n' "$((i + 1))" "\${labels[$i]}" >&2
   done
-  printf 'Select an option: ' >&2
-  local answer=""
-  IFS= read -r answer || return 1
-  if [[ "$answer" =~ ^[0-9]+$ ]] && ((answer >= 1 && answer <= ${#tags[@]})); then
-    printf '%s\n' "${tags[$((answer - 1))]}"
-    return 0
-  fi
-  for ((i = 0; i < ${#tags[@]}; i++)); do
-    if [[ "$answer" == "${tags[$i]}" ]]; then
-      printf '%s\n' "${tags[$i]}"
-      return 0
+  printf '   0) Cancel / Back\n\n' >&2
+  printf 'Select an option number: ' >&2
+
+  while true; do
+    IFS= read -r answer || return 1
+    if [[ "$answer" =~ ^[0-9]{1,2}$ ]]; then
+      numeric=$((10#$answer))
+      if ((numeric == 0)); then
+        return 1
+      fi
+      if ((numeric >= 1 && numeric <= \${#tags[@]})); then
+        printf '%s\n' "\${tags[$((numeric - 1))]}"
+        return 0
+      fi
     fi
+    printf 'Invalid selection. Enter a number from 1 to %d, or 0 to go back: ' "\${#tags[@]}" >&2
   done
-  return 1
 }
-
 _menu_input() {
-  local title="$1"
-  local prompt="$2"
-  local default_value="${3:-}"
-  local answer=""
-  if command -v whiptail >/dev/null 2>&1; then
-    whiptail --title "$title" --inputbox "$prompt" 10 78 "$default_value" 3>&1 1>&2 2>&3
-    return $?
+  local title="$1" prompt="$2" default_value="\${3:-}" answer=""
+  printf '\n%s\n%s\n' "$title" "$prompt" >&2
+  if [[ -n "$default_value" ]]; then
+    printf 'Default: %s\n' "$default_value" >&2
   fi
-  printf '%s [%s]: ' "$prompt" "$default_value" >&2
+  printf 'Value (press Enter to keep the default): ' >&2
   IFS= read -r answer || return 1
-  printf '%s\n' "${answer:-$default_value}"
+  printf '%s\n' "\${answer:-$default_value}"
 }
-
 _menu_message() {
-  local title="$1"
-  local message="$2"
-  if command -v whiptail >/dev/null 2>&1; then
-    whiptail --title "$title" --msgbox "$message" 16 78
-  else
-    printf '\n%s\n%s\n' "$title" "$message" >&2
-    printf 'Press Enter to continue: ' >&2
-    IFS= read -r _ || true
-  fi
+  local title="$1" message="$2"
+  printf '\n%s\n\n%s\n\n' "$title" "$message" >&2
+  printf 'Press Enter to return to the menu: ' >&2
+  IFS= read -r _ || true
 }
 
+_menu_operation_result() {
+  local title="$1" success_message="$2" status="$3"
+  case "$status" in
+  0)
+    _menu_message "$title" "$success_message"
+    ;;
+  "$EXIT_CANCELLED")
+    _menu_message "$title" "Operation cancelled. No changes were applied."
+    ;;
+  *)
+    _menu_message "$title" "Operation failed with exit code $status. Review the output above before continuing."
+    ;;
+  esac
+}
 _run_list_flow() {
   _check_probe_tool
   detect_ubuntu
@@ -5519,7 +5526,7 @@ _menu_manage_mirrors() {
       MIRROR_MANAGEMENT_VALUE="$value"
       rc=0
       _run_mirror_management || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Add operation finished with exit code $rc."
+      _menu_operation_result "Custom mirror result" "Mirror verification and catalog update completed." "$rc"
       ;;
     disable | enable | remove)
       listing=""
@@ -5537,7 +5544,7 @@ _menu_manage_mirrors() {
       MIRROR_MANAGEMENT_VALUE="$value"
       rc=0
       _run_mirror_management || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Custom mirror result" "Operation finished with exit code $rc."
+      _menu_operation_result "Custom mirror result" "Custom mirror catalog update completed." "$rc"
       ;;
     back) return 0 ;;
     esac
@@ -5566,7 +5573,7 @@ _menu_apt() {
       DRY_RUN=false
       rc=0
       _run_apply_flow || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      _menu_operation_result "APT management" "Mirror selection and APT configuration completed." "$rc"
       ;;
     apply_custom)
       FORCE_MIRROR="$(_menu_input "Custom mirror" "Enter an Ubuntu mirror base URL" "")" || continue
@@ -5574,27 +5581,27 @@ _menu_apt() {
         _menu_message "Invalid mirror URL" "Enter an http:// or https:// URL without spaces."
         continue
       }
-      FORCE_MIRROR="${FORCE_MIRROR%/}"
+      FORCE_MIRROR="\${FORCE_MIRROR%/}"
       DRY_RUN=false
       rc=0
       _run_apply_flow || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq 10 ]] || _menu_message "Operation result" "Operation finished with exit code $rc."
+      _menu_operation_result "APT management" "Custom mirror verification and APT configuration completed." "$rc"
       ;;
     list)
-      _run_list_flow
-      _menu_message "APT mirrors" "Mirror testing completed."
+      rc=0
+      _run_list_flow || rc=$?
+      _menu_operation_result "APT mirrors" "Mirror listing and health checks completed." "$rc"
       ;;
     manage) _menu_manage_mirrors ;;
     back) return 0 ;;
     esac
   done
 }
-
 _menu_benchmark() {
-  _run_benchmark_only
-  _menu_message "Benchmark" "Benchmark completed. No system configuration was changed."
+  local rc=0
+  _run_benchmark_only || rc=$?
+  _menu_operation_result "Benchmark" "Benchmark completed. No system configuration was changed." "$rc"
 }
-
 _menu_backups() {
   if [[ "$(id -u)" -ne 0 ]]; then
     _menu_message "Backup and Restore" "Run the menu as root to inspect protected system backups."
@@ -5620,7 +5627,7 @@ _menu_backups() {
     rc=0
     _run_prune_backups || rc=$?
     PRUNE_BACKUPS_KEEP=""
-    [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Backup cleanup" "Cleanup finished with exit code $rc."
+    _menu_operation_result "Backup cleanup" "Verified backup cleanup completed." "$rc"
     ;;
   restore)
     listing="$(find "$BACKUP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null | sort -rn || true)"
@@ -5640,7 +5647,7 @@ _menu_backups() {
     RESTORE_SCOPE="all"
     rc=0
     _run_restore_flow || rc=$?
-    [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Restore result" "Restore finished with exit code $rc."
+    _menu_operation_result "Restore result" "APT snapshot restoration completed." "$rc"
     ;;
   back) return 0 ;;
   esac
@@ -5695,7 +5702,7 @@ _menu_nodejs() {
       NODE_TEST_PACKAGE="$(_menu_input "Test package" "Package name" "is-number")" || continue
       rc=0
       _run_node_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Registry test" "Operation returned $rc."
+      _menu_operation_result "Node.js registry test" "Registry metadata and tarball endpoint checks completed." "$rc"
       ;;
     configure)
       NODE_CLIENT="$(_menu_choose "Node.js client" "Select package manager" "npm" "npm" "pnpm" "pnpm" "yarn" "Yarn Classic/Berry" "back" "Cancel")" || continue
@@ -5710,7 +5717,7 @@ _menu_nodejs() {
       NODE_ACTION="set"
       rc=0
       _run_node_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Node.js" "Operation returned $rc."
+      _menu_operation_result "Node.js" "Registry configuration completed." "$rc"
       ;;
     reset)
       NODE_CLIENT="$(_menu_choose "Reset Node.js" "Select package manager" "npm" "npm" "pnpm" "pnpm" "yarn" "Yarn" "back" "Cancel")" || continue
@@ -5724,20 +5731,23 @@ _menu_nodejs() {
       NODE_ACTION=reset
       rc=0
       _run_node_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Node.js" "Operation returned $rc."
+      _menu_operation_result "Node.js" "Managed registry reset completed." "$rc"
       ;;
     back) return 0 ;;
     esac
   done
 }
-
 _menu_python() {
   local choice scope rc
   while true; do
     choice="$(_menu_choose "Python Package Sources" "No package installs or lockfile edits" \
-      "status" "Inspect Python tools" "test" "Test PyPI-compatible index" \
-      "pip" "Configure pip" "uv" "Configure uv" "poetry" "Add Poetry source" \
-      "reset" "Reset app-managed source" "back" "Back")" || return 0
+      "status" "Inspect Python tools" \
+      "test" "Test PyPI-compatible index" \
+      "pip" "Configure pip" \
+      "uv" "Configure uv" \
+      "poetry" "Add Poetry source" \
+      "reset" "Reset app-managed source" \
+      "back" "Back")" || return 0
     case "$choice" in
     status)
       _python_status_report
@@ -5745,8 +5755,9 @@ _menu_python() {
       ;;
     test)
       PYTHON_INDEX_URL="$(_menu_input "Python index" "HTTPS PEP 503/691 URL" "https://pypi.org/simple/")" || continue
-      _python_test_index "$PYTHON_INDEX_URL"
-      _menu_message "Index test" "Check completed."
+      rc=0
+      _python_test_index "$PYTHON_INDEX_URL" || rc=$?
+      _menu_operation_result "Python index test" "Index metadata and distribution endpoint checks completed." "$rc"
       ;;
     pip | uv | poetry)
       PYTHON_CLIENT="$choice"
@@ -5758,7 +5769,9 @@ _menu_python() {
         scope="$(_menu_choose "uv scope" "Choose scope" "user" "User" "project" "Project" "global" "System" "back" "Cancel")" || continue
         [[ "$scope" != back ]] || continue
         PYTHON_SCOPE="$scope"
-        if [[ "$scope" == project ]]; then PYTHON_PROJECT_FILE="$(_menu_input "uv project" "uv.toml or pyproject.toml" "uv.toml")" || continue; fi
+        if [[ "$scope" == project ]]; then
+          PYTHON_PROJECT_FILE="$(_menu_input "uv project" "uv.toml or pyproject.toml" "uv.toml")" || continue
+        fi
       elif [[ "$choice" == poetry ]]; then
         PYTHON_SCOPE=project
         scope="$(_menu_choose "Poetry priority" "Supplemental preserves implicit PyPI" "supplemental" "Supplemental" "explicit" "Explicit" "primary" "Primary (disables PyPI)" "back" "Cancel")" || continue
@@ -5772,7 +5785,7 @@ _menu_python() {
       fi
       rc=0
       _run_python_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Python" "Operation returned $rc."
+      _menu_operation_result "Python" "Package index configuration completed." "$rc"
       ;;
     reset)
       PYTHON_CLIENT="$(_menu_choose "Reset Python" "Choose client" "pip" "pip" "uv" "uv" "poetry" "Poetry" "back" "Cancel")" || continue
@@ -5785,20 +5798,21 @@ _menu_python() {
       elif [[ "$PYTHON_CLIENT" == uv ]]; then
         PYTHON_SCOPE="$(_menu_choose "uv scope" "Choose scope" "user" "User" "project" "Project" "global" "System" "back" "Cancel")" || continue
         [[ "$PYTHON_SCOPE" != back ]] || continue
-        if [[ "$PYTHON_SCOPE" == project ]]; then PYTHON_PROJECT_FILE="$(_menu_input "uv project" "uv.toml or pyproject.toml" "uv.toml")" || continue; fi
+        if [[ "$PYTHON_SCOPE" == project ]]; then
+          PYTHON_PROJECT_FILE="$(_menu_input "uv project" "uv.toml or pyproject.toml" "uv.toml")" || continue
+        fi
       else
         PYTHON_SCOPE="$(_menu_choose "pip scope" "Choose scope" "user" "User" "site" "Active venv" "global" "System" "back" "Cancel")" || continue
         [[ "$PYTHON_SCOPE" != back ]] || continue
       fi
       rc=0
       _run_python_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Python" "Operation returned $rc."
+      _menu_operation_result "Python" "Managed package index reset completed." "$rc"
       ;;
     back) return 0 ;;
     esac
   done
 }
-
 _country_code_supported() {
   local requested="$1" entry country mirror_url
   for entry in "${_MIRROR_CATALOG[@]}"; do
@@ -5930,7 +5944,7 @@ _menu_docker() {
       DOCKER_MIRROR_URL="$(_menu_input "Registry mirror" "HTTPS origin only; no credentials or path" "$DOCKER_HUB_CACHE_MIRROR")" || continue
       rc=0
       _run_docker_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Registry test" "Operation returned $rc."
+      _menu_operation_result "Docker registry test" "Registry V2 endpoint check completed." "$rc"
       ;;
     configure)
       DOCKER_ACTION="set"
@@ -5938,13 +5952,13 @@ _menu_docker() {
       DRY_RUN=false
       rc=0
       _run_docker_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker configuration" "Operation returned $rc."
+      _menu_operation_result "Docker configuration" "Registry mirror configuration completed. Docker was not restarted." "$rc"
       ;;
     reset)
       DOCKER_ACTION="reset"
       rc=0
       _run_docker_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker reset" "Operation returned $rc."
+      _menu_operation_result "Docker reset" "Managed Docker registry mirror reset completed." "$rc"
       ;;
     restore)
       path="$(_menu_input "Docker snapshot path" "Enter a snapshot path from the Power APT Boost Docker backup directory" "")" || continue
@@ -5952,19 +5966,18 @@ _menu_docker() {
       DOCKER_RESTORE_PATH="$path"
       rc=0
       _run_docker_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker restore" "Operation returned $rc."
+      _menu_operation_result "Docker restore" "Docker snapshot restoration completed." "$rc"
       ;;
     restart)
       DOCKER_ACTION="restart"
       rc=0
       _run_docker_manager || rc=$?
-      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker restart" "Operation returned $rc."
+      _menu_operation_result "Docker restart" "Docker daemon restart action completed." "$rc"
       ;;
     back) return 0 ;;
     esac
   done
 }
-
 _menu_main() {
   if ! _is_interactive; then
     error "The interactive menu requires a TTY. Use --help for non-interactive commands."

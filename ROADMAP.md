@@ -1,12 +1,12 @@
-# Power APT Boost — Product & Engineering Roadmap
+# Linux Package Source Manager — Product & Engineering Roadmap
 
 > **Roadmap version:** 1.0  
 > **Prepared:** 2026-11-19  
-> **Project:** [power0matin/power-apt-boost](https://github.com/power0matin/power-apt-boost)  
+> **Project:** [power0matin/linux-package-source-manager](https://github.com/power0matin/linux-package-source-manager)  
 > **Initial roadmap audit baseline (2026-11-19):** `main` at `56eaf13e76e276bbaae160e59a0aca506490f02d`  
 > **Current script version string:** `3.0.0`
 
-This document is the implementation plan for evolving Power APT Boost into an **Ubuntu-first package-source and mirror manager for servers and developer environments**. It expands the existing Ubuntu APT mirror selector to cover the package ecosystems commonly used on Ubuntu servers, including Python, Node.js, Docker/OCI, Go, Rust, PHP, Java and selected additional ecosystems.
+This document is the implementation plan for evolving Linux Package Source Manager into an **Ubuntu-first package-source and mirror manager for servers and developer environments**. It expands the existing Ubuntu APT mirror selector to cover the package ecosystems commonly used on Ubuntu servers, including Python, Node.js, Docker/OCI, Go, Rust, PHP, Java and selected additional ecosystems.
 
 This is a product roadmap, not a claim that the listed features already exist. Every unchecked item is planned work. Implementation is deliberately divided into reviewable phases; phases are to be completed and accepted in order unless a dependency is explicitly documented.
 
@@ -19,7 +19,7 @@ Work is executed strictly in phase order. Each phase must use its own focused br
 
 ## 1. Product vision
 
-Power APT Boost should help an Ubuntu user answer four questions safely:
+Linux Package Source Manager should help an Ubuntu user answer four questions safely:
 
 1. **What package sources and mirrors does this machine currently use?**
 2. **Which compatible and trustworthy alternatives are reachable and healthy from this machine?**
@@ -108,7 +108,7 @@ When launched without arguments from a real interactive terminal, the tool shoul
 Proposed main menu:
 
 ```text
-Power APT Boost
+Linux Package Source Manager
 Ubuntu Package Sources & Mirror Manager
 
   1. Overview and current status
@@ -155,7 +155,7 @@ The status screen should report, without changing anything:
 - Node.js/npm/pnpm/Yarn availability and registry/scoped registry values (credentials masked).
 - Docker/Podman/containerd availability and registry-mirror state where readable.
 - Go, Cargo, Composer, Maven and Gradle availability and effective proxy/repository settings.
-- Whether a Power APT Boost configuration or backup already exists.
+- Whether a Linux Package Source Manager configuration or backup already exists.
 - Any conflicting settings, unsupported config formats or permissions that prevent safe management.
 
 Status output must not claim that a repository is healthy until the corresponding health probe has run.
@@ -346,7 +346,7 @@ APT is the foundation and must be fully reliable before broader ecosystem work b
 - [ ] Restore atomically and verify the restored state.
 - [ ] On failed `apt-get update`, restore every touched file and verify the rollback rather than merely copying selected files.
 - [ ] Avoid recursively overwriting unrelated files created after the backup.
-- [ ] Keep a lock to prevent two Power APT Boost instances from modifying APT simultaneously.
+- [ ] Keep a lock to prevent two Linux Package Source Manager instances from modifying APT simultaneously.
 - [ ] Make interrupt behavior deterministic during backup, write, update and rollback.
 
 ### 6.5 APT diagnostics
@@ -1008,8 +1008,8 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 - [x] Existing daemon settings and registry-mirror entries are preserved.
 - [x] CLI, JSON status and terminal UI clearly distinguish an APT repository from an OCI image registry mirror.
 
-**Implementation:** [PR #8](https://github.com/power0matin/power-apt-boost/pull/8) — merged into `main` (merge commit `aabff520553984f93107921b222ba96706132f87`).  
-**Exact merged-head CI:** Commit `13cb28e04804b20121273a80eb45b7cc6d917592` passed ShellCheck, shfmt and the offline matrix: Ubuntu 20.04 (262/262), Ubuntu 22.04 (262/262), Ubuntu 24.04 (280/280). [CI run #112](https://github.com/power0matin/power-apt-boost/actions/runs/44664839132).  
+**Implementation:** [PR #8](https://github.com/power0matin/linux-package-source-manager/pull/8) — merged into `main` (merge commit `aabff520553984f93107921b222ba96706132f87`).  
+**Exact merged-head CI:** Commit `13cb28e04804b20121273a80eb45b7cc6d917592` passed ShellCheck, shfmt and the offline matrix: Ubuntu 20.04 (262/262), Ubuntu 22.04 (262/262), Ubuntu 24.04 (280/280). [CI run #112](https://github.com/power0matin/linux-package-source-manager/actions/runs/44664839132).  
 **Live validation boundary:** CI uses an offline Registry V2 probe stub. No public registry, pull-through-cache behavior, image pull, Docker installation or running daemon was tested or changed. `mirror.gcr.io` is documented as a partial cache, not a complete mirror.
 
 ### Phase 8 — Go, Rust, PHP and Java adapters
@@ -1163,7 +1163,7 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Repository snapshot (2026-11-21):** The latest implementation change before release preparation was merged through [PR #10](https://github.com/power0matin/power-apt-boost/pull/10), at commit `6abe3b348294c44c4a77fa341694cd0306b74b45`. Phase 7 Docker / OCI support was previously merged through [PR #8](https://github.com/power0matin/power-apt-boost/pull/8). The audited source version is `3.0.0`.
+**Repository snapshot (2026-11-21):** The latest implementation change before release preparation was merged through [PR #10](https://github.com/power0matin/linux-package-source-manager/pull/10), at commit `6abe3b348294c44c4a77fa341694cd0306b74b45`. Phase 7 Docker / OCI support was previously merged through [PR #8](https://github.com/power0matin/linux-package-source-manager/pull/8). The audited source version is `3.0.0`.
 
 **Release candidate:** `v3.0.0` consolidates the work accumulated since `v2.1.0`. Publication is gated on ShellCheck, shfmt and the complete offline regression suite on Ubuntu 20.04, 22.04 and 24.04. The release workflow publishes the standalone script and its SHA-256 checksum only after every validation job succeeds.
 

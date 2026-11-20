@@ -52,7 +52,10 @@ sudo bash power-apt-boost.sh --dry-run
 - Bounded parallel probes with configurable worker limits and transient retry policy
 - Ubuntu Release origin, suite, codename, metadata-age and archive-signature verification for main, updates and security
 - Deterministic benchmark score: average endpoint latency plus 50 ms per redirect
-- Numbered terminal menu, with optional `whiptail` dialogs when installed
+- Plain Bash numbered menu rendered directly in the current SSH terminal; no `whiptail` dependency
+- English-only menu prompts, explicit result messages and Enter-to-continue pauses
+- Per-mirror benchmark/list progress (`completed/total`) with elapsed time and estimated remaining time
+- Step-by-step progress for Python, Node.js and Docker registry endpoint checks
 - Python package-source screen for pip, uv and Poetry; pipx is detected but its app environments are not changed
 - Read-only Python tool inventory and HTTPS PEP 503/691 index plus artifact checks without installing packages
 - Scoped pip index configuration and managed uv/Poetry TOML source blocks with preview, snapshots and conflict-safe restore
@@ -123,7 +126,7 @@ Run without arguments in a terminal:
 sudo bash power-apt-boost.sh
 ```
 
-The menu provides Overview, APT management, Benchmark, Backup/Restore, Diagnostics and session Settings. It uses a numbered Bash menu by default and `whiptail` dialogs when that tool is already installed. No extra package is installed automatically.
+The menu provides Overview, APT management, Benchmark, Backup/Restore, Diagnostics and session Settings. It always renders numbered options directly in the current SSH terminal; users select actions with numbers. The screen is cleared only when a new menu is shown, while operation output remains visible until the user presses Enter to continue. No `whiptail` or additional dialog package is required.
 
 ### Read-only status and diagnostics
 

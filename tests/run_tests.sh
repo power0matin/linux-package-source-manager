@@ -1544,7 +1544,6 @@ PY
   JSON_OUTPUT=false
 }
 
-
 main() {
   printf '\nPower APT Boost — Offline Test Suite\n'
   printf '%s\n' '===================================='

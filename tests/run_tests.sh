@@ -851,6 +851,13 @@ test_benchmark_selection_and_read_only_safety() {
 test_python_manager_safety() {
   local valid output code path original_xdg xdg_was_set original_pip_index pip_index_was_set
   local original_pip_config pip_config_was_set snapshot before after
+  original_xdg="${XDG_STATE_HOME-}"
+  xdg_was_set="${XDG_STATE_HOME+x}"
+  original_pip_index="${PIP_INDEX_URL-}"
+  pip_index_was_set="${PIP_INDEX_URL+x}"
+  original_pip_config="${PIP_CONFIG_FILE-}"
+  pip_config_was_set="${PIP_CONFIG_FILE+x}"
+  unset PIP_INDEX_URL PIP_CONFIG_FILE
   valid="$(_python_validate_index_url "https://pypi.org/simple")"
   assert_equal "https://pypi.org/simple/" "$valid" "Python index URL is normalized"
   code=0
@@ -882,12 +889,6 @@ test_python_manager_safety() {
   unset -f _python_is_externally_managed id
   PYTHON_SCOPE=auto
 
-  original_xdg="${XDG_STATE_HOME-}"
-  xdg_was_set="${XDG_STATE_HOME+x}"
-  original_pip_index="${PIP_INDEX_URL-}"
-  pip_index_was_set="${PIP_INDEX_URL+x}"
-  original_pip_config="${PIP_CONFIG_FILE-}"
-  pip_config_was_set="${PIP_CONFIG_FILE+x}"
   export XDG_STATE_HOME="${_TEST_ROOT}/python-state"
   unset PIP_INDEX_URL PIP_CONFIG_FILE
   export PIP_INDEX_URL="https://user:secret@example.com/simple/"

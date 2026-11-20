@@ -718,16 +718,16 @@ SOURCES
 
 test_terminal_menu_progress() {
   local menu_output value progress_output code
-  local menu_log="\${_TEST_ROOT}/menu-output.log"
-  local progress_log="\${_TEST_ROOT}/progress-output.log"
+  local menu_log="${_TEST_ROOT}/menu-output.log"
+  local progress_log="${_TEST_ROOT}/progress-output.log"
 
   menu_output=""
   _menu_choose "Menu test" "Choose one option" \
     "first" "First option" \
     "second" "Second option" \
     <<<"invalid
-02" >"\${_TEST_ROOT}/menu-choice.out" 2>"$menu_log" || true
-  menu_output="$(cat "\${_TEST_ROOT}/menu-choice.out")"
+02" >"${_TEST_ROOT}/menu-choice.out" 2>"$menu_log" || true
+  menu_output="$(cat "${_TEST_ROOT}/menu-choice.out")"
   assert_equal "second" "$menu_output" "terminal menu maps numeric input to the selected option"
   assert_file_contains "$menu_log" "1) First option" "terminal menu displays numbered options"
   assert_file_contains "$menu_log" "2) Second option" "terminal menu displays every numbered option"

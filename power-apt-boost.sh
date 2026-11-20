@@ -4865,7 +4865,7 @@ _parse_args() {
     [[ "$JSON_OUTPUT" != true || "$DOCKER_ACTION" == status ]] || die "--json is supported only with --docker-status." "$EXIT_USAGE"
     [[ "$DRY_RUN" != true || "$DOCKER_ACTION" == set ]] || die "--dry-run is supported only with --docker-set-mirror." "$EXIT_USAGE"
     [[ "$DOCKER_ACTION" == status || "$DOCKER_ACTION" == catalog || "$DOCKER_ACTION" == test || "$DOCKER_ACTION" == set || "$DOCKER_ACTION" == reset || "$DOCKER_ACTION" == restore || "$DOCKER_ACTION" == restart ]] || die "Select a Docker action first." "$EXIT_USAGE"
-    [[ "$DOCKER_ACTION" == restore || -n "$DOCKER_RESTORE_PATH" ]] || die "--docker-restore requires a snapshot path." "$EXIT_USAGE"
+    [[ "$DOCKER_ACTION" != restore || -n "$DOCKER_RESTORE_PATH" ]] || die "--docker-restore requires a snapshot path." "$EXIT_USAGE"
     [[ "$DOCKER_ACTION" == restore || -z "$DOCKER_RESTORE_PATH" ]] || die "--docker-restore path is only valid with --docker-restore." "$EXIT_USAGE"
     [[ "$DOCKER_ACTION" == test || "$DOCKER_ACTION" == set || -z "$DOCKER_MIRROR_URL" ]] || die "A Docker mirror URL is only valid with a test or set command." "$EXIT_USAGE"
   else

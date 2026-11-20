@@ -2312,7 +2312,7 @@ _node_registry_set() {
 _node_probe_registry() {
   local registry="$1" package="$2" timeout="${3:-$TIMEOUT_TOTAL}" output
   if output="$(
-    python3 - "$registry" "$package" "$timeout" 2>/dev/null <<'PY'
+    python3 - "$registry" "$package" "$timeout" <<'PY'
 import json, re, sys
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urljoin, urlsplit
@@ -2335,6 +2335,7 @@ def host(value):
     if not re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]{1,5})?", value):
         raise ValueError("invalid host metadata")
     return value
+current_step = 1
 try:
     metadata_url = registry.rstrip("/") + "/" + quote(package, safe="@")
     opener = build_opener(HTTPSOnlyRedirect())
@@ -2356,17 +2357,21 @@ try:
     tarball_url = urljoin(final_metadata_url, tarball)
     if not valid_https(tarball_url):
         raise ValueError("tarball is not credential-free HTTPS")
+    print("[1/2] Registry package metadata check completed.", file=sys.stderr, flush=True)
+    current_step = 2
     head = Request(tarball_url, method="HEAD", headers={"User-Agent":"Power-APT-Boost/3.0"})
     with opener.open(head, timeout=timeout) as response:
         final_tarball_url, status = response.geturl(), response.status
     if not valid_https(final_tarball_url) or not 200 <= int(status) < 300:
         raise ValueError("tarball endpoint failed")
+    print("[2/2] Tarball endpoint check completed.", file=sys.stderr, flush=True)
     integrity = dist.get("integrity", "") if isinstance(dist, dict) else ""
     print("METADATA_HOST=" + host(final_metadata_url))
     print("VERSION=" + latest)
     print("TARBALL_HOST=" + host(final_tarball_url))
     print("INTEGRITY=" + ("sha512" if isinstance(integrity, str) and integrity.startswith("sha512-") else "not-advertised"))
 except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+    print(f"[{current_step}/2] Node.js registry verification failed.", file=sys.stderr, flush=True)
     print("REASON=" + type(exc).__name__)
     raise SystemExit(1)
 PY
@@ -2625,7 +2630,7 @@ PY
 _docker_probe_mirror() {
   local registry="$1" output
   if output="$(
-    python3 - "$registry" "$TIMEOUT_TOTAL" 2>/dev/null <<'PY'
+    python3 - "$registry" "$TIMEOUT_TOTAL" <<'PY'
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
@@ -2682,11 +2687,13 @@ try:
     final_origin = origin(response.geturl())
     api_version = response.headers.get("Docker-Distribution-API-Version", "").strip().lower()
     supported = status in (200, 401) and api_version == "registry/2.0"
+    print("[1/1] Registry V2 endpoint probe: " + ("PASS" if supported else "FAIL"), file=sys.stderr, flush=True)
     print("STATUS=" + str(status))
     print("HOST=" + final_origin)
     print("SUPPORTED=" + ("true" if supported else "false"))
     raise SystemExit(0 if supported else 1)
 except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError):
+    print("[1/1] Registry V2 endpoint probe: FAIL", file=sys.stderr, flush=True)
     print("ERROR=registry_v2_probe_failed")
     raise SystemExit(1)
 finally:
@@ -3714,6 +3721,7 @@ class HTTPSOnlyRedirect(HTTPRedirectHandler):
 
 base = sys.argv[1]
 timeout = min(max(int(sys.argv[2]), 1), 60)
+current_step = 1
 opener = build_opener(HTTPSHandler(context=ssl.create_default_context()), HTTPSOnlyRedirect())
 
 class Links(HTMLParser):
@@ -3742,6 +3750,8 @@ try:
         content_type = response.headers.get("Content-Type", "").lower()
     if not safe_https(metadata_url) or len(body) > 4 * 1024 * 1024:
         raise ValueError("unsafe redirect or oversized metadata")
+    print("[1/2] Project metadata check completed.", file=sys.stderr, flush=True)
+    current_step = 2
     artifact_url = ""
     hash_present = False
     if "json" in content_type:
@@ -3780,12 +3790,14 @@ try:
             response.read(1)
     if not safe_https(final_url) or not 200 <= int(status) < 400:
         raise ValueError("artifact endpoint did not respond successfully over HTTPS")
+    print("[2/2] Distribution endpoint check completed.", file=sys.stderr, flush=True)
     print("METADATA=PASS")
     print("ARTIFACT=PASS")
     print("METADATA_HOST=" + host(metadata_url))
     print("ARTIFACT_HOST=" + host(final_url))
     print("SHA256_METADATA=" + ("present" if hash_present else "not-advertised"))
 except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+    print(f"[{current_step}/2] Python index verification failed.", file=sys.stderr, flush=True)
     code = getattr(exc, "code", None)
     print("METADATA=FAIL")
     print("ARTIFACT=NOT_CHECKED")
@@ -5212,7 +5224,9 @@ _run_mirror_management() {
     result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.custom.XXXXXX")" || return "$EXIT_GENERAL"
     _tmp_dirs+=("$result_file")
     _print_section_header "VERIFYING CUSTOM MIRROR"
+    local verification_started="$SECONDS"
     _test_mirror "$requested_url" "$result_file" "$CODENAME"
+    _print_task_progress "Custom mirror verification" 1 1 "$verification_started"
     result_line="$(cat "$result_file" 2>/dev/null || true)"
     rm -f "$result_file" 2>/dev/null || true
     IFS='|' read -r eligible score avg_latency main_code updates_code security_code redirects freshness signature reason <<<"$result_line"
@@ -5312,7 +5326,7 @@ _run_apply_flow() {
   if [[ "$DRY_RUN" != true ]]; then _acquire_mutation_lock; fi
 
   if [[ -n "$FORCE_MIRROR" ]]; then
-    local forced_url result_file result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason
+    local forced_url result_file result_line eligible score avg_latency main_code updates_code security_code redirects freshness signature reason verification_started
     forced_url="$(_validate_mirror_url "$FORCE_MIRROR")" || {
       error "Invalid Ubuntu mirror URL: $FORCE_MIRROR"
       return "$EXIT_USAGE"
@@ -5342,7 +5356,9 @@ _run_apply_flow() {
     msg "  Mirror: ${COLOR_BOLD}${forced_url}${COLOR_RESET}"
     result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.force.XXXXXX")"
     _tmp_dirs+=("$result_file")
+    verification_started="$SECONDS"
     _test_mirror "$forced_url" "$result_file" "$CODENAME"
+    _print_task_progress "Specified mirror verification" 1 1 "$verification_started"
     result_line="$(cat "$result_file" 2>/dev/null || true)"
     rm -f "$result_file" 2>/dev/null || true
     IFS='|' read -r eligible score avg_latency main_code updates_code security_code redirects freshness signature reason <<<"$result_line"

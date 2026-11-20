@@ -978,7 +978,7 @@ TOML
     grep -q "BEGIN POWER APT BOOST MANAGED PYTHON SOURCE" "$path" || code=1
     assert_exit_code 1 "$code" "uv reset removes only the managed source block"
 
-    path="${_TEST_ROOT}/python-toml/poetry-pyproject.toml"
+    path="${_TEST_ROOT}/python-toml/poetry/pyproject.toml"
     cat >"$path" <<'TOML'
 [tool.poetry]
 name = "fixture-poetry"

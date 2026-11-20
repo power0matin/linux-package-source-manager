@@ -231,6 +231,51 @@ bash power-apt-boost.sh --node-restore /path/to/nodejs/snapshot
 
 Node.js registry URLs must use HTTPS and cannot contain embedded credentials, query strings or fragments. Existing environment overrides cause mutating operations to refuse rather than write a configuration that would be shadowed. --yes is required for non-interactive changes; --dry-run previews the target without writing it.
 
+
+### Docker Engine and OCI registries
+
+Power APT Boost treats the Docker Engine **APT repository** and Docker Hub **OCI image registry mirrors** as separate systems. The first provides Docker Engine packages through APT; the second changes where the daemon looks when pulling container images.
+
+Inspect the current setup without changing it:
+
+```bash
+sudo bash power-apt-boost.sh --docker-status
+sudo bash power-apt-boost.sh --docker-status --json
+sudo bash power-apt-boost.sh --docker-catalog
+```
+
+Test an HTTPS Docker Registry V2 endpoint. This sends an unauthenticated `GET /v2/` request only; it does not authenticate, pull an image or download image layers:
+
+```bash
+sudo bash power-apt-boost.sh --docker-test-mirror https://mirror.gcr.io
+```
+
+Preview and configure the Docker daemon mirror list:
+
+```bash
+sudo bash power-apt-boost.sh --docker-set-mirror https://mirror.gcr.io --dry-run
+sudo bash power-apt-boost.sh --docker-set-mirror https://mirror.gcr.io --yes
+```
+
+Configuration merges the selected origin into `/etc/docker/daemon.json` under `registry-mirrors`. Existing JSON settings and mirror entries are preserved. The operation requires an existing `/etc/docker` directory and an installed `dockerd` that accepts `--validate`; malformed JSON, unsupported mirror-list types and invalid daemon configuration are rejected. A restricted snapshot is created before writing, and rollback refuses to overwrite edits made after the change.
+
+**The Docker daemon is not restarted by configuration.** Review workload impact, then request a separate restart:
+
+```bash
+sudo bash power-apt-boost.sh --docker-restart
+```
+
+The restart command requires a separate confirmation and only operates on an already-active Docker systemd service. A restart can interrupt running workloads. To restore the previous configuration without restarting Docker:
+
+```bash
+sudo bash power-apt-boost.sh --docker-reset-mirror
+sudo bash power-apt-boost.sh --docker-restore /var/backups/power-apt-boost/docker/snapshot.xxxxxxxx
+```
+
+The built-in `mirror.gcr.io` candidate is Google's cache of frequently requested public Docker Hub images, not a complete mirror. A cache miss may fall back to Docker Hub. Passing a Registry V2 endpoint probe confirms protocol compatibility only; it does not prove that an arbitrary endpoint is configured as a pull-through cache.
+
+References: [Docker daemon configuration](https://docs.docker.com/reference/cli/dockerd/), [Docker Hub registry mirrors](https://docs.docker.com/docker-hub/image-library/mirror/), [Docker Registry API V2](https://github.com/distribution/distribution/blob/main/docs/content/spec/api.md).
+
 ### Apply a mirror
 
 ```bash

@@ -75,6 +75,19 @@ This policy covers the `power-apt-boost.sh` script and its direct behavior. The 
 - Before mutation, the selected config file is copied into a mode-0700 snapshot directory with mode-0600 contents. Restore checks the post-change SHA-256 and refuses to overwrite later edits. Reset is limited to the exact client, scope and target that Power APT Boost previously managed.
 - Non-interactive changes require --yes; --dry-run prints the selected target and redacted current/proposed registry labels without writing configuration. Node.js operations do not require root.
 
+
+## Docker Engine and OCI registry operations
+
+- Docker Engine APT repositories and OCI image registry mirrors are reported separately. Docker repository inspection is read-only and does not write APT source files or run APT commands.
+- Registry probes send an unauthenticated HTTPS `GET /v2/` request. Only an HTTP 200 or 401 response carrying `Docker-Distribution-API-Version: registry/2.0` is accepted. Redirects must remain HTTPS and credential-free. The probe does not obtain tokens, send credentials, pull images or download layers.
+- A Registry V2 probe confirms protocol compatibility only. It cannot establish that an endpoint is configured as a Docker Hub pull-through cache or validate its cache policy.
+- Mirror URLs accepted for configuration are HTTPS origins only; embedded credentials, URL paths, query strings and fragments are rejected. Status output shows registry origins only.
+- The manager refuses symlinked or non-regular `daemon.json` targets and requires an existing Docker configuration directory. Existing JSON must be a top-level object, and `registry-mirrors` must be an array of strings when present. Other keys and existing mirror entries are preserved.
+- Before mutation, the proposed temporary file is checked using `dockerd --validate --config-file=...`. The final file is validated again after the atomic replacement. If validation fails, the manager attempts to restore the exact snapshot.
+- Snapshots are stored in a mode-0700 Docker backup directory with mode-0600 files. Restore compares the current file SHA-256 with the recorded post-change hash and refuses to overwrite external edits.
+- Configuring or resetting a registry mirror does not restart Docker. `--docker-restart` is a distinct command, requires root, requires the Docker systemd service to already be active, and requires a separate confirmation (or explicit `--yes` in non-interactive use). Restarting Docker can interrupt running workloads.
+- The built-in `mirror.gcr.io` option is a partial cache of frequently requested public Docker Hub images, not a complete mirror. Do not assume arbitrary registry endpoints provide equivalent cache behavior.
+
 ## Release status
 
 The `main` branch currently declares script version `3.0.0`, but that version has not been published as a Git tag/release. The latest published release is `v2.1.0`. For production use, prefer the tagged release unless you have reviewed and intentionally chosen the unreleased source.

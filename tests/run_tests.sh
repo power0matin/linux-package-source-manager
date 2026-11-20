@@ -1088,12 +1088,13 @@ for line in lines:
 if not found:
     updated.append(f'{key}: "{value}"')
 path.parent.mkdir(parents=True, exist_ok=True)
-path.write_text("\\n".join(updated) + "\\n", encoding="utf-8")
+path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 PY
 }
 
 test_node_manager_safety() {
   local original_home="$HOME" original_xdg_state="${XDG_STATE_HOME-}" original_xdg_config="${XDG_CONFIG_HOME-}"
+  local original_dry_run="$DRY_RUN"
   local home_set="${HOME+x}" xdg_state_set="${XDG_STATE_HOME+x}" xdg_config_set="${XDG_CONFIG_HOME+x}"
   local -a override_names=(npm_config_registry NPM_CONFIG_REGISTRY npm_config_userconfig NPM_CONFIG_USERCONFIG
     npm_config_globalconfig NPM_CONFIG_GLOBALCONFIG pnpm_config_registry PNPM_CONFIG_REGISTRY
@@ -1109,6 +1110,7 @@ test_node_manager_safety() {
   XDG_CONFIG_HOME="$HOME/.config"
   XDG_STATE_HOME="${_TEST_ROOT}/node-state"
   export HOME XDG_CONFIG_HOME XDG_STATE_HOME
+  DRY_RUN=false
   mkdir -p "$HOME" "$XDG_CONFIG_HOME/pnpm" "${_TEST_ROOT}/node-project"
   printf '%s\n' '{"name":"node-fixture","publishConfig":{"registry":"https://publish.example/"}}' >"${_TEST_ROOT}/node-project/package.json"
 
@@ -1288,6 +1290,7 @@ YARNRC
 
   NODE_REQUESTED=false NODE_ACTION="" NODE_CLIENT=npm NODE_SCOPE=user NODE_REGISTRY_URL=""
   NODE_PROJECT_DIR="" NODE_TEST_PACKAGE=is-number NODE_RESTORE_PATH="" NODE_TARGET_FILE="" NODE_YARN_FLAVOR=""
+  DRY_RUN="$original_dry_run"
   unset -f npm pnpm yarn _node_probe_registry _confirm_action
   unset -f _node_test_ini_set _node_test_yarn_classic_set _node_test_yarn_yaml_set
   if [[ "$home_set" == x ]]; then export HOME="$original_home"; else unset HOME; fi

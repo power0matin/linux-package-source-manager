@@ -1075,9 +1075,9 @@ _node_test_yarn_yaml_set() {
   tmp="$(mktemp "$(dirname "$file")/.node-test.XXXXXXXX")" || return 1
   awk -v key="$key" -v value="$value" '
     BEGIN { found=0; prefix=key ":" }
-    index($0,prefix)==1 { if (!found) print key ": \\"" value "\\""; found=1; next }
+    index($0,prefix)==1 { if (!found) printf "%s: \\"%s\\"\\n", key, value; found=1; next }
     { print }
-    END { if (!found) print key ": \\"" value "\\""}
+    END { if (!found) printf "%s: \\"%s\\"\\n", key, value }
   ' "$file" >"$tmp" && cat "$tmp" >"$file"
   local rc=$?
   rm -f -- "$tmp"
@@ -1102,7 +1102,7 @@ test_node_manager_safety() {
   XDG_STATE_HOME="${_TEST_ROOT}/node-state"
   export HOME XDG_CONFIG_HOME XDG_STATE_HOME
   mkdir -p "$HOME" "$XDG_CONFIG_HOME/pnpm" "${_TEST_ROOT}/node-project"
-  printf '%s\\n' '{"name":"node-fixture","publishConfig":{"registry":"https://publish.example/"}}' >"${_TEST_ROOT}/node-project/package.json"
+  printf '%s\n' '{"name":"node-fixture","publishConfig":{"registry":"https://publish.example/"}}' >"${_TEST_ROOT}/node-project/package.json"
 
   output="$(_node_validate_registry_url "https://registry.npmjs.org")"
   assert_equal "https://registry.npmjs.org/" "$output" "Node.js registry URL is normalized"
@@ -1127,7 +1127,7 @@ test_node_manager_safety() {
   assert_exit_code 1 "$code" "Node.js package validator rejects traversal names"
 
   npm() {
-    if [[ "$1 $2 $3" == "config get userconfig" ]]; then printf '%s/.npmrc\\n' "$HOME"; return 0; fi
+    if [[ "$1 $2 $3" == "config get userconfig" ]]; then printf '%s/.npmrc\n' "$HOME"; return 0; fi
     if [[ "$1 $2 $3" == "config get registry" ]]; then
       local file="$HOME/.npmrc"
       [[ "$*" != *"--location=project"* ]] || file="$PWD/.npmrc"
@@ -1144,7 +1144,7 @@ test_node_manager_safety() {
   }
 
   pnpm() {
-    if [[ "$1 $2 $3" == "config get globalconfig" ]]; then printf '%s/pnpm/rc\\n' "$XDG_CONFIG_HOME"; return 0; fi
+    if [[ "$1 $2 $3" == "config get globalconfig" ]]; then printf '%s/pnpm/rc\n' "$XDG_CONFIG_HOME"; return 0; fi
     if [[ "$1 $2 $3" == "config get registry" ]]; then
       local file="$XDG_CONFIG_HOME/pnpm/rc"
       [[ "$*" != *"--location=project"* ]] || file="$PWD/.npmrc"
@@ -1162,7 +1162,7 @@ test_node_manager_safety() {
 
   NODE_TEST_YARN_VERSION="1.22.22"
   yarn() {
-    if [[ "$1" == "--version" ]]; then printf '%s\\n' "$NODE_TEST_YARN_VERSION"; return 0; fi
+    if [[ "$1" == "--version" ]]; then printf '%s\n' "$NODE_TEST_YARN_VERSION"; return 0; fi
     if [[ "$1 $2 $3" == "config get registry" ]]; then
       local file="$PWD/.yarnrc"
       sed -n 's/^registry[[:space:]]\\+//p' "$file" 2>/dev/null | head -n 1
@@ -1208,7 +1208,7 @@ NPMRC
   assert_exit_code 0 "$code" "npm preserves config file permissions"
   snapshot="$(cat "$(_node_state_path npm user "$path")")"
   cp "$path" "$_TEST_ROOT/npm-after.npmrc"
-  printf '%s\\n' '# external change' >>"$path"
+  printf '%s\n' '# external change' >>"$path"
   code=0
   _node_apply_registry reset >/dev/null 2>&1 || code=$?
   assert_exit_code 8 "$code" "npm restore refuses an externally modified file"
@@ -1292,7 +1292,7 @@ YARNRC
 }
 
 main() {
-  printf '\nPower APT Boost — Offline Test Suite\n
+  printf '\nPower APT Boost — Offline Test Suite\n'
   printf '%s\n' '===================================='
   test_cli
   test_filesystem_operations

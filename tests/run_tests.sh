@@ -126,6 +126,27 @@ test_cli() {
   python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["schema_version"] == 1 and d["command"] == "node-status" and "registry_hosts" in d and "environment_overrides" in d' "$output"
   assert_exit_code 0 "$?" "Node.js status JSON follows its schema"
 
+  assert_contains "--docker-status" "$(bash "$SCRIPT" --help 2>&1)" "help documents Docker / OCI status"
+  assert_contains "--docker-set-mirror" "$(bash "$SCRIPT" --help 2>&1)" "help documents safe Docker mirror configuration"
+  code=0
+  bash "$SCRIPT" --docker-status --docker-reset-mirror >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "conflicting Docker actions are rejected"
+  code=0
+  bash "$SCRIPT" --docker-test-mirror http://mirror.example/ >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Docker mirror probe rejects plain HTTP before network access"
+  code=0
+  bash "$SCRIPT" --docker-set-mirror https://mirror.example/ --apt-retries 5 >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Docker configuration rejects APT network options"
+  code=0
+  bash "$SCRIPT" --docker-status --node-status >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Docker and Node.js command modes cannot be combined"
+  code=0
+  bash "$SCRIPT" --docker-status --official-only >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Docker status rejects APT benchmark options"
+  code=0
+  bash "$SCRIPT" --docker-restart --dry-run >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Docker restart cannot be combined with dry-run"
+
   code=0
   bash "$SCRIPT" --python-client unknown --python-status >/dev/null 2>&1 || code=$?
   assert_exit_code 2 "$code" "unknown Python client is rejected"
@@ -1340,6 +1361,189 @@ YARNRC
   done
 }
 
+test_docker_manager_safety() {
+  local path="$DOCKER_DAEMON_CONFIG" before after code output restart_log
+  mkdir -p "$DOCKER_CONFIG_DIR" "$APT_SOURCES_DIR"
+  cat >"${APT_SOURCES_DIR}/docker.sources" <<'DOCKERSOURCES'
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: noble
+Components: stable
+Signed-By: /etc/apt/keyrings/docker.asc
+DOCKERSOURCES
+
+  _docker_scan_apt_sources
+  assert_equal "1" "$DOCKER_APT_SOURCE_COUNT" "Docker Engine APT source is detected separately"
+  assert_contains "noble" "${DOCKER_APT_SOURCE_SUITES[*]}" "Docker APT suite is reported"
+  output="$(_docker_validate_mirror_url "https://mirror.gcr.io/")"
+  assert_equal "https://mirror.gcr.io" "$output" "Docker mirror origin is normalized"
+  code=0
+  _docker_validate_mirror_url "http://mirror.gcr.io" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Docker mirror validator rejects plain HTTP"
+  code=0
+  _docker_validate_mirror_url "https://user:secret@mirror.example" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Docker mirror validator rejects embedded credentials"
+  code=0
+  _docker_validate_mirror_url "https://mirror.example/tenant" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Docker mirror validator rejects URL paths"
+  code=0
+  _docker_validate_mirror_url "https://mirror.example/?token=hidden" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Docker mirror validator rejects query strings"
+  output="$(_docker_url_origin_label "https://user:secret@mirror.example:8443/private/path?token=hidden")"
+  assert_equal "https://mirror.example:8443" "$output" "Docker mirror labels hide paths and credentials"
+
+  _docker_probe_mirror() {
+    DOCKER_PROBE_STATUS=401
+    DOCKER_PROBE_HOST="$(_docker_url_origin_label "$1")"
+    return 0
+  }
+  _confirm_action() { return 0; }
+  dockerd() {
+    [[ "${DOCKER_TEST_DOCKERD_FAIL:-false}" != true ]] || return 1
+    return 0
+  }
+
+  cat >"$path" <<'DAEMONJSON'
+{
+  "debug": true,
+  "log-driver": "json-file",
+  "registry-mirrors": ["https://existing.example"]
+}
+DAEMONJSON
+  chmod 0640 "$path"
+  before="$(sha256sum "$path")"
+  _docker_read_config
+  assert_equal "valid" "$DOCKER_CONFIG_STATUS" "Docker daemon JSON object is recognized"
+  assert_equal "1" "${#DOCKER_CONFIG_MIRROR_ORIGINS[@]}" "Existing registry mirror list is read"
+  assert_equal "https://existing.example" "${DOCKER_CONFIG_MIRROR_ORIGINS[0]}" "Existing mirror output is origin-only"
+  DOCKER_TEST_DOCKERD_FAIL=false
+  DRY_RUN=false
+  _docker_apply_mirror "https://mirror.gcr.io" >/dev/null
+  assert_file_contains "$path" '"debug": true' "Docker merge preserves unrelated boolean settings"
+  assert_file_contains "$path" '"log-driver": "json-file"' "Docker merge preserves unrelated daemon settings"
+  assert_file_contains "$path" '"https://existing.example"' "Docker merge preserves existing registry mirrors"
+  assert_file_contains "$path" '"https://mirror.gcr.io"' "Docker merge adds the selected mirror"
+  [[ "$(stat -c '%a' "$path")" == 640 ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "Docker daemon config permissions are preserved"
+  python3 - "$path" <<'PY' || code=$?
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    data = json.load(stream)
+assert data["debug"] is True
+assert data["log-driver"] == "json-file"
+assert data["registry-mirrors"] == [
+    "https://existing.example",
+    "https://mirror.gcr.io",
+]
+PY
+  assert_exit_code 0 "${code:-0}" "Docker daemon JSON remains valid and preserves the full mirror array"
+  [[ -f "$DOCKER_STATE_FILE" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "Docker configuration saves a rollback state pointer"
+  restart_log="${_TEST_ROOT}/docker-systemctl.log"
+  [[ ! -e "$restart_log" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "Saving daemon.json never restarts Docker"
+
+  cp "$path" "${_TEST_ROOT}/docker-after.json"
+  printf '%s\n' " " >>"$path"
+  code=0
+  _docker_reset_mirror >/dev/null 2>&1 || code=$?
+  assert_exit_code 8 "$code" "Docker rollback refuses an externally modified daemon.json"
+  assert_file_contains "$path" '"https://mirror.gcr.io"' "Docker rollback conflict preserves external edits"
+  cp "${_TEST_ROOT}/docker-after.json" "$path"
+  code=0
+  _docker_reset_mirror >/dev/null 2>&1 || code=$?
+  assert_exit_code 0 "$code" "Docker rollback succeeds when the after-hash still matches"
+  after="$(sha256sum "$path")"
+  assert_equal "$before" "$after" "Docker rollback restores daemon.json byte-for-byte"
+  [[ ! -e "$DOCKER_STATE_FILE" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "Docker reset clears the app-managed state pointer"
+
+  rm -f -- "$path"
+  _docker_apply_mirror "https://mirror.gcr.io" >/dev/null
+  [[ -f "$path" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "Docker can create daemon.json when the Docker config directory exists"
+  _docker_reset_mirror >/dev/null
+  [[ ! -e "$path" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "Docker rollback removes a config file that did not exist before"
+
+  printf '%s\n' '{invalid-json' >"$path"
+  before="$(sha256sum "$path")"
+  code=0
+  _docker_apply_mirror "https://mirror.gcr.io" >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Docker manager refuses malformed daemon.json"
+  after="$(sha256sum "$path")"
+  assert_equal "$before" "$after" "Malformed daemon.json remains untouched"
+
+  printf '%s\n' '{"registry-mirrors":"not-an-array"}' >"$path"
+  before="$(sha256sum "$path")"
+  code=0
+  _docker_apply_mirror "https://mirror.gcr.io" >/dev/null 2>&1 || code=$?
+  assert_exit_code 2 "$code" "Docker manager refuses a non-array registry-mirrors value"
+  after="$(sha256sum "$path")"
+  assert_equal "$before" "$after" "Invalid registry-mirrors type remains untouched"
+
+  printf '%s\n' '{"debug":true}' >"$path"
+  before="$(sha256sum "$path")"
+  DOCKER_TEST_DOCKERD_FAIL=true
+  code=0
+  _docker_apply_mirror "https://mirror.gcr.io" >/dev/null 2>&1 || code=$?
+  assert_exit_code 1 "$code" "Docker manager refuses config rejected by dockerd --validate"
+  after="$(sha256sum "$path")"
+  assert_equal "$before" "$after" "Failed dockerd validation leaves daemon.json unchanged"
+  [[ ! -e "$DOCKER_STATE_FILE" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "Failed pre-write validation does not save active state"
+  DOCKER_TEST_DOCKERD_FAIL=false
+
+  JSON_OUTPUT=true
+  output="$(_docker_status_report)"
+  python3 - "$output" <<'PY' || code=$?
+import json
+import sys
+data = json.loads(sys.argv[1])
+assert data["schema_version"] == 1
+assert data["command"] == "docker-status"
+assert data["docker_engine_apt"]["source_records"] == 1
+assert data["daemon"]["config_status"] == "valid"
+assert isinstance(data["daemon"]["registry_mirrors"], list)
+PY
+  assert_exit_code 0 "${code:-0}" "Docker status JSON follows schema version 1"
+  JSON_OUTPUT=false
+
+  systemctl() {
+    case "$1" in
+    is-active) return 0 ;;
+    restart) printf '%s\n' "restart docker" >>"$restart_log" ;;
+    *) return 1 ;;
+    esac
+  }
+  _confirm_action() {
+    if [[ "$YES" == true ]]; then
+      return 0
+    fi
+    return "$EXIT_USAGE"
+  }
+  YES=false
+  code=0
+  _docker_restart_daemon >/dev/null 2>&1 || code=$?
+  assert_exit_code 10 "$code" "Docker restart cancellation requires explicit approval"
+  [[ ! -e "$restart_log" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "Unapproved Docker restart never calls systemctl restart"
+  YES=true
+  code=0
+  _docker_restart_daemon >/dev/null 2>&1 || code=$?
+  assert_exit_code 0 "$code" "Explicitly approved Docker restart is executed"
+  assert_file_contains "$restart_log" "restart docker" "Docker restart uses the docker service unit"
+
+  unset -f systemctl _docker_probe_mirror dockerd
+  unset -f _confirm_action
+  DOCKER_REQUESTED=false DOCKER_ACTION="" DOCKER_MIRROR_URL="" DOCKER_RESTORE_PATH=""
+  DOCKER_TEST_DOCKERD_FAIL=false
+  DRY_RUN=true
+  YES=false
+  JSON_OUTPUT=false
+}
+
 main() {
   printf '\nPower APT Boost — Offline Test Suite\n'
   printf '%s\n' '===================================='
@@ -1350,6 +1554,7 @@ main() {
   test_benchmark_selection_and_read_only_safety
   test_python_manager_safety
   test_node_manager_safety
+  test_docker_manager_safety
   printf '\nResults: %d passed, %d failed, %d total\n' "$_tests_passed" "$_tests_failed" "$_tests_run"
   [[ "$_tests_failed" -eq 0 ]]
 }

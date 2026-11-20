@@ -67,7 +67,7 @@ jobs:
           source_version="$(awk -F'"' '/^readonly APP_VERSION=/{print $2; exit}' power-apt-boost.sh)"
 
           if [[ "$tag" != "v$version" || -z "$source_version" || "$source_version" != "$version" ]]; then
-            printf 'Release tag %s does not match source version %s.\\n' "$tag" "${source_version:-missing}" >&2
+            printf 'Release tag %s does not match source version %s.\n' "$tag" "${source_version:-missing}" >&2
             exit 1
           fi
 

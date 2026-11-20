@@ -1535,10 +1535,18 @@ PY
     esac
   }
   _confirm_action() {
+    local answer=""
     if [[ "$YES" == true ]]; then
       return 0
     fi
-    return "$EXIT_USAGE"
+    if ! _is_interactive; then
+      return "$EXIT_USAGE"
+    fi
+    IFS= read -r answer || answer=""
+    case "${answer,,}" in
+    y | yes) return 0 ;;
+    *) return "$EXIT_CANCELLED" ;;
+    esac
   }
   YES=false
   _is_interactive() { return 1; }

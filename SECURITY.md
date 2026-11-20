@@ -67,7 +67,7 @@ This policy covers the `power-apt-boost.sh` script and its direct behavior. The 
 
 ## Node.js registry operations
 
-- Node.js status reporting displays version information and registry host/path labels. Environment override names may be listed, but their values are never printed.
+- Node.js status reporting displays version information and registry origins only (scheme, host and optional port). URL paths, queries, fragments and embedded credentials are not printed. Environment override names may be listed, but their values are never printed.
 - Registry URLs must use HTTPS and cannot contain embedded credentials, query strings or fragments. Redirects must remain credential-free HTTPS. Registry metadata responses are size-limited; the checker reads npm package metadata and sends a HEAD request to the advertised tarball endpoint. It does not download the package archive, run package scripts or install dependencies.
 - npm, pnpm, Yarn Classic and Yarn Berry are changed through their own configuration commands. Mutations target one user-level config file by default; project scope requires an explicit project directory with a regular package.json. The adapter refuses symlinked and non-regular config targets.
 - The managed operation changes only the default fetch-registry setting. Existing scoped registry entries and authentication values are not rewritten. package.json, publishConfig, workspace metadata and lockfiles are not edited. Yarn Berry's distinct npmPublishRegistry remains intact; for other tools, a default registry can also be used by publish commands when no publish-specific value is configured.

@@ -4,9 +4,9 @@
 
 | Version | Support status |
 | ------- | -------------- |
-| v2.1.0 | :white_check_mark: Latest published release |
-| v2.0.x and earlier | :x: Unsupported |
-| `main` / script version `3.0.0` | Development source; not a published release |
+| v3.0.0 | :white_check_mark: Latest published release |
+| v2.1.0 and earlier | :x: Unsupported |
+| `main` | Development source; see the published releases for supported versions |
 
 ## Reporting a Vulnerability
 

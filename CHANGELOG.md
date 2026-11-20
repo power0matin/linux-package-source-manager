@@ -24,6 +24,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added Poetry project-source configuration with explicit supplemental, primary and explicit priorities; supplemental is the default.
 - Added atomic, marker-scoped TOML writes, preview, reset and conflict-checked Python configuration snapshots.
 - Added Python terminal-menu actions and CLI commands for status, index testing, set/reset and snapshot restore. pipx is detected but its managed application environments are not modified.
+- Added Node.js registry management for npm, pnpm, Yarn Classic and Yarn Berry, including version detection, user config and explicit project opt-in.
+- Added HTTPS npm-compatible metadata checks and tarball-host HEAD checks without downloading packages, plus redacted previews and target-specific snapshots.
+- Added conflict-checked registry rollback while preserving scoped registries, auth entries, publish settings and lockfiles.
 - Added a versioned mirror catalog for built-in, Ubuntu-index and user-defined entries, with strict validation and provenance.
 - Added the Ubuntu mirror index as a discovery source with a 24-hour cache, root-only storage, schema validation and last-known-good fallback; HTTP index data is treated only as untrusted discovery input, with HTTPS-only redirects enforced for both curl and wget and mandatory signed-metadata verification of every selectable mirror.
 - Added signed Ubuntu Release metadata verification for main, updates and security suites, including suite/codename matching, freshness checks and same-host redirect policy.
@@ -36,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added coverage for source inventory, duplicate detection, proxy validation, APT retry configuration, ports-archive selection, unmanaged Deb822 preservation, security-suite separation, network-only restore and verified backup pruning.
 - Added Python coverage for HTTPS/index URL validation, credential-safe display, pip environment overrides, PEP 668 global-scope blocking, pip snapshot conflict detection, uv/Poetry private-source preservation, project-pin preservation and marker-only reset.
 - Added fail-closed tests for TOML editing when neither tomllib nor an already-installed tomli is available.
+- Added offline Node.js adapter tests for URL/package validation, npm/pnpm/Yarn Classic/Berry configuration preservation, snapshot restore conflicts and project-scope boundaries.
 - Added coverage for menu selection, TTY safety, explicit approval, cancellation, status/doctor reports and JSON escaping.
 - Added offline tests for catalog schemas, cache fallback and refresh, custom mirror persistence, Release freshness, compatibility gates and deterministic benchmark selection.
 

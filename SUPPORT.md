@@ -53,8 +53,8 @@ sudo bash power-apt-boost.sh --restore-path /var/backups/power-apt-boost/2025-01
 
 ## Reporting Issues
 
-- [GitHub Issues](https://github.com/power0matin/power-apt-boost/issues) — Bug reports and feature requests
-- [GitHub Discussions](https://github.com/power0matin/power-apt-boost/discussions) — Questions and ideas
+- [GitHub Issues](https://github.com/power0matin/linux-package-source-manager/issues) — Bug reports and feature requests
+- [GitHub Discussions](https://github.com/power0matin/linux-package-source-manager/discussions) — Questions and ideas
 
 When reporting a bug, include:
 

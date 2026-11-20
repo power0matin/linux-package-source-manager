@@ -49,6 +49,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- Serialized Docker daemon reset and restart operations with the Docker configuration lock.
+- Kept Docker backup permissions scoped to its dedicated directory instead of changing the shared APT backup parent.
 - Made APT snapshots fail closed, checksum-validated and aware of prior path-existence state.
 - Added exact restore for new snapshots, including removal of paths that were absent before the change, with staged recovery on restore failure.
 - Made deb822 and APT config writes atomic and preserved existing file ownership and mode.

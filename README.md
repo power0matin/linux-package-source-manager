@@ -19,7 +19,7 @@ Fast Ubuntu APT mirror selector and network optimizer.
 
 Power APT Boost is an Ubuntu APT mirror manager with an interactive terminal menu, safe configuration previews, validated backups, exact restore, and read-only diagnostics. Its apply path tests repository endpoints, selects a working mirror, writes managed APT configuration atomically, and verifies the result with `apt-get update`.
 
-> **Version status:** The `main` source currently declares `3.0.0`, while the latest published GitHub release is `v2.1.0`. There is no published `v3.0.0` tag/release yet. The recommended install command below is pinned to `v2.1.0`; use `main` only when you intentionally want unreleased source.
+> **Release candidate:** `v3.0.0` is the current source version. The stable install command is pinned to the `v3.0.0` tag so it does not track unreleased changes.
 
 ## Quick Start
 
@@ -28,13 +28,14 @@ On a terminal, clone the repository and open the interactive menu:
 ```bash
 git clone https://github.com/power0matin/power-apt-boost.git
 cd power-apt-boost
+git checkout v3.0.0
 sudo bash power-apt-boost.sh
 ```
 
 For an intentional non-interactive apply from a pipe or CI job, pass `--yes` explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | sudo bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v3.0.0/power-apt-boost.sh | sudo bash -s -- --yes
 ```
 
 Preview a mirror change without modifying APT configuration:
@@ -78,7 +79,7 @@ sudo bash power-apt-boost.sh --dry-run
 ### One-liner (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v3.0.0/power-apt-boost.sh | sudo bash
 ```
 
 ### Manual
@@ -86,18 +87,29 @@ curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/po
 ```bash
 git clone https://github.com/power0matin/power-apt-boost.git
 cd power-apt-boost
-git checkout v2.1.0
+git checkout v3.0.0
 sudo bash power-apt-boost.sh
 ```
 
 ### Verify before running
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | less
+curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v3.0.0/power-apt-boost.sh | less
 # Review the script, then launch an interactive menu after saving it locally:
 sudo bash power-apt-boost.sh
 # Or explicitly approve a non-interactive run:
-curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/main/power-apt-boost.sh | sudo bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/power0matin/power-apt-boost/v3.0.0/power-apt-boost.sh | sudo bash -s -- --yes
+```
+
+### Verify a downloaded release artifact
+
+Download the script and its published SHA-256 file, then verify the file before running it:
+
+```bash
+VERSION="v3.0.0"
+curl -fLO "https://github.com/power0matin/power-apt-boost/releases/download/${VERSION}/power-apt-boost.sh"
+curl -fLO "https://github.com/power0matin/power-apt-boost/releases/download/${VERSION}/power-apt-boost.sh.sha256"
+sha256sum -c power-apt-boost.sh.sha256
 ```
 
 ## Mirror catalog and benchmark

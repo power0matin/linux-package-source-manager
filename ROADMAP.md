@@ -3,7 +3,7 @@
 > **Roadmap version:** 1.0  
 > **Prepared:** 2026-11-19  
 > **Project:** [power0matin/power-apt-boost](https://github.com/power0matin/power-apt-boost)  
-> **Current implementation baseline:** `main` at `56eaf13e76e276bbaae160e59a0aca506490f02d`  
+> **Initial roadmap audit baseline (2026-11-19):** `main` at `56eaf13e76e276bbaae160e59a0aca506490f02d`  
 > **Current script version string:** `3.0.0`
 
 This document is the implementation plan for evolving Power APT Boost into an **Ubuntu-first package-source and mirror manager for servers and developer environments**. It expands the existing Ubuntu APT mirror selector to cover the package ecosystems commonly used on Ubuntu servers, including Python, Node.js, Docker/OCI, Go, Rust, PHP, Java and selected additional ecosystems.
@@ -1051,8 +1051,8 @@ Phases are ordered by dependencies. Each phase should be implemented in a focuse
 - [ ] Test the generated standalone script.
 - [ ] Complete CI matrix for Ubuntu 22.04, 24.04 and 26.04 LTS, with optional 26.10.
 - [ ] Add optional rate-limited live mirror smoke tests.
-- [ ] Add release checksum and documented verification procedure.
-- [ ] Align README, CLI help, changelog, security policy and release notes.
+- [x] Add release checksum and documented verification procedure.
+- [x] Align README, changelog and generated release notes for the v3.0.0 release.
 - [ ] Publish a compatibility/support matrix and migration guide.
 - [ ] Tag and release only after all gates pass.
 
@@ -1163,12 +1163,14 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Current execution state:** Phase 7 Docker Engine / OCI registry support is implemented in [PR #8](https://github.com/power0matin/power-apt-boost/pull/8); PR is open pending final exact-head CI verification.  
-**Previous phases:** PRs #1-#7 are merged into `main`; Phase 6 is merged at `9baba4a2ca553c70e7ada89f2148c3d8d862935e`.  
-**Phase 7 implementation CI:** Commit `b67dd68f8c25e2ac1ad747721079842aab0953fe` passed ShellCheck, shfmt and offline tests on Ubuntu 20.04 (262/262), 22.04 (262/262) and 24.04 (280/280). [CI run](https://github.com/power0matin/power-apt-boost/actions/runs/44664543497). The final PR head includes a documentation-only roadmap sync and is being checked separately.  
-**Next permitted work unit:** Merge PR #8 only after its final exact-head CI is green; then begin Phase 8.  
-**Python scope:** pip, uv and Poetry configuration are managed; pipx is detected only; curated PyPI catalogue discovery remains a follow-up.  
-**Node.js scope:** npm, pnpm, Yarn Classic and Berry are supported with user scope by default and explicit project scope; scoped registries and auth entries are preserved.  
-**Docker / OCI scope:** Docker Engine APT sources are inspected read-only and separately from OCI mirrors. daemon.json changes are backed up, validated and conflict-checked; Docker restart is always a separate confirmed operation. Registry V2 CI tests are offline; no live Docker pull-through cache was validated.  
-**Release/deployment status:** No release, tag or deployment has been created.  
-**Earlier live validation:** Public Ubuntu mirror discovery/signature checks and live PyPI probes are opt-in runtime checks, not CI prerequisites.
+**Repository snapshot (2026-11-21):** The latest implementation change before release preparation was merged through [PR #10](https://github.com/power0matin/power-apt-boost/pull/10), at commit `6abe3b348294c44c4a77fa341694cd0306b74b45`. Phase 7 Docker / OCI support was previously merged through [PR #8](https://github.com/power0matin/power-apt-boost/pull/8). The audited source version is `3.0.0`.
+
+**Release candidate:** `v3.0.0` consolidates the work accumulated since `v2.1.0`. Publication is gated on ShellCheck, shfmt and the complete offline regression suite on Ubuntu 20.04, 22.04 and 24.04. The release workflow publishes the standalone script and its SHA-256 checksum only after every validation job succeeds.
+
+**Implementation scope:** Python support covers pip, uv and Poetry; pipx is detected only. Node.js support covers npm, pnpm, Yarn Classic and Yarn Berry. Docker Engine APT sources are inspected separately from OCI registry mirrors; daemon changes are backed up and validated, and restart remains a separate confirmed action.
+
+**Next implementation phase:** Phase 8 — Go, Rust, PHP and Java adapters. Start only after `v3.0.0` is published and the phase scope is reviewed.
+
+**Deployment boundary:** A GitHub release publishes source artifacts only. It does not install packages, change APT or Docker configuration, restart services, or deploy to a VPS.
+
+**Live validation boundary:** Public Ubuntu mirror discovery/signature checks and live PyPI/registry probes remain opt-in runtime checks, not CI prerequisites.

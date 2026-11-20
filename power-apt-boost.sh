@@ -4341,6 +4341,14 @@ ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}    --country CODE${COLOR_RESET}        Filter mirrors by country code
   ${COLOR_GREEN}    --ipv6${COLOR_RESET}                Use IPv6 for mirror testing
 
+
+  ${COLOR_GREEN}    --docker-status${COLOR_RESET}       Inspect Docker Engine APT sources and OCI daemon mirrors separately
+  ${COLOR_GREEN}    --docker-catalog${COLOR_RESET}      Show the built-in Docker Hub pull-through cache candidate
+  ${COLOR_GREEN}    --docker-test-mirror URL${COLOR_RESET} Test an HTTPS Registry V2 endpoint (no image download)
+  ${COLOR_GREEN}    --docker-set-mirror URL${COLOR_RESET} Safely merge one mirror into daemon.json; no restart
+  ${COLOR_GREEN}    --docker-reset-mirror${COLOR_RESET}   Restore the prior app-managed daemon.json snapshot
+  ${COLOR_GREEN}    --docker-restore PATH${COLOR_RESET}  Restore a conflict-checked Docker snapshot
+  ${COLOR_GREEN}    --docker-restart${COLOR_RESET}       Separately confirm and restart an active Docker service
   ${COLOR_GREEN}    --node-status${COLOR_RESET}         Detect Node.js/npm/pnpm/Yarn and registry hosts
   ${COLOR_GREEN}    --node-test-registry URL${COLOR_RESET} Test registry metadata and tarball endpoint
   ${COLOR_GREEN}    --node-set-registry URL${COLOR_RESET} Configure a user or explicit project registry
@@ -4369,6 +4377,24 @@ ${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
   ${COLOR_DIM}# Apply automatically from a pipe or CI job${COLOR_RESET}
   curl -fsSL ${APP_GITHUB}/raw/main/power-apt-boost.sh | sudo bash -s -- --yes
 
+
+
+  ${COLOR_DIM}# Inspect Docker Engine APT sources and OCI daemon mirrors separately${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --docker-status --json
+  sudo bash ${_SCRIPT_NAME} --docker-catalog
+
+  ${COLOR_DIM}# Test the Registry V2 endpoint only; no image is pulled${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --docker-test-mirror https://mirror.gcr.io
+
+  ${COLOR_DIM}# Preview and then save daemon.json; Docker is not restarted${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --docker-set-mirror https://mirror.gcr.io --dry-run
+  sudo bash ${_SCRIPT_NAME} --docker-set-mirror https://mirror.gcr.io --yes
+
+  ${COLOR_DIM}# Restart only as a separate, explicit operation${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --docker-restart
+
+  ${COLOR_DIM}# Restore the exact configuration snapshot if no external edits were made${COLOR_RESET}
+  sudo bash ${_SCRIPT_NAME} --docker-reset-mirror
 
   ${COLOR_DIM}# Inspect Node.js clients and verify registry metadata without installing packages${COLOR_RESET}
   bash ${_SCRIPT_NAME} --node-status --json
@@ -4640,6 +4666,55 @@ _parse_args() {
       shift
       ;;
 
+
+    --docker-status)
+      [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
+      DOCKER_REQUESTED=true
+      DOCKER_ACTION=status
+      shift
+      ;;
+    --docker-catalog)
+      [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
+      DOCKER_REQUESTED=true
+      DOCKER_ACTION=catalog
+      shift
+      ;;
+    --docker-test-mirror)
+      [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
+      [[ -n "${2:-}" ]] || die "Option $1 requires a mirror URL." "$EXIT_USAGE"
+      DOCKER_REQUESTED=true
+      DOCKER_ACTION=test
+      DOCKER_MIRROR_URL="$2"
+      shift 2
+      ;;
+    --docker-set-mirror)
+      [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
+      [[ -n "${2:-}" ]] || die "Option $1 requires a mirror URL." "$EXIT_USAGE"
+      DOCKER_REQUESTED=true
+      DOCKER_ACTION=set
+      DOCKER_MIRROR_URL="$2"
+      shift 2
+      ;;
+    --docker-reset-mirror)
+      [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
+      DOCKER_REQUESTED=true
+      DOCKER_ACTION=reset
+      shift
+      ;;
+    --docker-restore)
+      [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
+      [[ -n "${2:-}" ]] || die "Option $1 requires a snapshot path." "$EXIT_USAGE"
+      DOCKER_REQUESTED=true
+      DOCKER_ACTION=restore
+      DOCKER_RESTORE_PATH="$2"
+      shift 2
+      ;;
+    --docker-restart)
+      [[ -z "$DOCKER_ACTION" ]] || die "Choose only one Docker action." "$EXIT_USAGE"
+      DOCKER_REQUESTED=true
+      DOCKER_ACTION=restart
+      shift
+      ;;
     --node-status)
       [[ -z "$NODE_ACTION" ]] || die "Choose only one Node.js action." "$EXIT_USAGE"
       NODE_REQUESTED=true
@@ -4769,9 +4844,26 @@ _parse_args() {
   [[ -z "$PRUNE_BACKUPS_KEEP" ]] || ((mode_count += 1))
   [[ "$PYTHON_REQUESTED" != true ]] || ((mode_count += 1))
   [[ "$NODE_REQUESTED" != true ]] || ((mode_count += 1))
-  ((mode_count <= 1)) || die "Choose only one command mode: menu, status, doctor, list, restore, backup pruning, mirror management, Python or Node.js." "$EXIT_USAGE"
+  [[ "$DOCKER_REQUESTED" != true ]] || ((mode_count += 1))
+  ((mode_count <= 1)) || die "Choose only one command mode: menu, status, doctor, list, restore, backup pruning, mirror management, Python, Node.js or Docker/OCI." "$EXIT_USAGE"
   [[ "$RESTORE_SCOPE" == all || "$RESTORE" == true ]] || die "--restore-scope requires --restore." "$EXIT_USAGE"
   [[ "$NETWORK_DIAGNOSTICS" != true || "$DOCTOR_REQUESTED" == true ]] || die "--network-diagnostics can only be used with --doctor." "$EXIT_USAGE"
+
+
+  if [[ "$DOCKER_REQUESTED" == true ]]; then
+    [[ "$ACTION_REQUESTED" != true || ( "$DRY_RUN" == true && "$DOCKER_ACTION" == set ) ]] || die "Docker commands cannot be combined with APT apply options." "$EXIT_USAGE"
+    [[ "$SKIP_UPDATE" != true && -z "$FORCE_MIRROR" && "$LIST_REQUESTED" != true && "$RESTORE" != true && "$MIRROR_MANAGEMENT_REQUESTED" != true && -z "$PRUNE_BACKUPS_KEEP" && "$STATUS_REQUESTED" != true && "$DOCTOR_REQUESTED" != true && "$MENU_REQUESTED" != true && "$PYTHON_REQUESTED" != true && "$NODE_REQUESTED" != true ]] || die "Docker commands cannot be combined with other command modes." "$EXIT_USAGE"
+    [[ "$OFFICIAL_ONLY" != true && "$REFRESH_CATALOG" != true && -z "$COUNTRY_FILTER" && "$USE_IPV6" != true && "$BENCH_WORKERS" -eq "$DEFAULT_BENCH_WORKERS" && "$PROBE_RETRIES" -eq 1 ]] || die "Docker commands cannot be combined with APT mirror benchmark options." "$EXIT_USAGE"
+    [[ "$NETWORK_DIAGNOSTICS" != true && "$APT_RETRIES" -eq 3 && -z "$APT_PROXY" && "$CLEAR_APT_PROXY" != true ]] || die "Docker commands cannot be combined with APT network options." "$EXIT_USAGE"
+    [[ "$JSON_OUTPUT" != true || "$DOCKER_ACTION" == status ]] || die "--json is supported only with --docker-status." "$EXIT_USAGE"
+    [[ "$DRY_RUN" != true || "$DOCKER_ACTION" == set ]] || die "--dry-run is supported only with --docker-set-mirror." "$EXIT_USAGE"
+    [[ "$DOCKER_ACTION" == status || "$DOCKER_ACTION" == catalog || "$DOCKER_ACTION" == test || "$DOCKER_ACTION" == set || "$DOCKER_ACTION" == reset || "$DOCKER_ACTION" == restore || "$DOCKER_ACTION" == restart ]] || die "Select a Docker action first." "$EXIT_USAGE"
+    [[ "$DOCKER_ACTION" == restore || -n "$DOCKER_RESTORE_PATH" ]] || die "--docker-restore requires a snapshot path." "$EXIT_USAGE"
+    [[ "$DOCKER_ACTION" == restore || -z "$DOCKER_RESTORE_PATH" ]] || die "--docker-restore path is only valid with --docker-restore." "$EXIT_USAGE"
+    [[ "$DOCKER_ACTION" == test || "$DOCKER_ACTION" == set || -z "$DOCKER_MIRROR_URL" ]] || die "A Docker mirror URL is only valid with a test or set command." "$EXIT_USAGE"
+  else
+    [[ "$DOCKER_ACTION" == "" && "$DOCKER_MIRROR_URL" == "" && "$DOCKER_RESTORE_PATH" == "" ]] || die "Docker options require a Docker command." "$EXIT_USAGE"
+  fi
 
   if [[ "$NODE_REQUESTED" == true ]]; then
     [[ "$ACTION_REQUESTED" != true || "$DRY_RUN" == true ]] || die "Node.js commands cannot be combined with APT apply options." "$EXIT_USAGE"
@@ -5729,6 +5821,69 @@ _menu_settings() {
     esac
   done
 }
+
+_menu_docker() {
+  local choice rc url path
+  while true; do
+    choice="$(_menu_choose "Docker / OCI Registries" "APT repositories and image mirrors are separate settings" \
+      "status" "Inspect Docker APT source and daemon mirrors" \
+      "catalog" "Show the built-in Docker Hub cache candidate" \
+      "test" "Test a Registry V2 endpoint" \
+      "configure" "Configure daemon.json mirror (no restart)" \
+      "reset" "Restore the prior app-managed daemon.json" \
+      "restore" "Restore a specific conflict-checked snapshot" \
+      "restart" "Separately restart the active Docker daemon" \
+      "back" "Back")" || return 0
+    case "$choice" in
+    status)
+      DOCKER_ACTION=status
+      _docker_status_report
+      _menu_message "Docker / OCI" "Read-only inspection completed."
+      ;;
+    catalog)
+      _docker_catalog_report
+      _menu_message "Docker Hub cache" "Candidate details displayed."
+      ;;
+    test)
+      DOCKER_ACTION=test
+      DOCKER_MIRROR_URL="$(_menu_input "Registry mirror" "HTTPS origin only; no credentials or path" "$DOCKER_HUB_CACHE_MIRROR")" || continue
+      rc=0
+      _run_docker_manager || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Registry test" "Operation returned $rc."
+      ;;
+    configure)
+      DOCKER_ACTION=set
+      DOCKER_MIRROR_URL="$(_menu_input "Registry mirror" "HTTPS origin only; daemon is not restarted" "$DOCKER_HUB_CACHE_MIRROR")" || continue
+      DRY_RUN=false
+      rc=0
+      _run_docker_manager || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker configuration" "Operation returned $rc."
+      ;;
+    reset)
+      DOCKER_ACTION=reset
+      rc=0
+      _run_docker_manager || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker reset" "Operation returned $rc."
+      ;;
+    restore)
+      path="$(_menu_input "Docker snapshot path" "Enter a snapshot path from the Power APT Boost Docker backup directory" "")" || continue
+      DOCKER_ACTION=restore
+      DOCKER_RESTORE_PATH="$path"
+      rc=0
+      _run_docker_manager || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker restore" "Operation returned $rc."
+      ;;
+    restart)
+      DOCKER_ACTION=restart
+      rc=0
+      _run_docker_manager || rc=$?
+      [[ "$rc" -eq 0 || "$rc" -eq "$EXIT_CANCELLED" ]] || _menu_message "Docker restart" "Operation returned $rc."
+      ;;
+    back) return 0 ;;
+    esac
+  done
+}
+
 _menu_main() {
   if ! _is_interactive; then
     error "The interactive menu requires a TTY. Use --help for non-interactive commands."
@@ -5742,6 +5897,7 @@ _menu_main() {
         "apt" "APT management" \
         "python" "Python package sources" \
         "node" "Node.js package registries" \
+        "docker" "Docker / OCI registries" \
         "benchmark" "Mirror benchmark" \
         "backups" "Backup and Restore" \
         "diagnostics" "Diagnostics" \
@@ -5753,6 +5909,7 @@ _menu_main() {
     apt) _menu_apt ;;
     python) _menu_python ;;
     node) _menu_nodejs ;;
+    docker) _menu_docker ;;
     benchmark) _menu_benchmark ;;
     backups) _menu_backups ;;
     diagnostics) _menu_diagnostics ;;
@@ -5770,6 +5927,14 @@ main() {
     mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
     : >"$LOG_FILE"
     _log_to_file "Session started: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  fi
+
+
+  if [[ "$DOCKER_REQUESTED" == true ]]; then
+    local docker_status=0
+    _run_docker_manager || docker_status=$?
+    [[ "$docker_status" -eq "$EXIT_CANCELLED" ]] && docker_status="$EXIT_OK"
+    exit "$docker_status"
   fi
 
   if [[ "$NODE_REQUESTED" == true ]]; then

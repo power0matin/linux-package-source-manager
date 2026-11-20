@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Power APT Boost will be documented in this file.
+All notable changes to Linux Package Source Manager will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
@@ -190,10 +190,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added cache cleanup
 - Added branded banner
 
-[Unreleased]: https://github.com/power0matin/power-apt-boost/compare/v3.0.0...HEAD
-[3.0.0]: https://github.com/power0matin/power-apt-boost/compare/v2.1.0...v3.0.0
-[2.1.0]: https://github.com/power0matin/power-apt-boost/compare/v2.0.0...v2.1.0
-[2.0.0]: https://github.com/power0matin/power-apt-boost/compare/v1.2.0...v2.0.0
-[1.2.0]: https://github.com/power0matin/power-apt-boost/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/power0matin/power-apt-boost/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/power0matin/power-apt-boost/releases/tag/v1.0.0
+[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/power0matin/linux-package-source-manager/compare/v2.1.0...v3.0.0
+[2.1.0]: https://github.com/power0matin/linux-package-source-manager/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/power0matin/linux-package-source-manager/compare/v1.2.0...v2.0.0
+[1.2.0]: https://github.com/power0matin/linux-package-source-manager/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/power0matin/linux-package-source-manager/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/power0matin/linux-package-source-manager/releases/tag/v1.0.0

@@ -1890,7 +1890,6 @@ DRYRUN
   fi
 }
 
-
 # ─── Python Package Source Management ────────────────────────────────────────
 
 _python_validate_index_url() {
@@ -1918,7 +1917,10 @@ PY
 }
 
 _python_url_label() {
-  [[ -n "$1" ]] || { printf '%s' "not configured"; return 0; }
+  [[ -n "$1" ]] || {
+    printf '%s' "not configured"
+    return 0
+  }
   python3 - "$1" <<'PY'
 import sys
 from urllib.parse import urlsplit
@@ -1953,7 +1955,10 @@ _python_override_names() {
     fi
   done
   while IFS= read -r name; do
-    [[ -z "$name" ]] || { printf '%s\n' "$name"; found=true; }
+    [[ -z "$name" ]] || {
+      printf '%s\n' "$name"
+      found=true
+    }
   done < <(env | sed -n 's/^\(UV_INDEX_[A-Za-z0-9_]*\)=.*/\1/p; s/^\(POETRY_REPOSITORIES_[A-Za-z0-9_]*_URL\)=.*/\1/p' | sort -u)
   [[ "$found" == true ]] || printf '%s\n' none
 }
@@ -2351,7 +2356,7 @@ _python_resolve_toml_target() {
     ;;
   *) return 1 ;;
   esac
-  [[ ! -L "$PYTHON_TARGET_FILE" && ( ! -e "$PYTHON_TARGET_FILE" || -f "$PYTHON_TARGET_FILE" ) ]]
+  [[ ! -L "$PYTHON_TARGET_FILE" && (! -e "$PYTHON_TARGET_FILE" || -f "$PYTHON_TARGET_FILE") ]]
 }
 
 _python_test_index() {
@@ -2360,7 +2365,7 @@ _python_test_index() {
     error "Use HTTPS PEP 503/691 URL ending in /simple/, without credentials, query or fragment."
     return "$EXIT_USAGE"
   }
-  if python3 - "$index_url" "$TIMEOUT_TOTAL" <<'PY'
+  if python3 - "$index_url" "$TIMEOUT_TOTAL" <<'PY'; then
 import json
 import ssl
 import sys
@@ -2462,7 +2467,6 @@ except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError, js
     print("REASON=" + (f"HTTP {code}" if code else type(exc).__name__))
     raise SystemExit(1)
 PY
-  then
     info "Python metadata and one artifact endpoint are reachable; no package was installed."
   else
     rc=$?
@@ -2526,9 +2530,15 @@ _python_apply_pip() {
   state="$(_python_backup_base)/pip-$scope.state"
   [[ ! -L "$state" ]] || return "$EXIT_BACKUP"
   if [[ "$action" == set ]]; then
-    [[ ! -e "$state" ]] || { error "An app-managed pip index already exists; reset it first."; return "$EXIT_USAGE"; }
+    [[ ! -e "$state" ]] || {
+      error "An app-managed pip index already exists; reset it first."
+      return "$EXIT_USAGE"
+    }
     old_value="$(_python_pip_get "$scope" 2>/dev/null)" && existed=true || existed=false
-    [[ "$existed" != true || "$old_value" != "$url" ]] || { info "pip already uses this index."; return 0; }
+    [[ "$existed" != true || "$old_value" != "$url" ]] || {
+      info "pip already uses this index."
+      return 0
+    }
     snapshot="$(_python_snapshot_create pip "$scope" global.index-url "$existed" "$old_value")" || return "$EXIT_BACKUP"
     if ! _python_pip_set "$scope" "$url" >/dev/null; then
       if [[ "$existed" == true ]]; then _python_pip_set "$scope" "$old_value" >/dev/null 2>&1 || true; else _python_pip_unset "$scope" >/dev/null 2>&1 || true; fi
@@ -2553,7 +2563,10 @@ _python_apply_pip() {
     printf 'Snapshot: %s\n' "$snapshot"
     info "pip index configured in $scope scope; unrelated settings were preserved."
   else
-    [[ -f "$state" && ! -L "$state" ]] || { error "No app-managed pip index exists in this scope."; return "$EXIT_USAGE"; }
+    [[ -f "$state" && ! -L "$state" ]] || {
+      error "No app-managed pip index exists in this scope."
+      return "$EXIT_USAGE"
+    }
     snapshot="$(cat "$state")"
     _python_restore_snapshot "$snapshot" || return $?
     rm -f -- "$state"
@@ -2564,7 +2577,10 @@ _python_apply_pip() {
 _python_apply_toml() {
   local action="$1" url="${2:-}" client="$PYTHON_CLIENT" scope="$PYTHON_SCOPE"
   local target snapshot existed=false env_name
-  command -v "$client" >/dev/null 2>&1 || { error "$client is not installed; no tool will be installed."; return "$EXIT_GENERAL"; }
+  command -v "$client" >/dev/null 2>&1 || {
+    error "$client is not installed; no tool will be installed."
+    return "$EXIT_GENERAL"
+  }
   if [[ "$client" == uv ]]; then
     case "$scope" in auto) scope=user ;; user | global | project) ;; *) return "$EXIT_USAGE" ;; esac
     [[ -z "${UV_CONFIG_FILE+x}" && -z "${UV_DEFAULT_INDEX+x}" && -z "${UV_INDEX+x}" ]] || {
@@ -2572,12 +2588,24 @@ _python_apply_toml() {
       return "$EXIT_USAGE"
     }
     while IFS= read -r env_name; do
-      [[ -z "$env_name" ]] || { error "$env_name overrides uv configuration."; return "$EXIT_USAGE"; }
+      [[ -z "$env_name" ]] || {
+        error "$env_name overrides uv configuration."
+        return "$EXIT_USAGE"
+      }
     done < <(env | sed -n 's/^\(UV_INDEX_[A-Za-z0-9_]*\)=.*/\1/p')
   else
-    case "$scope" in auto | project) scope=project ;; *) error "Poetry sources are project-scoped."; return "$EXIT_USAGE" ;; esac
+    case "$scope" in
+    auto | project) scope=project ;;
+    *)
+      error "Poetry sources are project-scoped."
+      return "$EXIT_USAGE"
+      ;;
+    esac
     while IFS= read -r env_name; do
-      [[ -z "$env_name" ]] || { error "$env_name overrides Poetry repositories."; return "$EXIT_USAGE"; }
+      [[ -z "$env_name" ]] || {
+        error "$env_name overrides Poetry repositories."
+        return "$EXIT_USAGE"
+      }
     done < <(env | sed -n 's/^\(POETRY_REPOSITORIES_[A-Za-z0-9_]*_URL\)=.*/\1/p')
   fi
 
@@ -2610,24 +2638,39 @@ _python_apply_toml() {
 _run_python_manager() {
   local url="" confirmation
   case "$PYTHON_ACTION" in
-  status) _python_status_report; return 0 ;;
-  test) _python_test_index "$PYTHON_INDEX_URL"; return $? ;;
+  status)
+    _python_status_report
+    return 0
+    ;;
+  test)
+    _python_test_index "$PYTHON_INDEX_URL"
+    return $?
+    ;;
   restore)
     _confirm_action "Restore Python snapshot $PYTHON_RESTORE_PATH?" || return "$EXIT_CANCELLED"
     _python_restore_snapshot "$PYTHON_RESTORE_PATH"
     return $?
     ;;
   set | reset) ;;
-  *) error "No Python action was selected."; return "$EXIT_USAGE" ;;
+  *)
+    error "No Python action was selected."
+    return "$EXIT_USAGE"
+    ;;
   esac
 
   if [[ "$PYTHON_ACTION" == set ]]; then
-    url="$(_python_validate_index_url "$PYTHON_INDEX_URL")" || { error "Invalid Python index URL."; return "$EXIT_USAGE"; }
+    url="$(_python_validate_index_url "$PYTHON_INDEX_URL")" || {
+      error "Invalid Python index URL."
+      return "$EXIT_USAGE"
+    }
   fi
   case "$PYTHON_CLIENT" in
   pip) _python_resolve_pip_scope || return $? ;;
   uv | poetry) ;;
-  *) error "Python client must be pip, uv or poetry."; return "$EXIT_USAGE" ;;
+  *)
+    error "Python client must be pip, uv or poetry."
+    return "$EXIT_USAGE"
+    ;;
   esac
   if [[ "$PYTHON_CLIENT" == pip && -n "${PIP_EXTRA_INDEX_URL+x}" ]]; then
     warn "PIP_EXTRA_INDEX_URL is preserved and may cause multi-index resolution."
@@ -2668,7 +2711,6 @@ _run_python_manager() {
     _python_apply_toml remove
   fi
 }
-
 
 # ─── Output ──────────────────────────────────────────────────────────────────# ─── Output ───────────────────────────────────────────────────────────────────
 
@@ -3315,32 +3357,59 @@ _parse_args() {
       USE_IPV6=true
       shift
       ;;
-    --python-status) PYTHON_REQUESTED=true; PYTHON_ACTION="status"; shift ;;
+    --python-status)
+      PYTHON_REQUESTED=true
+      PYTHON_ACTION="status"
+      shift
+      ;;
     --python-test-index)
       [[ -n "${2:-}" ]] || die "Option $1 requires an index URL." "$EXIT_USAGE"
-      PYTHON_REQUESTED=true; PYTHON_ACTION="test"; PYTHON_INDEX_URL="$2"; shift 2 ;;
+      PYTHON_REQUESTED=true
+      PYTHON_ACTION="test"
+      PYTHON_INDEX_URL="$2"
+      shift 2
+      ;;
     --python-set-index)
       [[ -n "${2:-}" ]] || die "Option $1 requires an index URL." "$EXIT_USAGE"
-      PYTHON_REQUESTED=true; PYTHON_ACTION="set"; PYTHON_INDEX_URL="$2"; shift 2 ;;
-    --python-reset-index) PYTHON_REQUESTED=true; PYTHON_ACTION="reset"; shift ;;
+      PYTHON_REQUESTED=true
+      PYTHON_ACTION="set"
+      PYTHON_INDEX_URL="$2"
+      shift 2
+      ;;
+    --python-reset-index)
+      PYTHON_REQUESTED=true
+      PYTHON_ACTION="reset"
+      shift
+      ;;
     --python-restore)
       [[ -n "${2:-}" ]] || die "Option $1 requires a snapshot path." "$EXIT_USAGE"
-      PYTHON_REQUESTED=true; PYTHON_ACTION="restore"; PYTHON_RESTORE_PATH="$2"; shift 2 ;;
+      PYTHON_REQUESTED=true
+      PYTHON_ACTION="restore"
+      PYTHON_RESTORE_PATH="$2"
+      shift 2
+      ;;
     --python-client)
       case "${2:-}" in pip | uv | poetry) PYTHON_CLIENT="$2" ;; *) die "Invalid Python client." "$EXIT_USAGE" ;; esac
-      shift 2 ;;
+      shift 2
+      ;;
     --python-scope)
       case "${2:-}" in auto | user | site | global | project) PYTHON_SCOPE="$2" ;; *) die "Invalid Python scope." "$EXIT_USAGE" ;; esac
-      shift 2 ;;
+      shift 2
+      ;;
     --python-project)
       [[ -n "${2:-}" ]] || die "Option $1 requires a path." "$EXIT_USAGE"
-      PYTHON_PROJECT_FILE="$2"; shift 2 ;;
+      PYTHON_PROJECT_FILE="$2"
+      shift 2
+      ;;
     --python-source-name)
       [[ -n "${2:-}" ]] || die "Option $1 requires a source name." "$EXIT_USAGE"
-      PYTHON_SOURCE_NAME="$2"; shift 2 ;;
+      PYTHON_SOURCE_NAME="$2"
+      shift 2
+      ;;
     --python-priority)
       case "${2:-}" in primary | supplemental | explicit) PYTHON_PRIORITY="$2" ;; *) die "Invalid Poetry priority." "$EXIT_USAGE" ;; esac
-      shift 2 ;;
+      shift 2
+      ;;
 
     -*)
       error "Unknown option: $1. Run --help for usage."
@@ -4078,7 +4147,6 @@ _menu_diagnostics() {
   back) return 0 ;;
   esac
 }
-
 
 _menu_python() {
   local choice scope rc

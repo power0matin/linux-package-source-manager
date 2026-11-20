@@ -821,15 +821,15 @@ list_mirrors() {
   local meta mirror_id source official country completed=0 total started_at
   local -a mirror_urls=()
   mapfile -t mirror_urls < <(_get_mirrors)
-  total="\${#mirror_urls[@]}"
+  total="${#mirror_urls[@]}"
   started_at="$SECONDS"
   ((total > 0)) || {
     warn "No mirrors match the current catalog profile."
     return 0
   }
   printf '  Testing %d mirror(s)...\n' "$total" >&2
-  for mirror_url in "\${mirror_urls[@]}"; do
-    result_file="$(mktemp "\${TMPDIR:-/tmp}/\${APP_SLUG}.list.XXXXXX")"
+  for mirror_url in "${mirror_urls[@]}"; do
+    result_file="$(mktemp "${TMPDIR:-/tmp}/${APP_SLUG}.list.XXXXXX")"
     _tmp_dirs+=("$result_file")
     _test_mirror "$mirror_url" "$result_file" "$CODENAME"
     result_line="$(cat "$result_file" 2>/dev/null || true)"
@@ -842,7 +842,7 @@ list_mirrors() {
         "$mirror_id" "$avg_latency" "$score" "$redirects" "$freshness" "$signature" "$source" "$official" >&2
     else
       printf '  %-24s REJECTED reason=%s source=%s official=%s\n' \
-        "$mirror_id" "\${reason:-incompatible_release}" "$source" "$official" >&2
+        "$mirror_id" "${reason:-incompatible_release}" "$source" "$official" >&2
     fi
     ((completed += 1))
     _print_task_progress "Mirror checks" "$completed" "$total" "$started_at"
@@ -1134,22 +1134,22 @@ _select_mirror() {
 
   _load_mirror_catalog
   _print_section_header "MIRROR SELECTION"
-  msg "  Ubuntu codename:  \${COLOR_BOLD}\${CODENAME}\${COLOR_RESET}"
+  msg "  Ubuntu codename:  ${COLOR_BOLD}${CODENAME}${COLOR_RESET}"
   mirror_list="$(_get_mirrors)"
   mapfile -t mirrors <<<"$mirror_list"
-  total="\${#mirrors[@]}"
+  total="${#mirrors[@]}"
   total_mirrors="$total"
   ((total > 0)) || die "No mirrors are available for the selected catalog profile." "$EXIT_NO_MIRROR"
 
-  msg "  Mirrors to test:  \${COLOR_BOLD}\${total_mirrors}\${COLOR_RESET}"
-  msg "  Parallel workers: \${COLOR_BOLD}\${BENCH_WORKERS}\${COLOR_RESET}"
-  msg "  Retry policy:     \${COLOR_BOLD}\${PROBE_RETRIES} retries per transient failure\${COLOR_RESET}"
+  msg "  Mirrors to test:  ${COLOR_BOLD}${total_mirrors}${COLOR_RESET}"
+  msg "  Parallel workers: ${COLOR_BOLD}${BENCH_WORKERS}${COLOR_RESET}"
+  msg "  Retry policy:     ${COLOR_BOLD}${PROBE_RETRIES} retries per transient failure${COLOR_RESET}"
   msg "  Eligibility: HTTP 200 + Ubuntu suite metadata + valid archive signature"
   printf '  Progress updates are printed as each mirror finishes.\n\n' >&2
 
   bench_start="$SECONDS"
   progress_started="$SECONDS"
-  bench_tmpdir="$(mktemp -d "\${TMPDIR:-/tmp}/\${APP_SLUG}.bench.XXXXXX")"
+  bench_tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/${APP_SLUG}.bench.XXXXXX")"
   _tmp_dirs+=("$bench_tmpdir")
 
   _bench_worker() {
@@ -1163,21 +1163,21 @@ _select_mirror() {
   while ((idx < total)); do
     pids=()
     batch_indices=()
-    while (("\${#pids[@]}" < BENCH_WORKERS)) && ((idx < total)); do
+    while (("${#pids[@]}" < BENCH_WORKERS)) && ((idx < total)); do
       batch_indices+=("$idx")
       completed_flags[$idx]=0
-      _bench_worker "$idx" "\${mirrors[$idx]}" "$CODENAME" \
-        "\${bench_tmpdir}/\${idx}.result" "\${bench_tmpdir}/\${idx}.done" &
+      _bench_worker "$idx" "${mirrors[$idx]}" "$CODENAME" \
+        "${bench_tmpdir}/${idx}.result" "${bench_tmpdir}/${idx}.done" &
       pids+=("$!")
       _bg_pids+=("$!")
       ((idx += 1))
     done
 
-    batch_count="\${#batch_indices[@]}"
+    batch_count="${#batch_indices[@]}"
     batch_completed=0
     while ((batch_completed < batch_count)); do
-      for batch_idx in "\${batch_indices[@]}"; do
-        if [[ "\${completed_flags[$batch_idx]:-0}" != 1 && -f "\${bench_tmpdir}/\${batch_idx}.done" ]]; then
+      for batch_idx in "${batch_indices[@]}"; do
+        if [[ "${completed_flags[$batch_idx]:-0}" != 1 && -f "${bench_tmpdir}/${batch_idx}.done" ]]; then
           completed_flags[$batch_idx]=1
           ((completed += 1))
           ((batch_completed += 1))
@@ -1187,7 +1187,7 @@ _select_mirror() {
       ((batch_completed < batch_count)) && sleep 0.1
     done
 
-    for pid in "\${pids[@]}"; do
+    for pid in "${pids[@]}"; do
       wait "$pid" 2>/dev/null || true
     done
     _bg_pids=()
@@ -1198,7 +1198,7 @@ _select_mirror() {
   bench_duration=$((bench_end - bench_start))
 
   for ((i = 0; i < total; i++)); do
-    result_line="$(cat "\${bench_tmpdir}/\${i}.result" 2>/dev/null || true)"
+    result_line="$(cat "${bench_tmpdir}/${i}.result" 2>/dev/null || true)"
     [[ -n "$result_line" ]] || {
       ((failed += 1)) || true
       continue
@@ -1208,16 +1208,16 @@ _select_mirror() {
     if [[ "$eligible" == true ]]; then
       ((passed += 1)) || true
       if awk -v candidate="$score" -v current="$best_score" 'BEGIN { exit !(candidate < current) }'; then
-        best="\${mirrors[$i]}"
+        best="${mirrors[$i]}"
         best_score="$score"
         best_avg="$avg_latency"
-      elif [[ "$score" == "$best_score" && -n "$best" && "\${mirrors[$i]}" < "$best" ]]; then
-        best="\${mirrors[$i]}"
+      elif [[ "$score" == "$best_score" && -n "$best" && "${mirrors[$i]}" < "$best" ]]; then
+        best="${mirrors[$i]}"
         best_avg="$avg_latency"
       fi
     else
       ((failed += 1)) || true
-      msg_verbose "Rejected \${mirrors[$i]}: \${reason:-incompatible_or_unverified_release}"
+      msg_verbose "Rejected ${mirrors[$i]}: ${reason:-incompatible_or_unverified_release}"
     fi
   done
   rm -rf "$bench_tmpdir" 2>/dev/null || true
@@ -5075,7 +5075,8 @@ _resolve_backup_path() {
 }
 
 _menu_clear_screen() {
-  if [[ -t 2 && -n "\${TERM:-}" && "$TERM" != dumb ]]; then
+  local term="${TERM:-}"
+  if [[ -t 2 && -n "$term" && "$term" != dumb ]]; then
     printf '\033[2J\033[H' >&2
   fi
 }
@@ -5089,12 +5090,12 @@ _menu_choose() {
     labels+=("$2")
     shift 2
   done
-  (("\${#tags[@]}" > 0)) || return 1
+  (("${#tags[@]}" > 0)) || return 1
 
   _menu_clear_screen
   printf '\n%s\n%s\n\n' "$title" "$prompt" >&2
-  for ((i = 0; i < \${#tags[@]}; i++)); do
-    printf '  %2d) %s\n' "$((i + 1))" "\${labels[$i]}" >&2
+  for ((i = 0; i < ${#tags[@]}; i++)); do
+    printf '  %2d) %s\n' "$((i + 1))" "${labels[$i]}" >&2
   done
   printf '   0) Cancel / Back\n\n' >&2
   printf 'Select an option number: ' >&2
@@ -5106,23 +5107,23 @@ _menu_choose() {
       if ((numeric == 0)); then
         return 1
       fi
-      if ((numeric >= 1 && numeric <= \${#tags[@]})); then
-        printf '%s\n' "\${tags[$((numeric - 1))]}"
+      if ((numeric >= 1 && numeric <= ${#tags[@]})); then
+        printf '%s\n' "${tags[$((numeric - 1))]}"
         return 0
       fi
     fi
-    printf 'Invalid selection. Enter a number from 1 to %d, or 0 to go back: ' "\${#tags[@]}" >&2
+    printf 'Invalid selection. Enter a number from 1 to %d, or 0 to go back: ' "${#tags[@]}" >&2
   done
 }
 _menu_input() {
-  local title="$1" prompt="$2" default_value="\${3:-}" answer=""
+  local title="$1" prompt="$2" default_value="${3:-}" answer=""
   printf '\n%s\n%s\n' "$title" "$prompt" >&2
   if [[ -n "$default_value" ]]; then
     printf 'Default: %s\n' "$default_value" >&2
   fi
   printf 'Value (press Enter to keep the default): ' >&2
   IFS= read -r answer || return 1
-  printf '%s\n' "\${answer:-$default_value}"
+  printf '%s\n' "${answer:-$default_value}"
 }
 _menu_message() {
   local title="$1" message="$2"
@@ -5581,7 +5582,7 @@ _menu_apt() {
         _menu_message "Invalid mirror URL" "Enter an http:// or https:// URL without spaces."
         continue
       }
-      FORCE_MIRROR="\${FORCE_MIRROR%/}"
+      FORCE_MIRROR="${FORCE_MIRROR%/}"
       DRY_RUN=false
       rc=0
       _run_apply_flow || rc=$?

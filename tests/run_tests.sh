@@ -950,6 +950,28 @@ TOML
     _python_toml_edit write uv project "$path" "https://other.example/simple/" "pab-test" supplemental >/dev/null 2>&1 || code=$?
     assert_exit_code 2 "$code" "uv refuses a duplicate managed index/source name"
 
+    before="$(sha256sum "$path")"
+    output="$(_python_toml_edit remove-preview uv project "$path" "" "pab-test" supplemental)"
+    assert_contains "BEGIN POWER APT BOOST MANAGED PYTHON SOURCE" "$output" "uv reset preview identifies only the managed source"
+    after="$(sha256sum "$path")"
+    assert_equal "$before" "$after" "uv reset preview leaves the project file unchanged"
+
+    snapshot="$(_python_snapshot_create uv project "$path" true)"
+    _python_snapshot_mark_after "$snapshot" uv "$path"
+    printf '\n# external edit\n' >>"$path"
+    code=0
+    _python_restore_snapshot "$snapshot" >/dev/null 2>&1 || code=$?
+    assert_exit_code 8 "$code" "TOML snapshot refuses to overwrite a manually changed project file"
+    assert_file_contains "$path" "# external edit" "TOML restore conflict leaves the manual edit intact"
+
+    snapshot="$(_python_snapshot_create uv project "$path" true)"
+    _python_toml_edit remove uv project "$path" "" "pab-test" supplemental >/dev/null
+    _python_snapshot_mark_after "$snapshot" uv "$path"
+    code=0
+    _python_restore_snapshot "$snapshot" >/dev/null 2>&1 || code=$?
+    assert_exit_code 0 "$code" "TOML snapshot restores a matching managed configuration"
+    assert_file_contains "$path" "BEGIN POWER APT BOOST MANAGED PYTHON SOURCE" "TOML snapshot restores the original managed source"
+
     _python_toml_edit remove uv project "$path" "" "pab-test" supplemental >/dev/null
     assert_file_contains "$path" 'name = "fixture-project"' "uv reset preserves unrelated TOML"
     code=0

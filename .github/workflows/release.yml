@@ -32,6 +32,8 @@ jobs:
           shfmt -d linux-package-source-manager.sh install.sh
           shfmt -d tests/run_tests.sh
           shfmt -d tests/test_installer.sh
+      - name: Run installer tests as an unprivileged user
+        run: bash tests/test_installer.sh
 
   test:
     name: Offline tests (Ubuntu ${{ matrix.ubuntu-version }})

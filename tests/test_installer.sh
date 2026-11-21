@@ -28,7 +28,8 @@ destination=""
 url=""
 while (($#)); do
   case "$1" in
-    -fsSLo) destination="$2"; shift 2 ;;
+    -fsSL) shift ;;
+    -o) destination="$2"; shift 2 ;;
     *) url="$1"; shift ;;
   esac
 done

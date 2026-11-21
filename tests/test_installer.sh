@@ -4,7 +4,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALLER="${ROOT}/install.sh"
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
-fail() { printf 'FAIL %s\n' "$*" >&2; exit 1; }
+fail() {
+  printf 'FAIL %s\n' "$*" >&2
+  exit 1
+}
 pass() { printf 'PASS %s\n' "$*"; }
 
 bash -n "$INSTALLER" || fail "installer syntax"

@@ -8,7 +8,7 @@
 # Version : 3.0.5
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/linux-package-source-manager.sh | sudo bash -s -- --yes
+#   bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
 #   sudo bash linux-package-source-manager.sh [OPTIONS]
 #
 # Run with --help for full usage information.
@@ -4382,7 +4382,7 @@ Ubuntu-first Linux package source and mirror manager for APT, Python, Node.js an
 ${COLOR_BOLD}${COLOR_BLUE}USAGE${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME}                 # Open the interactive menu on a TTY
   sudo bash ${_SCRIPT_NAME} [OPTIONS]
-  curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/linux-package-source-manager.sh | sudo bash -s -- --yes
+  bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
 
 ${COLOR_BOLD}${COLOR_BLUE}OPTIONS${COLOR_RESET}
   ${COLOR_GREEN}-h, --help${COLOR_RESET}              Show this help message
@@ -4452,8 +4452,8 @@ ${COLOR_BOLD}${COLOR_BLUE}EXAMPLES${COLOR_RESET}
   ${COLOR_DIM}# Open the interactive menu${COLOR_RESET}
   sudo bash ${_SCRIPT_NAME}
 
-  ${COLOR_DIM}# Apply automatically from a pipe or CI job${COLOR_RESET}
-  curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/linux-package-source-manager.sh | sudo bash -s -- --yes
+  ${COLOR_DIM}# Apply a specific mirror with explicit non-interactive approval${COLOR_RESET}
+  bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh) --mirror https://archive.ubuntu.com/ubuntu --yes
 
 
 

@@ -59,7 +59,7 @@ The following reflects the repository inspection performed for this roadmap. It 
 
 ### Existing implementation
 
-- A single Bash entry point: `linux-package-source-manager.sh`.
+- A single Bash application source: `src/linux-package-source-manager.sh` (packaged as `linux-package-source-manager.sh` for releases).
 - Ubuntu-only OS detection through `/etc/os-release`.
 - A hard-coded list of roughly 29 Ubuntu mirror URLs, including an Iran group and international groups.
 - Parallel mirror probing with up to eight workers.
@@ -75,7 +75,7 @@ The following reflects the repository inspection performed for this roadmap. It 
 These are audit findings to turn into tests and fixes, not assumptions that every runtime path will fail:
 
 1. The script declares `APP_VERSION="3.0.0"`, while the README badge and published Git tag/release metadata inspected during the audit still identify `v2.1.0` as the latest release.
-2. The existing `ROADMAP.md` lists capabilities that are already present in the script, including parallel testing, while other planned features remain unimplemented.
+2. This `docs/ROADMAP.md` file lists capabilities that are already present in the script, including parallel testing, while other planned features remain unimplemented.
 3. `tests/run_tests.sh` contains stale version and exit-code expectations and does not adequately test backup, restore, rollback or mirror-selection behavior.
 4. The inspected CI workflow performs linting and a limited set of direct CLI checks but does not run the repository's full test runner.
 5. `_get_mirrors` filters only hostnames matching a country-code pattern. This does not correctly represent country membership for providers such as Iranian mirror hosts whose domain does not start with `ir.`; unknown country values also need explicit handling.

@@ -119,13 +119,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added bounded benchmark concurrency, configurable retry policy, structured endpoint metrics and deterministic scoring.
 - Added region filtering, an official-only profile and confirmed custom mirror add/enable/disable/remove actions.
 - Made no-argument execution open the menu only on a TTY; non-interactive default execution exits without changing APT configuration.
-- Animated braille spinner during mirror testing
+- Animated ASCII spinner during mirror testing
 - Progress bar support for long-running operations
-- Section headers with Unicode box-drawing characters for visual hierarchy
+- ASCII section dividers for consistent terminal-safe visual hierarchy
 - Step indicators (`[1/3] Creating backup`) during apply phase
-- `✓` / `✗` visual status indicators for mirror component results
-- Box-drawing tree layout (`┌─ │ └─`) for per-mirror probe output
-- Arrow indicators (`▸`) for selected mirror and response time in summary
+- `[OK]` / `[FAIL]` status indicators for mirror component results
+- ASCII tree layout (`+--`, `|`, `\--`) for per-mirror probe output
+- ASCII `>` markers for selected mirror and response time in summary
 - `COLOR_MAGENTA`, `COLOR_WHITE`, `COLOR_UL` for richer terminal output
 - Parallel mirror testing (up to 8 workers) for 6-8x faster benchmarks
 

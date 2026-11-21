@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- Replaced Unicode terminal separators, borders, spinner and progress glyphs with ASCII-safe output for SSH compatibility.
+- Reworked the README LPSM monogram into an aligned five-row ASCII lettermark.
+
 ## [3.0.5] — 2026-11-21
 
 ### Added

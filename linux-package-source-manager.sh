@@ -16,7 +16,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# ─── Constants ────────────────────────────────────────────────────────────────
+# === Constants ================================================================
 
 readonly APP_NAME="Linux Package Source Manager"
 readonly APP_VERSION="3.0.5"
@@ -75,7 +75,7 @@ readonly EXIT_BACKUP=7
 readonly EXIT_RESTORE=8
 readonly EXIT_CANCELLED=10
 
-# ─── Global State ─────────────────────────────────────────────────────────────
+# === Global State =============================================================
 
 # Detect script invocation name for restore command
 set +u
@@ -199,7 +199,7 @@ DOCKER_APT_SOURCE_SUITES=()
 _tmp_dirs=()
 _bg_pids=()
 
-# ─── Color ────────────────────────────────────────────────────────────────────
+# === Color ====================================================================
 
 _setup_colors() {
   if [[ -t 2 ]] && [[ "${TERM:-}" != "dumb" ]]; then
@@ -232,7 +232,7 @@ _setup_colors() {
   fi
 }
 
-# ─── Logging ──────────────────────────────────────────────────────────────────
+# === Logging ==================================================================
 
 _log_to_file() {
   if [[ "$LOG_ENABLED" == true ]] && [[ -n "$LOG_FILE" ]]; then
@@ -274,7 +274,7 @@ die() {
   exit "${2:-$EXIT_GENERAL}"
 }
 
-# ─── Spinners & Progress ─────────────────────────────────────────────────────
+# === Spinners & Progress ======================================================
 
 _spinner_pid=""
 
@@ -358,7 +358,7 @@ _print_section_header() {
   echo "" >&2
 }
 
-# ─── Cleanup & Signals ────────────────────────────────────────────────────────
+# === Cleanup & Signals ========================================================
 
 _cleanup() {
   local exit_code=$?
@@ -413,7 +413,7 @@ if [[ "${POWER_APT_BOOST_SOURCE_ONLY:-0}" != "1" ]]; then
   trap '_handle_signal HUP' HUP
 fi
 
-# ─── Root Check ───────────────────────────────────────────────────────────────
+# === Root Check ===============================================================
 
 need_root() {
   if [[ "$(id -u)" -ne 0 ]]; then
@@ -434,7 +434,7 @@ need_root() {
   fi
 }
 
-# ─── Dependency Check ─────────────────────────────────────────────────────────
+# === Dependency Check =========================================================
 
 _check_commands() {
   local missing=() cmd
@@ -458,7 +458,7 @@ _check_probe_tool() {
   exit "$EXIT_GENERAL"
 }
 
-# ─── Ubuntu Detection ────────────────────────────────────────────────────────
+# === Ubuntu Detection =========================================================
 
 detect_ubuntu() {
   [[ -f "$OS_RELEASE_FILE" ]] || {
@@ -481,7 +481,7 @@ detect_ubuntu() {
   msg_verbose "Detected Ubuntu ${VERSION_ID:-} (${CODENAME})"
 }
 
-# ─── Mirror List ──────────────────────────────────────────────────────────────
+# === Mirror List ==============================================================
 
 _MIRROR_CATALOG=(
   "ir-archive|ir|Iran|https://ir.archive.ubuntu.com/ubuntu|builtin|true|true"
@@ -1128,7 +1128,7 @@ _test_mirror() {
   fi
 }
 
-# ─── Parallel Benchmark ──────────────────────────────────────────────────────
+# === Parallel Benchmark =======================================================
 
 _select_mirror() {
   local mirror_list total_mirrors bench_start bench_end bench_duration
@@ -1352,7 +1352,7 @@ _atomic_write() {
   fi
 }
 
-# ─── APT Source Inventory and Architecture Helpers ───────────────────────────
+# === APT Source Inventory and Architecture Helpers ============================
 
 _apt_architecture() {
   local architecture="unknown"
@@ -1898,7 +1898,7 @@ _acquire_mutation_lock() {
   chmod 0600 "$APT_LOCK_FILE" 2>/dev/null || true
 }
 
-# ─── Apply Changes ───────────────────────────────────────────────────────────
+# === Apply Changes ============================================================
 
 _apply_changes() {
   _print_section_header "APPLYING CHANGES"
@@ -1969,7 +1969,7 @@ DRYRUN
   fi
 }
 
-# ─── Node.js Registry Management ──────────────────────────────────────────────
+# === Node.js Registry Management ==============================================
 
 _node_backup_base() {
   printf '%s' "${XDG_STATE_HOME:-$HOME/.local/state}/${APP_SLUG}/nodejs"
@@ -2548,7 +2548,7 @@ _run_node_manager() {
   esac
 }
 
-# ─── Docker Engine and OCI Registry Management ────────────────────────────────
+# === Docker Engine and OCI Registry Management ================================
 
 _docker_require_root() {
   if [[ "$_TEST_MODE" == "1" ]]; then
@@ -3227,7 +3227,7 @@ _run_docker_manager() {
   esac
 }
 
-# ─── Python Package Source Management ────────────────────────────────────────
+# === Python Package Source Management =========================================
 
 _python_validate_index_url() {
   python3 - "$1" <<'PY'
@@ -4054,7 +4054,7 @@ _run_python_manager() {
   fi
 }
 
-# ─── Output ──────────────────────────────────────────────────────────────────# ─── Output ───────────────────────────────────────────────────────────────────
+# === Output ===================================================================
 
 _json_quote() {
   local input="${1-}" output="" char escaped_char byte_code i
@@ -4564,7 +4564,7 @@ ${COLOR_BOLD}${COLOR_BLUE}AUTHOR${COLOR_RESET}
 EOF
 }
 
-# ─── Argument Parsing ────────────────────────────────────────────────────────
+# === Argument Parsing =========================================================
 
 _parse_args() {
   while [[ $# -gt 0 ]]; do

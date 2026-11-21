@@ -1,8 +1,6 @@
-<h1 align="center">Linux Package Source Manager</h1>
-
-<p align="center">
-  <img src="assets/logo.svg" alt="LPSM - Linux Package Source Manager" width="720">
-</p>
+<h1 align="center">
+  <img src="assets/logo.png" alt="LPSM - Linux Package Source Manager" width="640">
+</h1>
 
 <!-- repo-badges:start -->
 <p align="center">

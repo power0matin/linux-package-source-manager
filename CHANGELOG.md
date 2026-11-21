@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.5] — 2026-11-21
+
+### Added
+
+- Added a short `install.sh` bootstrap for the interactive menu; it downloads the latest published release and verifies its SHA-256 checksum before execution.
+- Added support for `bash <(curl .../main/install.sh)` without requiring a repository clone or a manually supplied `sudo` command.
+
+### Changed
+
+- Added the bootstrap installer and its checksum to release artifacts and generated release instructions.
+- Set GitHub Release titles to the version identifier only.
+
+### Tests
+
+- Added offline integration coverage for download, default menu launch, checksum rejection and temporary-file cleanup.
+- Added ShellCheck and shfmt checks for the bootstrap installer.
+
 ## [3.0.4] — 2026-11-21
 
 ### Changed

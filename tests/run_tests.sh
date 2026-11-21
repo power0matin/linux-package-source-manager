@@ -93,7 +93,7 @@ test_cli() {
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"
-  assert_contains "3.0.4" "$output" "version matches script version"
+  assert_contains "3.0.5" "$output" "version matches script version"
   assert_contains "--menu" "$(bash "$SCRIPT" --help 2>&1)" "help documents interactive menu"
   assert_contains "--doctor" "$(bash "$SCRIPT" --help 2>&1)" "help documents doctor command"
   assert_contains "--yes" "$(bash "$SCRIPT" --help 2>&1)" "help documents explicit non-interactive confirmation"
@@ -1653,6 +1653,123 @@ PY
   JSON_OUTPUT=false
 }
 
+
+test_bootstrap_installer() {
+  local installer="\${PROJECT_DIR}/install.sh"
+  local fixture_root fake_bin fixture_script args_file output_file output
+  local code=0
+
+  if [[ ! -f "$installer" ]]; then
+    assert_equal "present" "missing" "bootstrap installer exists"
+    return
+  fi
+  assert_equal "present" "present" "bootstrap installer exists"
+
+  code=0
+  bash -n "$installer" >/dev/null 2>&1 || code=$?
+  assert_exit_code 0 "$code" "bootstrap installer passes Bash syntax validation"
+
+  output="$(cat "$installer")"
+  assert_contains "/releases/latest/download/" "$output" "bootstrap downloads the latest stable release"
+  assert_contains "sha256sum" "$output" "bootstrap verifies the release checksum"
+  assert_contains "sudo bash" "$output" "bootstrap elevates the application through sudo"
+
+  fixture_root="$(mktemp -d "\${TMPDIR:-/tmp}/lpsm-bootstrap-test.XXXXXX")"
+  fake_bin="\${fixture_root}/bin"
+  fixture_script="\${fixture_root}/linux-package-source-manager.sh"
+  args_file="\${fixture_root}/arguments.txt"
+  output_file="\${fixture_root}/installer-output.txt"
+  mkdir -p "$fake_bin" "\${fixture_root}/tmp"
+
+  cat > "$fixture_script" <<'FIXTURE'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$LPSM_BOOTSTRAP_TEST_ARGS"
+FIXTURE
+  chmod 755 "$fixture_script"
+  (
+    cd "$fixture_root"
+    sha256sum linux-package-source-manager.sh > linux-package-source-manager.sh.sha256
+  )
+
+  cat > "\${fake_bin}/curl" <<'CURL_STUB'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+destination=""
+url=""
+while (($#)); do
+  case "$1" in
+  -o)
+    destination="\${2:?}"
+    shift 2
+    ;;
+  *)
+    url="$1"
+    shift
+    ;;
+  esac
+done
+[[ -n "$destination" && -n "$url" ]]
+case "$url" in
+https://github.com/power0matin/linux-package-source-manager/releases/latest/download/linux-package-source-manager.sh)
+  cp "$LPSM_BOOTSTRAP_TEST_FIXTURES/linux-package-source-manager.sh" "$destination"
+  [[ "\${LPSM_BOOTSTRAP_TEST_CORRUPT:-0}" != "1" ]] || printf 'tampered\n' >> "$destination"
+  ;;
+https://github.com/power0matin/linux-package-source-manager/releases/latest/download/linux-package-source-manager.sh.sha256)
+  cp "$LPSM_BOOTSTRAP_TEST_FIXTURES/linux-package-source-manager.sh.sha256" "$destination"
+  ;;
+*)
+  exit 97
+  ;;
+esac
+CURL_STUB
+  cat > "\${fake_bin}/sudo" <<'SUDO_STUB'
+#!/usr/bin/env bash
+exec "$@"
+SUDO_STUB
+  chmod 755 "\${fake_bin}/curl" "\${fake_bin}/sudo"
+
+  if env PATH="\${fake_bin}:\${PATH}" \
+    LPSM_BOOTSTRAP_TEST_FIXTURES="$fixture_root" \
+    LPSM_BOOTSTRAP_TEST_ARGS="$args_file" \
+    TMPDIR="\${fixture_root}/tmp" \
+    bash "$installer" >"$output_file" 2>&1; then
+    code=0
+  else
+    code=$?
+  fi
+  assert_exit_code 0 "$code" "bootstrap downloads and launches the release offline"
+  assert_file_contains "$args_file" "--menu" "bootstrap opens the interactive menu by default"
+
+  rm -f "$args_file"
+  if env PATH="\${fake_bin}:\${PATH}" \
+    LPSM_BOOTSTRAP_TEST_FIXTURES="$fixture_root" \
+    LPSM_BOOTSTRAP_TEST_ARGS="$args_file" \
+    LPSM_BOOTSTRAP_TEST_CORRUPT=1 \
+    TMPDIR="\${fixture_root}/tmp" \
+    bash "$installer" >"$output_file" 2>&1; then
+    code=0
+  else
+    code=$?
+  fi
+  assert_exit_code 1 "$code" "bootstrap rejects a checksum mismatch"
+  if [[ -e "$args_file" ]]; then
+    code=1
+  else
+    code=0
+  fi
+  assert_exit_code 0 "$code" "bootstrap never executes an unverified script"
+
+  if [[ -n "$(find "\${fixture_root}/tmp" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+    code=1
+  else
+    code=0
+  fi
+  assert_exit_code 0 "$code" "bootstrap removes its temporary working directory"
+
+  rm -rf -- "$fixture_root"
+}
+
+
 _run_test_group() {
   local current="$1" total="$2" label="$3" test_function="$4"
   local started="$SECONDS" elapsed eta=0
@@ -1680,7 +1797,8 @@ main() {
   _run_test_group 6 9 "Mirror benchmark and read-only safety" test_benchmark_selection_and_read_only_safety
   _run_test_group 7 9 "Python package source manager" test_python_manager_safety
   _run_test_group 8 9 "Node.js registry manager" test_node_manager_safety
-  _run_test_group 9 9 "Docker / OCI manager" test_docker_manager_safety
+  _run_test_group 9 10 "Docker / OCI manager" test_docker_manager_safety
+  _run_test_group 10 10 "Release bootstrap installer" test_bootstrap_installer
   printf '\nResults: %d passed, %d failed, %d total\n' "$_tests_passed" "$_tests_failed" "$_tests_run"
   [[ "$_tests_failed" -eq 0 ]]
 }

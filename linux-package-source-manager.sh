@@ -5,10 +5,10 @@
 # Author  : Matin Shahabadi
 # GitHub  : https://github.com/power0matin/linux-package-source-manager
 # License : MIT
-# Version : 3.0.4
+# Version : 3.0.5
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/linux-package-source-manager.sh | sudo bash -s -- --yes
+#   bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
 #   sudo bash linux-package-source-manager.sh [OPTIONS]
 #
 # Run with --help for full usage information.
@@ -19,7 +19,7 @@ IFS=$'\n\t'
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 readonly APP_NAME="Linux Package Source Manager"
-readonly APP_VERSION="3.0.4"
+readonly APP_VERSION="3.0.5"
 readonly APP_SLUG="power-apt-boost"
 readonly APP_AUTHOR="Matin Shahabadi"
 readonly APP_GITHUB="https://github.com/power0matin/linux-package-source-manager"

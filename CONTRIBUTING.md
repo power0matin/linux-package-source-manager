@@ -134,7 +134,7 @@ shfmt -w linux-package-source-manager.sh install.sh tests/test_installer.sh
 - Use section headers for major code blocks:
 
 ```bash
-# ─── Section Name ─────────────────────────────────────────────
+# === Section Name ===========================================================
 ```
 
 ### Naming Conventions
@@ -176,20 +176,20 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) format:
 
 ```
 linux-package-source-manager/
-├── linux-package-source-manager.sh      # Main single-file application
-├── install.sh                            # Version-pinned verified bootstrap
-├── tests/                                # Offline regression and installer tests
-├── .github/                 # GitHub CI/CD and templates
-├── README.md
-├── CHANGELOG.md
-├── CONTRIBUTING.md
-├── SECURITY.md
-├── LICENSE
-├── .editorconfig
-├── .shellcheckrc
-├── .markdownlint.json
-├── .gitignore
-└── .gitattributes
+|-- linux-package-source-manager.sh      # Main single-file application
+|-- install.sh                            # Version-pinned verified bootstrap
+|-- tests/                                # Offline regression and installer tests
+|-- .github/                 # GitHub CI/CD and templates
+|-- README.md
+|-- CHANGELOG.md
+|-- CONTRIBUTING.md
+|-- SECURITY.md
+|-- LICENSE
+|-- .editorconfig
+|-- .shellcheckrc
+|-- .markdownlint.json
+|-- .gitignore
+\-- .gitattributes
 ```
 
 ## Architecture Decisions

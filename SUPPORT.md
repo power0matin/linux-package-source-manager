@@ -10,6 +10,22 @@
 
 ### Common Issues
 
+### Open the interactive menu on a new server
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
+```
+
+The bootstrap is pinned to the current release, verifies the downloaded application with its SHA-256 checksum, and requests `sudo` authorization when needed. The one-line command requires Bash and curl; the bootstrap also uses `sha256sum` and a private temporary directory.
+
+### Bootstrap reports a download or checksum error
+
+- Check that the server can reach GitHub Releases over HTTPS.
+- Do not bypass a checksum failure or run a partially downloaded script.
+- Confirm that the release includes `linux-package-source-manager.sh` and `linux-package-source-manager.sh.sha256`.
+- Use the [manual, checksum-verified installation steps](README.md#manual-installation-from-a-pinned-release) when needed.
+
+
 #### "This script must be run as root"
 
 ```bash

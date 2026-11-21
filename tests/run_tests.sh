@@ -73,7 +73,7 @@ cleanup() {
 trap cleanup EXIT
 
 test_cli() {
-  local output code banner_source logo_source
+  local output code banner_source logo_source terminal_source
   banner_source="$(sed -n '/^_print_banner() {/,/^}/p' "$SCRIPT")"
   assert_contains "LINUX PACKAGE SOURCE MANAGER" "$banner_source" "terminal banner displays the product name"
   assert_contains "APT | PyPI | npm | pnpm | Yarn | Docker / OCI" "$banner_source" "terminal banner lists supported ecosystems"
@@ -83,9 +83,31 @@ test_cli() {
     assert_equal "ASCII-only" "ASCII-only" "terminal banner uses ASCII-safe characters"
   fi
 
+  terminal_source="$(
+    sed -n \
+      -e '/^_start_spinner() {/,/^}/p' \
+      -e '/^_print_progress_bar() {/,/^}/p' \
+      -e '/^_print_divider() {/,/^}/p' \
+      -e '/^_print_section_header() {/,/^}/p' \
+      -e '/^need_root() {/,/^}/p' \
+      -e '/^_test_mirror() {/,/^}/p' \
+      -e '/^_print_summary() {/,/^}/p' \
+      -e '/^_print_status_report() {/,/^}/p' \
+      -e '/^_doctor_report() {/,/^}/p' \
+      "$SCRIPT"
+  )"
+  if LC_ALL=C grep -q '[^ -~]' <<<"$terminal_source"; then
+    assert_equal "ASCII-only" "contains non-ASCII" "SSH terminal UI uses ASCII-safe characters"
+  else
+    assert_equal "ASCII-only" "ASCII-only" "SSH terminal UI uses ASCII-safe characters"
+  fi
+
   logo_source="$(sed -n '/<pre align="center">/,/<\/pre>/p' "$PROJECT_DIR/README.md")"
-  assert_contains "L   P P P   S S S   M   M" "$logo_source" "README includes the LPSM monogram"
-  assert_contains "L L L       S S S   M   M" "$logo_source" "README monogram has its complete final row"
+  assert_contains "L       PPPP    SSSS    M   M" "$logo_source" "README includes the aligned LPSM monogram"
+  assert_contains "L       P   P   S       MM MM" "$logo_source" "README monogram renders the second row"
+  assert_contains "L       PPPP    SSSS    M M M" "$logo_source" "README monogram renders the third row"
+  assert_contains "L       P          S   M   M" "$logo_source" "README monogram renders the fourth row"
+  assert_contains "LLLLL   P       SSSS    M   M" "$logo_source" "README monogram renders the final row"
   readme_source="$(cat "$PROJECT_DIR/README.md")"
   assert_contains "bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)" "$readme_source" "README documents the recommended bootstrap"
   assert_contains "sha256sum -c linux-package-source-manager.sh.sha256" "$readme_source" "README documents checksum verification"

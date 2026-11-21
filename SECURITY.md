@@ -137,5 +137,5 @@ The `main` branch may contain changes that have not been published as a tagged r
 4. **Verify the downloaded application** against the checksum published with the pinned release. A checksum confirms that the files match each other; it is not a detached signature and does not independently authenticate the publisher:
 
    ```bash
-   sha256sum linux-package-source-manager.sh
+   sha256sum -c linux-package-source-manager.sh.sha256
    ```

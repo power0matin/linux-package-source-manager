@@ -10,7 +10,8 @@ pass() { printf 'PASS %s\n' "$*"; }
 bash -n "$INSTALLER" || fail "installer syntax"
 grep -Fq 'readonly VERSION="v3.0.5"' "$INSTALLER" || fail "pinned version"
 grep -Fq 'sha256sum --check --status' "$INSTALLER" || fail "checksum verification"
-grep -Fq "sudo bash \"${TMP_DIR}/${SCRIPT_NAME}\" \"\$@\"" "$INSTALLER" || fail "sudo execution"
+expected_command="sudo bash \"\${TMP_DIR}/\${SCRIPT_NAME}\" \"\$@\""
+grep -Fq "$expected_command" "$INSTALLER" || fail "sudo execution"
 pass "installer syntax and safety guards"
 
 mkdir -p "$TEST_DIR/bin" "$TEST_DIR/fixture"

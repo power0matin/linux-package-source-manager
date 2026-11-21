@@ -32,7 +32,7 @@ Send an email to the maintainer with:
 
 ### Scope
 
-This policy covers the `install.sh` bootstrap, the `linux-package-source-manager.sh` application, their release workflow, and their direct behavior. The following are out of scope:
+This policy covers the `install.sh` bootstrap, the `src/linux-package-source-manager.sh` application, their release workflow, and their direct behavior. The following are out of scope:
 
 - Bugs in third-party tools (curl, wget, apt)
 - Issues in Ubuntu itself
@@ -119,7 +119,7 @@ The `main` branch may contain changes that have not been published as a tagged r
 
    ```bash
    curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh | less
-   curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.6/linux-package-source-manager.sh | less
+   curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.6/src/linux-package-source-manager.sh | less
    ```
 
 2. **Use `--dry-run` first** to see what would change:

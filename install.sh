@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Linux Package Source Manager — verified one-line bootstrap
-# Usage: bash <(curl -Ls https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
+# Usage: bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
 #
 set -Eeuo pipefail
 

@@ -20,12 +20,15 @@ command -v bash >/dev/null 2>&1 || fail "bash is required."
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/lpsm.XXXXXXXX")"
 cleanup() { rm -rf -- "$TMP_DIR"; }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 download() {
   local url="$1" destination="$2"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSLo "$destination" "$url"
+    curl -fsSL -o "$destination" "$url"
   elif command -v wget >/dev/null 2>&1; then
     wget -qO "$destination" "$url"
   else
@@ -44,7 +47,7 @@ download "${BASE_URL}/${CHECKSUM_NAME}" "${TMP_DIR}/${CHECKSUM_NAME}" ||
 bash -n "${TMP_DIR}/${SCRIPT_NAME}" ||
   fail "Downloaded release script failed Bash syntax validation."
 
-if (( EUID == 0 )); then
+if ((EUID == 0)); then
   bash "${TMP_DIR}/${SCRIPT_NAME}" "$@"
 else
   command -v sudo >/dev/null 2>&1 || fail "Run as root or install sudo."

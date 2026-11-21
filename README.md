@@ -1,11 +1,11 @@
 <h1 align="center">Linux Package Source Manager</h1>
 
 <pre align="center">
-L   P P P   S S S   M   M
-L   P   P   S       MM MM
-L   P P P   S S     M M M
-L   P       S   S   M   M
-L L L       S S S   M   M
+L       PPPP    SSSS    M   M
+L       P   P   S       MM MM
+L       PPPP    SSSS    M M M
+L       P          S   M   M
+LLLLL   P       SSSS    M   M
 </pre>
 
 <!-- repo-badges:start -->

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- Added a custom SVG brand lockup and square icon for the repository and README.
+
 ### Fixed
 
 - Replaced Unicode terminal separators, borders, spinner and progress glyphs with ASCII-safe output for SSH compatibility.

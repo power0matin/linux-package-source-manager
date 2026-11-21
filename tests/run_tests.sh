@@ -109,6 +109,9 @@ test_cli() {
     assert_equal "monogram absent" "monogram absent" "README does not include the removed ASCII monogram"
   fi
   assert_contains "bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)" "$readme_source" "README documents the recommended bootstrap"
+  assert_contains "assets/logo.svg" "$readme_source" "README displays the LPSM logo"
+  assert_file_contains "$PROJECT_DIR/assets/logo.svg" "Linux Package Source Manager" "horizontal LPSM logo asset exists"
+  assert_file_contains "$PROJECT_DIR/assets/icon.svg" "package cube" "square LPSM icon asset exists"
   assert_contains "sha256sum -c linux-package-source-manager.sh.sha256" "$readme_source" "README documents checksum verification"
 
   output="$(bash "$SCRIPT" --help 2>&1)"

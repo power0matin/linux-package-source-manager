@@ -1,5 +1,9 @@
 <h1 align="center">Linux Package Source Manager</h1>
 
+<p align="center">
+  <img src="assets/logo.svg" alt="LPSM - Linux Package Source Manager" width="720">
+</p>
+
 <!-- repo-badges:start -->
 <p align="center">
   <a href="https://hits.sh/github.com/power0matin/linux-package-source-manager/"><img src="https://hits.sh/github.com/power0matin/linux-package-source-manager.svg?style=flat-square&amp;label=Views&amp;labelColor=18181B&amp;color=0EA5E9&amp;logo=github" alt="Repository Views"/></a>

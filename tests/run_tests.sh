@@ -73,7 +73,7 @@ cleanup() {
 trap cleanup EXIT
 
 test_cli() {
-  local output code banner_source terminal_source readme_source
+  local output code banner_source terminal_source readme_source logo_asset_state icon_asset_state
   banner_source="$(sed -n '/^_print_banner() {/,/^}/p' "$SCRIPT")"
   assert_contains "LINUX PACKAGE SOURCE MANAGER" "$banner_source" "terminal banner displays the product name"
   assert_contains "APT | PyPI | npm | pnpm | Yarn | Docker / OCI" "$banner_source" "terminal banner lists supported ecosystems"
@@ -109,9 +109,11 @@ test_cli() {
     assert_equal "monogram absent" "monogram absent" "README does not include the removed ASCII monogram"
   fi
   assert_contains "bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)" "$readme_source" "README documents the recommended bootstrap"
-  assert_contains "assets/logo.svg" "$readme_source" "README displays the LPSM logo"
-  assert_file_contains "$PROJECT_DIR/assets/logo.svg" "Linux Package Source Manager" "horizontal LPSM logo asset exists"
-  assert_file_contains "$PROJECT_DIR/assets/icon.svg" "package cube" "square LPSM icon asset exists"
+  assert_contains "assets/logo.png" "$readme_source" "README displays the Tux LPSM logo"
+  [[ -s "$PROJECT_DIR/assets/logo.png" ]] && logo_asset_state="present" || logo_asset_state="missing"
+  assert_equal "present" "$logo_asset_state" "Tux LPSM logo asset exists"
+  [[ -s "$PROJECT_DIR/assets/icon.png" ]] && icon_asset_state="present" || icon_asset_state="missing"
+  assert_equal "present" "$icon_asset_state" "Tux LPSM square icon asset exists"
   assert_contains "sha256sum -c linux-package-source-manager.sh.sha256" "$readme_source" "README documents checksum verification"
 
   output="$(bash "$SCRIPT" --help 2>&1)"

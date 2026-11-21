@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- Added a custom SVG brand lockup and square icon for the repository and README.
+- Added the Tux penguin PNG brand logo and matching square icon for the repository and README.
 
 ### Fixed
 

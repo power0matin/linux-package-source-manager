@@ -24,11 +24,11 @@ jobs:
           sudo chmod +x /usr/local/bin/shfmt
       - name: Run ShellCheck
         run: |
-          shellcheck -x linux-package-source-manager.sh
+          shellcheck -x linux-package-source-manager.sh install.sh
           shellcheck -x -e SC2034,SC2329 tests/run_tests.sh
       - name: Check shfmt formatting
         run: |
-          shfmt -d linux-package-source-manager.sh
+          shfmt -d linux-package-source-manager.sh install.sh
           shfmt -d tests/run_tests.sh
 
   test:
@@ -118,11 +118,12 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "Linux Package Source Manager ${{ steps.version.outputs.tag }}"
+          name: "${{ steps.version.outputs.tag }}"
           body_path: RELEASE_BODY.md
           files: |
             linux-package-source-manager.sh
             linux-package-source-manager.sh.sha256
+            install.sh
           draft: false
           prerelease: false
           fail_on_unmatched_files: true

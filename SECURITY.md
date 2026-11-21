@@ -125,7 +125,7 @@ The `main` branch may contain changes that have not been published as a tagged r
 2. **Use `--dry-run` first** to see what would change:
 
    ```bash
-   curl -fsSL URL | sudo bash -s -- --dry-run
+   bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh) --dry-run
    ```
 
 3. **Check backups** after running:

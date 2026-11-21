@@ -354,7 +354,7 @@ _print_section_header() {
   echo "" >&2
   _print_divider "-" 60 >&2
   printf "  ${COLOR_BOLD}${COLOR_CYAN}%s${COLOR_RESET}\n" "$title" >&2
-  _print_divider "─" 60 >&2
+  _print_divider "-" 60 >&2
   echo "" >&2
 }
 
@@ -4335,7 +4335,7 @@ ${COLOR_BOLD}------------------------------------------------------------${COLOR
   Response time:   ${COLOR_BOLD}${SELECTED_TIME}s${COLOR_RESET}
 
   ${COLOR_DIM}No system changes were made.${COLOR_RESET}
-${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+${COLOR_BOLD}------------------------------------------------------------${COLOR_RESET}
 
 EOF
     return
@@ -4343,7 +4343,7 @@ EOF
 
   cat <<EOF
 
-${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+${COLOR_BOLD}------------------------------------------------------------${COLOR_RESET}
   ${COLOR_GREEN}${COLOR_BOLD}SUCCESS - APT mirror optimized${COLOR_RESET}
 
   ${COLOR_BOLD}Mirror:${COLOR_RESET}  ${SELECTED_MIRROR}
@@ -4356,7 +4356,7 @@ ${COLOR_BOLD}══════════════════════�
   ${COLOR_DIM}To undo:${COLOR_RESET}
     ${COLOR_CYAN}sudo bash ${_SCRIPT_NAME} --restore${COLOR_RESET}
 
-${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+${COLOR_BOLD}------------------------------------------------------------${COLOR_RESET}
 
 EOF
 }

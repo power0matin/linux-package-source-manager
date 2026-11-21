@@ -5,7 +5,7 @@
 # Author  : Matin Shahabadi
 # GitHub  : https://github.com/power0matin/linux-package-source-manager
 # License : MIT
-# Version : 3.0.3
+# Version : 3.0.4
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/linux-package-source-manager.sh | sudo bash -s -- --yes
@@ -19,7 +19,7 @@ IFS=$'\n\t'
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 readonly APP_NAME="Linux Package Source Manager"
-readonly APP_VERSION="3.0.3"
+readonly APP_VERSION="3.0.4"
 readonly APP_SLUG="power-apt-boost"
 readonly APP_AUTHOR="Matin Shahabadi"
 readonly APP_GITHUB="https://github.com/power0matin/linux-package-source-manager"
@@ -4363,19 +4363,13 @@ EOF
 
 _print_banner() {
   if [[ "$QUIET" == true || "$JSON_OUTPUT" == true ]]; then return; fi
-  cat <<'EOF'
-
-██████   ██████  ██     ██ ███████ ██████       █████  ██████  ████████     ██████   ██████   ██████  ███████ ████████ 
-██   ██ ██    ██ ██     ██ ██      ██   ██     ██   ██ ██   ██    ██        ██   ██ ██    ██ ██    ██ ██         ██    
-██████  ██    ██ ██  █  ██ █████   ██████      ███████ ██████     ██        ██████  ██    ██ ██    ██ ███████    ██    
-██      ██    ██ ██ ███ ██ ██      ██   ██     ██   ██ ██         ██        ██   ██ ██    ██ ██    ██      ██    ██    
-██       ██████   ███ ███  ███████ ██   ██     ██   ██ ██         ██        ██████   ██████   ██████  ███████    ██    
-                                                                                                                       
-                                                                                                                       
+  cat <<'EOF' >&2
+----------------------------------------------------
+ LINUX PACKAGE SOURCE MANAGER
+ APT | PyPI | npm | pnpm | Yarn | Docker / OCI
+----------------------------------------------------
 EOF
-  echo "" >&2
-  printf '%b\n' "  ${COLOR_DIM}Ubuntu-first Linux package source and mirror manager${COLOR_RESET}" >&2
-  printf '%b\n' "  ${COLOR_DIM}v${APP_VERSION} · ${APP_LICENSE} · ${APP_AUTHOR}${COLOR_RESET}" >&2
+  printf '%b\n' "  ${COLOR_DIM}v${APP_VERSION} | ${APP_LICENSE} | ${APP_AUTHOR}${COLOR_RESET}" >&2
   printf '%b\n' "  ${COLOR_DIM}${APP_GITHUB}${COLOR_RESET}" >&2
   echo "" >&2
 }

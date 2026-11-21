@@ -73,7 +73,19 @@ cleanup() {
 trap cleanup EXIT
 
 test_cli() {
-  local output code
+  local output code banner_source logo_source
+  banner_source="$(sed -n '/^_print_banner() {/,/^}/p' "$SCRIPT")"
+  assert_contains "LINUX PACKAGE SOURCE MANAGER" "$banner_source" "terminal banner displays the product name"
+  assert_contains "APT | PyPI | npm | pnpm | Yarn | Docker / OCI" "$banner_source" "terminal banner lists supported ecosystems"
+  if LC_ALL=C grep -q '[^ -~]' <<<"$banner_source"; then
+    assert_equal "ASCII-only" "contains non-ASCII" "terminal banner uses ASCII-safe characters"
+  else
+    assert_equal "ASCII-only" "ASCII-only" "terminal banner uses ASCII-safe characters"
+  fi
+
+  logo_source="$(sed -n '/<pre align="center">/,/<\/pre>/p' "$PROJECT_DIR/README.md")"
+  assert_contains "L   P P P   S S S   M   M" "$logo_source" "README includes the LPSM monogram"
+  assert_contains "L L L       S S S   M   M" "$logo_source" "README monogram has its complete final row"
   output="$(bash "$SCRIPT" --help 2>&1)"
   assert_contains "Linux Package Source Manager" "$output" "help displays product name"
   assert_contains "https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/linux-package-source-manager.sh" "$output" "help prints a valid install URL"
@@ -81,7 +93,7 @@ test_cli() {
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"
-  assert_contains "3.0.3" "$output" "version matches script version"
+  assert_contains "3.0.4" "$output" "version matches script version"
   assert_contains "--menu" "$(bash "$SCRIPT" --help 2>&1)" "help documents interactive menu"
   assert_contains "--doctor" "$(bash "$SCRIPT" --help 2>&1)" "help documents doctor command"
   assert_contains "--yes" "$(bash "$SCRIPT" --help 2>&1)" "help documents explicit non-interactive confirmation"

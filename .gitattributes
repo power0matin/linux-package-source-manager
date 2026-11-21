@@ -13,7 +13,7 @@ LICENSE text eol=lf
 CONTRIBUTING.md text eol=lf
 SECURITY.md text eol=lf
 CODE_OF_CONDUCT.md text eol=lf
-ROADMAP.md text eol=lf
+docs/ROADMAP.md text eol=lf
 
 # Binary files
 *.png binary

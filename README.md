@@ -23,7 +23,7 @@ Ubuntu-first Linux package source and mirror manager for APT, Python, Node.js, a
 
 Linux Package Source Manager is an Ubuntu-first Linux package source and mirror manager for servers and developer environments. It currently supports Ubuntu APT mirrors, Python indexes for pip, uv and Poetry, Node.js registries for npm, pnpm and Yarn, and Docker/OCI registry mirrors. It provides interactive terminal workflows, read-only diagnostics, safe previews, validated snapshots and conflict-aware restore.
 
-> **Current source version:** `v3.0.6`. The standalone release artifact is `linux-package-source-manager.sh`. Releases through `v3.0.2` retain the historical `power-apt-boost.sh` asset; internal configuration and backup identifiers remain unchanged. The stable bootstrap is `install.sh`; it downloads and verifies the pinned release.
+> **Current source version:** `v3.0.6`. The tracked application source lives at `src/linux-package-source-manager.sh`; the published standalone release asset keeps the filename `linux-package-source-manager.sh`. Releases through `v3.0.2` retain the historical `power-apt-boost.sh` asset; internal configuration and backup identifiers remain unchanged. The stable bootstrap is `install.sh`; it downloads and verifies the pinned release.
 
 ## Quick Start
 
@@ -51,7 +51,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-so
 Preview a mirror change without modifying APT configuration:
 
 ```bash
-sudo bash linux-package-source-manager.sh --dry-run
+sudo bash src/linux-package-source-manager.sh --dry-run
 ```
 
 The bootstrap is a launcher only. It does not install a daemon, create a systemd unit, or add a scheduled task.
@@ -131,7 +131,7 @@ For a source checkout instead:
 git clone https://github.com/power0matin/linux-package-source-manager.git
 cd linux-package-source-manager
 git checkout v3.0.6
-sudo bash linux-package-source-manager.sh --menu
+sudo bash src/linux-package-source-manager.sh --menu
 ```
 
 ### Inspect the bootstrap before execution
@@ -176,7 +176,7 @@ Only eligible mirrors are ranked. Benchmark workers are bounded to 1–8 and tra
 Run without arguments in a terminal:
 
 ```bash
-sudo bash linux-package-source-manager.sh
+sudo bash src/linux-package-source-manager.sh
 ```
 
 The menu provides Overview, APT management, Benchmark, Backup/Restore, Diagnostics and session Settings. It always renders numbered options directly in the current SSH terminal; users select actions with numbers. The screen is cleared only when a new menu is shown, while operation output remains visible until the user presses Enter to continue. No `whiptail` or additional dialog package is required.
@@ -184,10 +184,10 @@ The menu provides Overview, APT management, Benchmark, Backup/Restore, Diagnosti
 ### Read-only status and diagnostics
 
 ```bash
-sudo bash linux-package-source-manager.sh --status
-sudo bash linux-package-source-manager.sh --doctor
-sudo bash linux-package-source-manager.sh --status --json
-sudo bash linux-package-source-manager.sh --doctor --json
+sudo bash src/linux-package-source-manager.sh --status
+sudo bash src/linux-package-source-manager.sh --doctor
+sudo bash src/linux-package-source-manager.sh --status --json
+sudo bash src/linux-package-source-manager.sh --doctor --json
 ```
 
 `--status` reports the detected OS, APT source files, current managed mirror and available backups. `--doctor` checks local dependencies, permissions, the Ubuntu archive keyring and backup visibility. These commands do not change the system.
@@ -199,21 +199,21 @@ Python package-source commands do not require root for user or project scopes. T
 Inspect detected tools and pip index scopes:
 
 ```bash
-bash linux-package-source-manager.sh --python-status
-bash linux-package-source-manager.sh --python-status --json
+bash src/linux-package-source-manager.sh --python-status
+bash src/linux-package-source-manager.sh --python-status --json
 ```
 
 Test a PyPI-compatible Simple API endpoint without installing a package. The check reads the `pip` project metadata and verifies one advertised distribution endpoint:
 
 ```bash
-bash linux-package-source-manager.sh --python-test-index https://pypi.org/simple/
+bash src/linux-package-source-manager.sh --python-test-index https://pypi.org/simple/
 ```
 
 Preview and then configure the pip user index:
 
 ```bash
-bash linux-package-source-manager.sh --python-set-index https://pypi.org/simple/ --python-client pip --python-scope user --dry-run
-bash linux-package-source-manager.sh --python-set-index https://pypi.org/simple/ --python-client pip --python-scope user
+bash src/linux-package-source-manager.sh --python-set-index https://pypi.org/simple/ --python-client pip --python-scope user --dry-run
+bash src/linux-package-source-manager.sh --python-set-index https://pypi.org/simple/ --python-client pip --python-scope user
 ```
 
 For an active virtual environment, use `--python-scope site`; `auto` selects the active venv when present and otherwise selects user scope. The global scope requires root and is blocked when PEP 668 marks the interpreter as externally managed.
@@ -221,14 +221,14 @@ For an active virtual environment, use `--python-scope site`; `auto` selects the
 Configure uv in user or project scope:
 
 ```bash
-bash linux-package-source-manager.sh --python-set-index https://pypi.org/simple/ --python-client uv --python-scope user --dry-run
-bash linux-package-source-manager.sh --python-set-index https://pypi.org/simple/ --python-client uv --python-scope project --python-project pyproject.toml --dry-run
+bash src/linux-package-source-manager.sh --python-set-index https://pypi.org/simple/ --python-client uv --python-scope user --dry-run
+bash src/linux-package-source-manager.sh --python-set-index https://pypi.org/simple/ --python-client uv --python-scope project --python-project pyproject.toml --dry-run
 ```
 
 Add a Poetry source to a project file. Supplemental is the default and preserves the implicit PyPI source:
 
 ```bash
-bash linux-package-source-manager.sh --python-set-index https://pypi.org/simple/ --python-client poetry --python-scope project --python-project pyproject.toml --python-priority supplemental --dry-run
+bash src/linux-package-source-manager.sh --python-set-index https://pypi.org/simple/ --python-client poetry --python-scope project --python-project pyproject.toml --python-priority supplemental --dry-run
 ```
 
 Poetry `primary` sources disable implicit PyPI; `explicit` sources require package-specific source pins. The tool never edits those dependency pins. Existing private sources and project index declarations are preserved; a duplicate source name or an existing uv default index causes a safe refusal.
@@ -236,9 +236,9 @@ Poetry `primary` sources disable implicit PyPI; `explicit` sources require packa
 Reset only a source managed by Linux Package Source Manager, or restore a snapshot after checking that the target has not changed since the snapshot:
 
 ```bash
-bash linux-package-source-manager.sh --python-reset-index --python-client pip --python-scope user
-bash linux-package-source-manager.sh --python-reset-index --python-client uv --python-scope project --python-project pyproject.toml
-bash linux-package-source-manager.sh --python-restore /path/to/python/snapshot
+bash src/linux-package-source-manager.sh --python-reset-index --python-client pip --python-scope user
+bash src/linux-package-source-manager.sh --python-reset-index --python-client uv --python-scope project --python-project pyproject.toml
+bash src/linux-package-source-manager.sh --python-restore /path/to/python/snapshot
 ```
 
 uv and Poetry editing requires Python 3.11+ (`tomllib`) or an already-installed `tomli` module. No TOML parser or package manager is installed automatically. pipx is included in tool detection only; this phase deliberately does not rewrite the separate virtual environments managed by pipx.
@@ -251,28 +251,28 @@ Node.js registry operations do not require root. Linux Package Source Manager de
 Inspect the available tools and effective registry hosts:
 
 ```bash
-bash linux-package-source-manager.sh --node-status
-bash linux-package-source-manager.sh --node-status --json
+bash src/linux-package-source-manager.sh --node-status
+bash src/linux-package-source-manager.sh --node-status --json
 ```
 
 Test an npm-compatible registry using package metadata and a HEAD request to the advertised tarball URL. The check does not download the archive:
 
 ```bash
-bash linux-package-source-manager.sh --node-test-registry https://registry.npmjs.org/
-bash linux-package-source-manager.sh --node-test-registry https://registry.npmjs.org/ --node-test-package @acme/example
+bash src/linux-package-source-manager.sh --node-test-registry https://registry.npmjs.org/
+bash src/linux-package-source-manager.sh --node-test-registry https://registry.npmjs.org/ --node-test-package @acme/example
 ```
 
 Preview and then configure the user-level registry:
 
 ```bash
-bash linux-package-source-manager.sh --node-set-registry https://registry.npmjs.org/ --node-client npm --dry-run
-bash linux-package-source-manager.sh --node-set-registry https://registry.npmjs.org/ --node-client npm --yes
+bash src/linux-package-source-manager.sh --node-set-registry https://registry.npmjs.org/ --node-client npm --dry-run
+bash src/linux-package-source-manager.sh --node-set-registry https://registry.npmjs.org/ --node-client npm --yes
 ```
 
 The default scope is the selected package manager's user configuration. Project configuration is opt-in and requires both --node-scope project and an explicit directory containing package.json:
 
 ```bash
-bash linux-package-source-manager.sh --node-set-registry https://registry.npmjs.org/ \\
+bash src/linux-package-source-manager.sh --node-set-registry https://registry.npmjs.org/ \\
   --node-client pnpm --node-scope project --node-project /path/to/project --dry-run
 ```
 
@@ -281,8 +281,8 @@ Only the default fetch-registry key is changed. Existing scoped registries, auth
 Reset only the app-managed setting or restore a snapshot after checking for external edits:
 
 ```bash
-bash linux-package-source-manager.sh --node-reset-registry --node-client npm --yes
-bash linux-package-source-manager.sh --node-restore /path/to/nodejs/snapshot
+bash src/linux-package-source-manager.sh --node-reset-registry --node-client npm --yes
+bash src/linux-package-source-manager.sh --node-restore /path/to/nodejs/snapshot
 ```
 
 Node.js registry URLs must use HTTPS and cannot contain embedded credentials, query strings or fragments. Existing environment overrides cause mutating operations to refuse rather than write a configuration that would be shadowed. --yes is required for non-interactive changes; --dry-run previews the target without writing it.
@@ -295,22 +295,22 @@ Linux Package Source Manager treats the Docker Engine **APT repository** and Doc
 Inspect the current setup without changing it:
 
 ```bash
-sudo bash linux-package-source-manager.sh --docker-status
-sudo bash linux-package-source-manager.sh --docker-status --json
-sudo bash linux-package-source-manager.sh --docker-catalog
+sudo bash src/linux-package-source-manager.sh --docker-status
+sudo bash src/linux-package-source-manager.sh --docker-status --json
+sudo bash src/linux-package-source-manager.sh --docker-catalog
 ```
 
 Test an HTTPS Docker Registry V2 endpoint. This sends an unauthenticated `GET /v2/` request only; it does not authenticate, pull an image or download image layers:
 
 ```bash
-sudo bash linux-package-source-manager.sh --docker-test-mirror https://mirror.gcr.io
+sudo bash src/linux-package-source-manager.sh --docker-test-mirror https://mirror.gcr.io
 ```
 
 Preview and configure the Docker daemon mirror list:
 
 ```bash
-sudo bash linux-package-source-manager.sh --docker-set-mirror https://mirror.gcr.io --dry-run
-sudo bash linux-package-source-manager.sh --docker-set-mirror https://mirror.gcr.io --yes
+sudo bash src/linux-package-source-manager.sh --docker-set-mirror https://mirror.gcr.io --dry-run
+sudo bash src/linux-package-source-manager.sh --docker-set-mirror https://mirror.gcr.io --yes
 ```
 
 Configuration merges the selected origin into `/etc/docker/daemon.json` under `registry-mirrors`. Existing JSON settings and mirror entries are preserved. The operation requires an existing `/etc/docker` directory and an installed `dockerd` that accepts `--validate`; malformed JSON, unsupported mirror-list types and invalid daemon configuration are rejected. A restricted snapshot is created before writing, and rollback refuses to overwrite edits made after the change.
@@ -318,14 +318,14 @@ Configuration merges the selected origin into `/etc/docker/daemon.json` under `r
 **The Docker daemon is not restarted by configuration.** Review workload impact, then request a separate restart:
 
 ```bash
-sudo bash linux-package-source-manager.sh --docker-restart
+sudo bash src/linux-package-source-manager.sh --docker-restart
 ```
 
 The restart command requires a separate confirmation and only operates on an already-active Docker systemd service. A restart can interrupt running workloads. To restore the previous configuration without restarting Docker:
 
 ```bash
-sudo bash linux-package-source-manager.sh --docker-reset-mirror
-sudo bash linux-package-source-manager.sh --docker-restore /var/backups/power-apt-boost/docker/snapshot.xxxxxxxx
+sudo bash src/linux-package-source-manager.sh --docker-reset-mirror
+sudo bash src/linux-package-source-manager.sh --docker-restore /var/backups/power-apt-boost/docker/snapshot.xxxxxxxx
 ```
 
 The built-in `mirror.gcr.io` candidate is Google's cache of frequently requested public Docker Hub images, not a complete mirror. A cache miss may fall back to Docker Hub. Passing a Registry V2 endpoint probe confirms protocol compatibility only; it does not prove that an arbitrary endpoint is configured as a pull-through cache.
@@ -335,7 +335,7 @@ References: [Docker daemon configuration and validation](https://docs.docker.com
 ### Apply a mirror
 
 ```bash
-sudo bash linux-package-source-manager.sh --mirror https://mirror.example.com/ubuntu
+sudo bash src/linux-package-source-manager.sh --mirror https://mirror.example.com/ubuntu
 ```
 
 In a terminal, review the preview and confirm before applying. In a non-interactive session, pass `--yes` explicitly.
@@ -343,13 +343,13 @@ In a terminal, review the preview and confirm before applying. In a non-interact
 ### Test without changing anything
 
 ```bash
-sudo bash linux-package-source-manager.sh --dry-run
+sudo bash src/linux-package-source-manager.sh --dry-run
 ```
 
 ### Restore from backup
 
 ```bash
-sudo bash linux-package-source-manager.sh --restore
+sudo bash src/linux-package-source-manager.sh --restore
 ```
 
 Restore displays the selected snapshot and managed paths before confirmation. Use `--restore-path PATH` to select a specific snapshot.
@@ -357,15 +357,15 @@ Restore displays the selected snapshot and managed paths before confirmation. Us
 ### List and test all mirrors
 
 ```bash
-sudo bash linux-package-source-manager.sh --list
+sudo bash src/linux-package-source-manager.sh --list
 ```
 
 ### Machine-readable output
 
 ```bash
-sudo bash linux-package-source-manager.sh --status --json
-sudo bash linux-package-source-manager.sh --doctor --json
-sudo bash linux-package-source-manager.sh --yes --json
+sudo bash src/linux-package-source-manager.sh --status --json
+sudo bash src/linux-package-source-manager.sh --doctor --json
+sudo bash src/linux-package-source-manager.sh --yes --json
 ```
 
 All JSON reports use schema version 1. `--json` suppresses interactive decoration; list details are written to stderr while its summary report is written to stdout.
@@ -373,13 +373,13 @@ All JSON reports use schema version 1. `--json` suppresses interactive decoratio
 ### Filter mirrors by country
 
 ```bash
-sudo bash linux-package-source-manager.sh --country us
+sudo bash src/linux-package-source-manager.sh --country us
 ```
 
 ### Verbose output for debugging
 
 ```bash
-sudo bash linux-package-source-manager.sh --verbose
+sudo bash src/linux-package-source-manager.sh --verbose
 ```
 
 ## Options
@@ -473,13 +473,13 @@ Legacy snapshots remain readable, but they do not record absent paths and theref
 ### Restore from latest backup
 
 ```bash
-sudo bash linux-package-source-manager.sh --restore
+sudo bash src/linux-package-source-manager.sh --restore
 ```
 
 ### Restore from specific backup
 
 ```bash
-sudo bash linux-package-source-manager.sh --restore-path /var/backups/power-apt-boost/2025-01-01_12-00-00
+sudo bash src/linux-package-source-manager.sh --restore-path /var/backups/power-apt-boost/2025-01-01_12-00-00
 ```
 
 ### Manual restore
@@ -503,8 +503,8 @@ Linux Package Source Manager does not rewrite separate third-party source files.
 ### APT proxy and retry configuration
 
 ```bash
-sudo bash linux-package-source-manager.sh --proxy http://127.0.0.1:3128 --timeout 45 --apt-retries 5
-sudo bash linux-package-source-manager.sh --clear-proxy
+sudo bash src/linux-package-source-manager.sh --proxy http://127.0.0.1:3128 --timeout 45 --apt-retries 5
+sudo bash src/linux-package-source-manager.sh --clear-proxy
 ```
 
 The proxy URL accepts only an HTTP(S) host and optional port. Usernames, passwords, paths, query strings and fragments are rejected; use an APT-supported credential mechanism separately when authentication is required. With no proxy option, an existing proxy directive in the managed file and settings in other APT config files are preserved. `--clear-proxy` explicitly writes `DIRECT`.
@@ -512,8 +512,8 @@ The proxy URL accepts only an HTTP(S) host and optional port. Usernames, passwor
 ### Diagnostics
 
 ```bash
-sudo bash linux-package-source-manager.sh --doctor
-sudo bash linux-package-source-manager.sh --doctor --network-diagnostics
+sudo bash src/linux-package-source-manager.sh --doctor
+sudo bash src/linux-package-source-manager.sh --doctor --network-diagnostics
 ```
 
 The default doctor checks local APT trust prerequisites, suspicious insecure-source overrides, duplicate source records, cached InRelease file age and configured proxy presence. Live DNS and TLS checks run only when `--network-diagnostics` is supplied.
@@ -521,9 +521,9 @@ The default doctor checks local APT trust prerequisites, suspicious insecure-sou
 ### Selective restore and backup cleanup
 
 ```bash
-sudo bash linux-package-source-manager.sh --restore --restore-scope sources
-sudo bash linux-package-source-manager.sh --restore --restore-scope network
-sudo bash linux-package-source-manager.sh --prune-backups 5 --yes
+sudo bash src/linux-package-source-manager.sh --restore --restore-scope sources
+sudo bash src/linux-package-source-manager.sh --restore --restore-scope network
+sudo bash src/linux-package-source-manager.sh --prune-backups 5 --yes
 ```
 
 Restore scope can be `all`, `sources` or `network`. A network-only restore does not run `apt-get update`; source and full restores do. Backup cleanup considers only format-1 snapshots with a valid SHA-256 manifest, retains the requested number of newest snapshots and asks for confirmation. Non-interactive cleanup requires `--yes`. Legacy or invalid snapshots are not deleted by the cleanup command.
@@ -589,13 +589,13 @@ Iranian mirrors included in the default pool:
 To filter mirrors by Iran specifically:
 
 ```bash
-sudo bash linux-package-source-manager.sh --country ir
+sudo bash src/linux-package-source-manager.sh --country ir
 ```
 
 To use a specific Iranian mirror:
 
 ```bash
-sudo bash linux-package-source-manager.sh --mirror https://mirror.arvancloud.ir/ubuntu
+sudo bash src/linux-package-source-manager.sh --mirror https://mirror.arvancloud.ir/ubuntu
 ```
 
 ## Exit Codes
@@ -618,7 +618,7 @@ sudo bash linux-package-source-manager.sh --mirror https://mirror.arvancloud.ir/
 ### "This script must be run as root"
 
 ```bash
-sudo bash linux-package-source-manager.sh
+sudo bash src/linux-package-source-manager.sh
 ```
 
 ### "curl or wget is required"
@@ -638,7 +638,7 @@ apt-get install -y curl
 The script automatically restores the previous configuration. To restore manually:
 
 ```bash
-sudo bash linux-package-source-manager.sh --restore
+sudo bash src/linux-package-source-manager.sh --restore
 ```
 
 ### Third-party sources warning
@@ -671,11 +671,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 # Development setup
 git clone https://github.com/power0matin/linux-package-source-manager.git
 cd linux-package-source-manager
-chmod +x linux-package-source-manager.sh
+chmod +x src/linux-package-source-manager.sh
 
 # Lint
-shellcheck -x linux-package-source-manager.sh install.sh tests/test_installer.sh
-shfmt -d linux-package-source-manager.sh install.sh tests/test_installer.sh
+shellcheck -x src/linux-package-source-manager.sh install.sh tests/test_installer.sh
+shfmt -d src/linux-package-source-manager.sh install.sh tests/test_installer.sh
 
 # Test
 bash tests/run_tests.sh
@@ -684,7 +684,7 @@ bash tests/test_installer.sh
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for planned features.
+See [ROADMAP](docs/ROADMAP.md) for planned features.
 
 ## License
 

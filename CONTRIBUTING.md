@@ -30,7 +30,7 @@ When creating a bug report, include:
 - **Expected behavior**
 - **Actual behavior**
 - **OS and Ubuntu version** (`cat /etc/os-release`)
-- **Script version** (`bash linux-package-source-manager.sh --version`)
+- **Script version** (`bash src/linux-package-source-manager.sh --version`)
 - **Network environment** (VPS provider, region, proxy)
 
 ### Suggesting Features
@@ -67,16 +67,16 @@ git clone https://github.com/YOUR_USERNAME/linux-package-source-manager.git
 cd linux-package-source-manager
 
 # Make the script executable
-chmod +x linux-package-source-manager.sh install.sh
+chmod +x src/linux-package-source-manager.sh install.sh
 
 # Run shellcheck
-shellcheck -x linux-package-source-manager.sh install.sh tests/test_installer.sh
+shellcheck -x src/linux-package-source-manager.sh install.sh tests/test_installer.sh
 
 # Run shfmt
-shfmt -d linux-package-source-manager.sh install.sh tests/test_installer.sh
+shfmt -d src/linux-package-source-manager.sh install.sh tests/test_installer.sh
 
 # Test locally (dry run)
-sudo bash linux-package-source-manager.sh --dry-run
+sudo bash src/linux-package-source-manager.sh --dry-run
 ```
 
 ### Testing
@@ -87,10 +87,10 @@ bash tests/run_tests.sh
 bash tests/test_installer.sh
 
 # Run shellcheck
-shellcheck -x linux-package-source-manager.sh install.sh tests/test_installer.sh
+shellcheck -x src/linux-package-source-manager.sh install.sh tests/test_installer.sh
 
 # Run shfmt check
-shfmt -d linux-package-source-manager.sh install.sh tests/test_installer.sh
+shfmt -d src/linux-package-source-manager.sh install.sh tests/test_installer.sh
 ```
 
 ## Code Style
@@ -112,7 +112,7 @@ shfmt -d linux-package-source-manager.sh install.sh tests/test_installer.sh
 All code must pass ShellCheck with zero warnings:
 
 ```bash
-shellcheck -x linux-package-source-manager.sh install.sh tests/test_installer.sh
+shellcheck -x src/linux-package-source-manager.sh install.sh tests/test_installer.sh
 ```
 
 ### shfmt
@@ -121,10 +121,10 @@ All code must be formatted with shfmt:
 
 ```bash
 # Check formatting
-shfmt -d linux-package-source-manager.sh
+shfmt -d src/linux-package-source-manager.sh
 
 # Auto-fix formatting
-shfmt -w linux-package-source-manager.sh install.sh tests/test_installer.sh
+shfmt -w src/linux-package-source-manager.sh install.sh tests/test_installer.sh
 ```
 
 ### Comments
@@ -176,20 +176,26 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) format:
 
 ```
 linux-package-source-manager/
-|-- linux-package-source-manager.sh      # Main single-file application
-|-- install.sh                            # Version-pinned verified bootstrap
+|-- .github/                              # GitHub workflows and templates
+|-- assets/                               # Repository branding
+|-- docs/
+|   \-- ROADMAP.md
+|-- src/
+|   \-- linux-package-source-manager.sh  # Main single-file application
 |-- tests/                                # Offline regression and installer tests
-|-- .github/                 # GitHub CI/CD and templates
+|-- install.sh                            # Version-pinned verified bootstrap
 |-- README.md
 |-- CHANGELOG.md
 |-- CONTRIBUTING.md
+|-- CODE_OF_CONDUCT.md
 |-- SECURITY.md
+|-- SUPPORT.md
 |-- LICENSE
 |-- .editorconfig
-|-- .shellcheckrc
-|-- .markdownlint.json
+|-- .gitattributes
 |-- .gitignore
-\-- .gitattributes
+|-- .markdownlint.json
+\-- .shellcheckrc
 ```
 
 ## Architecture Decisions
@@ -202,7 +208,7 @@ Linux Package Source Manager keeps its application in one standalone Bash file. 
 bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
 ```
 
-The main application remains a single-file release artifact; the bootstrap does not split the application into modules or install a persistent component.
+The tracked main application lives in `src/` as one Bash file. The release workflow packages it under the stable asset name `linux-package-source-manager.sh`; the bootstrap does not split the application into modules or install a persistent component.
 
 ### Deb822 Format
 

@@ -29,7 +29,7 @@ The bootstrap is pinned to the current release, verifies the downloaded applicat
 #### "This script must be run as root"
 
 ```bash
-sudo bash linux-package-source-manager.sh
+sudo bash src/linux-package-source-manager.sh
 ```
 
 #### "curl or wget is required"
@@ -43,8 +43,8 @@ apt-get install -y curl
 #### "No working mirror found"
 
 - Check your network connection
-- Try with a longer timeout: `sudo bash linux-package-source-manager.sh --timeout 60`
-- Try a specific mirror: `sudo bash linux-package-source-manager.sh --mirror https://archive.ubuntu.com/ubuntu`
+- Try with a longer timeout: `sudo bash src/linux-package-source-manager.sh --timeout 60`
+- Try a specific mirror: `sudo bash src/linux-package-source-manager.sh --mirror https://archive.ubuntu.com/ubuntu`
 
 #### "apt-get update failed after applying mirror"
 
@@ -52,19 +52,19 @@ The script automatically restores the previous configuration. Check:
 
 ```bash
 ls -la /var/backups/power-apt-boost/
-sudo bash linux-package-source-manager.sh --restore
+sudo bash src/linux-package-source-manager.sh --restore
 ```
 
 #### How to restore a previous configuration
 
 ```bash
-sudo bash linux-package-source-manager.sh --restore
+sudo bash src/linux-package-source-manager.sh --restore
 ```
 
 Or restore from a specific backup:
 
 ```bash
-sudo bash linux-package-source-manager.sh --restore-path /var/backups/power-apt-boost/2025-01-01_12-00-00
+sudo bash src/linux-package-source-manager.sh --restore-path /var/backups/power-apt-boost/2025-01-01_12-00-00
 ```
 
 ## Reporting Issues
@@ -75,7 +75,7 @@ sudo bash linux-package-source-manager.sh --restore-path /var/backups/power-apt-
 When reporting a bug, include:
 
 1. Ubuntu version (`cat /etc/os-release`)
-2. Script version (`bash linux-package-source-manager.sh --version`)
+2. Script version (`bash src/linux-package-source-manager.sh --version`)
 3. Exact command you ran
 4. Full error output
 5. Network environment (VPS provider, region)

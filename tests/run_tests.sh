@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 readonly PROJECT_DIR
-SCRIPT="${PROJECT_DIR}/linux-package-source-manager.sh"
+SCRIPT="${PROJECT_DIR}/src/linux-package-source-manager.sh"
 readonly SCRIPT
 
 RED='\033[0;31m'
@@ -103,6 +103,15 @@ test_cli() {
   fi
 
   readme_source="$(cat "$PROJECT_DIR/README.md")"
+  [[ -s "$SCRIPT" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "main application source is stored under src/"
+  [[ ! -e "$PROJECT_DIR/linux-package-source-manager.sh" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "duplicate application source is absent from repository root"
+  [[ -s "$PROJECT_DIR/docs/ROADMAP.md" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "roadmap is stored under docs/"
+  [[ ! -e "$PROJECT_DIR/ROADMAP.md" ]] && code=0 || code=1
+  assert_exit_code 0 "$code" "duplicate roadmap is absent from repository root"
+  assert_contains "docs/ROADMAP.md" "$readme_source" "README links to the roadmap in docs/"
   if grep -Fq '<pre align="center">' <<<"$readme_source"; then
     assert_equal "monogram absent" "monogram present" "README does not include the removed ASCII monogram"
   else
@@ -324,7 +333,7 @@ test_filesystem_operations() {
   export POWER_APT_BOOST_TEST_ROOT="$_TEST_ROOT"
   export POWER_APT_BOOST_SOURCE_ONLY=1
 
-  # shellcheck source=../linux-package-source-manager.sh
+  # shellcheck source=../src/linux-package-source-manager.sh
   source "$SCRIPT"
   _setup_colors
   apt-get() {

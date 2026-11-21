@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.4] — 2026-11-21
+
+### Changed
+
+- Replaced the oversized Unicode terminal logo with a compact ASCII-only product banner.
+- Added a minimal ASCII LPSM monogram to the README while keeping the product name accessible as the page heading.
+
+### Tests
+
+- Added regression checks for terminal banner content, ASCII-only output and the README monogram.
+- Updated the CLI version assertion and public installation references for v3.0.4.
+
+
 ## [3.0.3] — 2026-11-21
 
 ### Changed

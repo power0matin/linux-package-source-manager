@@ -282,7 +282,7 @@ _start_spinner() {
   if [[ "$QUIET" == true || "$NO_SPINNER" == true ]]; then return; fi
   if ! [[ -t 2 ]]; then return; fi
   local msg="${1:-Working}"
-  local frames=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+  local frames=("|" "/" "-" "+")
   (
     trap "exit 0" INT TERM
     local i=0
@@ -312,8 +312,8 @@ _print_progress_bar() {
   local empty=$((width - filled))
 
   local bar=""
-  for ((i = 0; i < filled; i++)); do bar+="█"; done
-  for ((i = 0; i < empty; i++)); do bar+="░"; done
+  for ((i = 0; i < filled; i++)); do bar+="#"; done
+  for ((i = 0; i < empty; i++)); do bar+="-"; done
 
   printf "\r  ${COLOR_DIM}[${COLOR_GREEN}%s${COLOR_DIM}]${COLOR_RESET} %3d%% (${current}/${total})" \
     "$bar" "$percent" >&2
@@ -345,14 +345,14 @@ _print_step() {
 }
 
 _print_divider() {
-  local char="${1:-─}" len="${2:-60}"
+  local char="${1:--}" len="${2:-60}"
   printf '%*s\n' "$len" '' | tr ' ' "$char" >&2
 }
 
 _print_section_header() {
   local title="$1"
   echo "" >&2
-  _print_divider "─" 60 >&2
+  _print_divider "-" 60 >&2
   printf "  ${COLOR_BOLD}${COLOR_CYAN}%s${COLOR_RESET}\n" "$title" >&2
   _print_divider "─" 60 >&2
   echo "" >&2
@@ -427,7 +427,7 @@ need_root() {
   if _hostname_output=$(hostname 2>&1); then
     :
   elif [[ "$_hostname_output" == *"unable to resolve host"* ]]; then
-    warn "Hostname resolution issue detected — this is a system config problem"
+    warn "Hostname resolution issue detected - this is a system config problem"
     warn "  (inconsistent hostname in /etc/hosts), not a Linux Package Source Manager issue."
     warn "  The script will continue safely."
     warn "  Fix: add your hostname to /etc/hosts (e.g. '127.0.0.1 $(hostname 2>/dev/null || echo localhost)')"
@@ -1117,14 +1117,14 @@ _test_mirror() {
       "$total_redirects" "$freshness_summary" "$signature_summary" "$failure_reason" >"$result_file"
   fi
 
-  msg_color "$COLOR_BOLD" "  ┌─ $base_url"
-  printf '  │  main: %s (%ss, HTTP %s)\n' "$([[ "$main_metadata" == valid && "$main_signature" == valid ]] && echo VERIFIED || echo REJECTED)" "$main_time" "$main_code" >&2
-  printf '  │  updates: %s (%ss, HTTP %s)\n' "$([[ "$updates_metadata" == valid && "$updates_signature" == valid ]] && echo VERIFIED || echo REJECTED)" "$updates_time" "$updates_code" >&2
-  printf '  │  security: %s (%ss, HTTP %s)\n' "$([[ "$security_metadata" == valid && "$security_signature" == valid ]] && echo VERIFIED || echo REJECTED)" "$security_time" "$security_code" >&2
+  msg_color "$COLOR_BOLD" "  +-- $base_url"
+  printf '  |  main: %s (%ss, HTTP %s)\n' "$([[ "$main_metadata" == valid && "$main_signature" == valid ]] && echo VERIFIED || echo REJECTED)" "$main_time" "$main_code" >&2
+  printf '  |  updates: %s (%ss, HTTP %s)\n' "$([[ "$updates_metadata" == valid && "$updates_signature" == valid ]] && echo VERIFIED || echo REJECTED)" "$updates_time" "$updates_code" >&2
+  printf '  |  security: %s (%ss, HTTP %s)\n' "$([[ "$security_metadata" == valid && "$security_signature" == valid ]] && echo VERIFIED || echo REJECTED)" "$security_time" "$security_code" >&2
   if [[ "$eligible" == true ]]; then
-    printf '  └─ %b PASS%b score=%ss avg=%ss redirects=%s freshness=%s\n' "$COLOR_GREEN" "$COLOR_RESET" "$score" "$avg_latency" "$total_redirects" "$freshness_summary" >&2
+    printf '  +-- %b PASS%b score=%ss avg=%ss redirects=%s freshness=%s\n' "$COLOR_GREEN" "$COLOR_RESET" "$score" "$avg_latency" "$total_redirects" "$freshness_summary" >&2
   else
-    printf '  └─ %b REJECTED%b reason=%s\n' "$COLOR_RED" "$COLOR_RESET" "$failure_reason" >&2
+    printf '  +-- %b REJECTED%b reason=%s\n' "$COLOR_RED" "$COLOR_RESET" "$failure_reason" >&2
   fi
 }
 
@@ -1916,7 +1916,7 @@ _apply_changes() {
 
   if [[ "$DRY_RUN" == true ]]; then
     cat <<DRYRUN
-  ${COLOR_YELLOW}${COLOR_BOLD}DRY RUN MODE${COLOR_RESET} — no APT configuration changes applied
+  ${COLOR_YELLOW}${COLOR_BOLD}DRY RUN MODE${COLOR_RESET} - no APT configuration changes applied
 
   Files that would be written:
     ${APT_DEB822_FILE}
@@ -4123,7 +4123,7 @@ _collect_status() {
 
 _print_status_report() {
   _collect_status
-  printf '\n%s\n' "$APP_NAME — System Status"
+  printf '\n%s\n' "$APP_NAME - System Status"
   printf '%-24s %s\n' "Operating system:" "$REPORT_OS_PRETTY"
   printf '%-24s %s\n' "Ubuntu codename:" "$REPORT_CODENAME"
   printf '%-24s %s\n' "Legacy sources.list:" "$REPORT_SOURCES_LIST"
@@ -4315,7 +4315,7 @@ _doctor_report() {
   if [[ "$JSON_OUTPUT" == true ]]; then
     _print_json
   else
-    printf '\n%s\n' "$APP_NAME — Diagnostics"
+    printf '\n%s\n' "$APP_NAME - Diagnostics"
     local i
     for ((i = 0; i < ${#REPORT_CHECK_NAMES[@]}; i++)); do
       printf '  %-8s %-28s %s\n' "${REPORT_CHECK_STATUSES[$i]}" "${REPORT_CHECK_NAMES[$i]}" "${REPORT_CHECK_DETAILS[$i]}"
@@ -4328,7 +4328,7 @@ _print_summary() {
   if [[ "$DRY_RUN" == true ]]; then
     cat <<EOF
 
-${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
+${COLOR_BOLD}------------------------------------------------------------${COLOR_RESET}
   ${COLOR_YELLOW}${COLOR_BOLD}DRY RUN COMPLETED${COLOR_RESET}
 
   Fastest mirror:  ${COLOR_BOLD}${SELECTED_MIRROR}${COLOR_RESET}
@@ -4344,7 +4344,7 @@ EOF
   cat <<EOF
 
 ${COLOR_BOLD}════════════════════════════════════════════════════════════${COLOR_RESET}
-  ${COLOR_GREEN}${COLOR_BOLD}SUCCESS — APT mirror optimized${COLOR_RESET}
+  ${COLOR_GREEN}${COLOR_BOLD}SUCCESS - APT mirror optimized${COLOR_RESET}
 
   ${COLOR_BOLD}Mirror:${COLOR_RESET}  ${SELECTED_MIRROR}
   ${COLOR_BOLD}Speed:${COLOR_RESET}   ${SELECTED_TIME}s
@@ -4560,7 +4560,7 @@ ${COLOR_BOLD}${COLOR_BLUE}EXIT CODES${COLOR_RESET}
   4  Root required      8  Restore/rollback failed
 
 ${COLOR_BOLD}${COLOR_BLUE}AUTHOR${COLOR_RESET}
-  ${APP_AUTHOR} · ${APP_GITHUB}
+  ${APP_AUTHOR} | ${APP_GITHUB}
 EOF
 }
 

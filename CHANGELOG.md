@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.5] — 2026-11-21
+
+### Added
+
+- Added a short `bash <(curl ...)` bootstrap for new servers. It downloads the pinned release, verifies SHA-256, validates Bash syntax, and opens the interactive menu with privilege escalation when needed.
+
+### Changed
+
+- Updated source version and installation documentation to `v3.0.5`.
+- GitHub Release names contain only the version identifier.
+
+
 ## [3.0.4] — 2026-11-21
 
 ### Changed

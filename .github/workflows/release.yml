@@ -48,7 +48,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Run offline regression suite
-        run: bash tests/run_tests.sh
+        run: |
+          bash tests/run_tests.sh
+          bash tests/test_installer.sh
 
   release:
     name: Publish GitHub Release

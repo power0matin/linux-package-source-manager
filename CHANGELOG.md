@@ -260,7 +260,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added cache cleanup
 - Added branded banner
 
-[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.1...HEAD
+[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.5...HEAD
+[3.0.5]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.4...v3.0.5
+[3.0.4]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.3...v3.0.4
+[3.0.3]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.2...v3.0.3
+[3.0.2]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/power0matin/linux-package-source-manager/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/power0matin/linux-package-source-manager/compare/v2.0.0...v2.1.0

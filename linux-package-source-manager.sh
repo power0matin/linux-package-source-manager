@@ -5506,7 +5506,7 @@ _menu_manage_mirrors() {
         "add" "Add and verify a mirror URL" \
         "disable" "Disable a saved custom mirror" \
         "enable" "Enable a saved custom mirror" \
-        "remove" "Remove a saved custom mirror" 
+        "remove" "Remove a saved custom mirror"
     )" || return 0
 
     case "$choice" in
@@ -5545,7 +5545,6 @@ _menu_manage_mirrors() {
       _run_mirror_management || rc=$?
       _menu_operation_result "Custom mirror result" "Custom mirror catalog update completed." "$rc"
       ;;
-
     esac
 
     old_network_setting="$NO_CATALOG_NETWORK"
@@ -5563,7 +5562,7 @@ _menu_apt() {
         "apply_best" "Find and apply the fastest mirror" \
         "apply_custom" "Test and apply a custom mirror" \
         "list" "List and test available mirrors" \
-        "manage" "Manage custom mirrors" 
+        "manage" "Manage custom mirrors"
     )" || return 0
     case "$choice" in
     apply_best)
@@ -5591,7 +5590,6 @@ _menu_apt() {
       _menu_operation_result "APT mirrors" "Mirror listing and health checks completed." "$rc"
       ;;
     manage) _menu_manage_mirrors ;;
-
     esac
   done
 }
@@ -5610,7 +5608,7 @@ _menu_backups() {
   choice="$(
     _menu_choose "Backup and Restore" "Choose an action" \
       "restore" "Restore a verified backup snapshot" \
-      "cleanup" "Remove older verified snapshots" 
+      "cleanup" "Remove older verified snapshots"
   )" || return 0
 
   case "$choice" in
@@ -5646,7 +5644,6 @@ _menu_backups() {
     _run_restore_flow || rc=$?
     _menu_operation_result "Restore result" "APT snapshot restoration completed." "$rc"
     ;;
-
   esac
 }
 
@@ -5656,7 +5653,7 @@ _menu_diagnostics() {
     _menu_choose "Diagnostics" "Choose a report" \
       "status" "System status" \
       "doctor" "Run local health checks" \
-      "network" "Run live DNS and TLS checks" 
+      "network" "Run live DNS and TLS checks"
   )" || return 0
   case "$choice" in
   status)
@@ -5674,7 +5671,6 @@ _menu_diagnostics() {
     NETWORK_DIAGNOSTICS=false
     [[ "$JSON_OUTPUT" == true ]] || _menu_message "Network diagnostics" "Live DNS and TLS checks completed."
     ;;
-
   esac
 }
 
@@ -5728,7 +5724,6 @@ _menu_nodejs() {
       _run_node_manager || rc=$?
       _menu_operation_result "Node.js" "Managed registry reset completed." "$rc"
       ;;
-
     esac
   done
 }
@@ -5803,7 +5798,6 @@ _menu_python() {
       _run_python_manager || rc=$?
       _menu_operation_result "Python" "Managed package index reset completed." "$rc"
       ;;
-
     esac
   done
 }
@@ -5905,7 +5899,6 @@ _menu_settings() {
     spinner)
       [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
       ;;
-
     esac
   done
 }
@@ -5966,7 +5959,6 @@ _menu_docker() {
       _run_docker_manager || rc=$?
       _menu_operation_result "Docker restart" "Docker daemon restart action completed." "$rc"
       ;;
-
     esac
   done
 }
@@ -5987,7 +5979,7 @@ _menu_main() {
         "benchmark" "Mirror benchmark" \
         "backups" "Backup and Restore" \
         "diagnostics" "Diagnostics" \
-        "settings" "Settings" 
+        "settings" "Settings"
     )" || return 0
     case "$choice" in
     overview) _menu_overview ;;
@@ -5999,7 +5991,6 @@ _menu_main() {
     backups) _menu_backups ;;
     diagnostics) _menu_diagnostics ;;
     settings) _menu_settings ;;
-
     esac
   done
 }

@@ -119,7 +119,7 @@ The `main` branch may contain changes that have not been published as a tagged r
 
    ```bash
    curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh | less
-   curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.6/src/linux-package-source-manager.sh | less
+   curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.7/src/linux-package-source-manager.sh | less
    ```
 
 2. **Use `--dry-run` first** to see what would change:

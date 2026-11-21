@@ -5096,7 +5096,7 @@ _menu_choose() {
   for ((i = 0; i < ${#tags[@]}; i++)); do
     printf '  %2d) %s\n' "$((i + 1))" "${labels[$i]}" >&2
   done
-  printf '   0) Cancel / Back\n\n' >&2
+  printf '   0) %s\n\n' "${MENU_ZERO_LABEL:-Back}" >&2
   printf 'Select an option number: ' >&2
 
   while true; do
@@ -5506,8 +5506,7 @@ _menu_manage_mirrors() {
         "add" "Add and verify a mirror URL" \
         "disable" "Disable a saved custom mirror" \
         "enable" "Enable a saved custom mirror" \
-        "remove" "Remove a saved custom mirror" \
-        "back" "Back"
+        "remove" "Remove a saved custom mirror" 
     )" || return 0
 
     case "$choice" in
@@ -5546,7 +5545,7 @@ _menu_manage_mirrors() {
       _run_mirror_management || rc=$?
       _menu_operation_result "Custom mirror result" "Custom mirror catalog update completed." "$rc"
       ;;
-    back) return 0 ;;
+
     esac
 
     old_network_setting="$NO_CATALOG_NETWORK"
@@ -5564,8 +5563,7 @@ _menu_apt() {
         "apply_best" "Find and apply the fastest mirror" \
         "apply_custom" "Test and apply a custom mirror" \
         "list" "List and test available mirrors" \
-        "manage" "Manage custom mirrors" \
-        "back" "Back to main menu"
+        "manage" "Manage custom mirrors" 
     )" || return 0
     case "$choice" in
     apply_best)
@@ -5593,7 +5591,7 @@ _menu_apt() {
       _menu_operation_result "APT mirrors" "Mirror listing and health checks completed." "$rc"
       ;;
     manage) _menu_manage_mirrors ;;
-    back) return 0 ;;
+
     esac
   done
 }
@@ -5612,8 +5610,7 @@ _menu_backups() {
   choice="$(
     _menu_choose "Backup and Restore" "Choose an action" \
       "restore" "Restore a verified backup snapshot" \
-      "cleanup" "Remove older verified snapshots" \
-      "back" "Back to main menu"
+      "cleanup" "Remove older verified snapshots" 
   )" || return 0
 
   case "$choice" in
@@ -5641,15 +5638,15 @@ _menu_backups() {
       [[ -n "$path" ]] || continue
       args+=("$path" "${path##*/}")
     done <<<"$listing"
-    selected="$(_menu_choose "Backup and Restore" "Select a snapshot to restore" "${args[@]}" "back" "Back")" || return 0
-    [[ "$selected" == back ]] && return 0
+    selected="$(_menu_choose "Backup and Restore" "Select a snapshot to restore" "${args[@]}")" || return 0
+
     RESTORE_PATH="$selected"
     RESTORE_SCOPE="all"
     rc=0
     _run_restore_flow || rc=$?
     _menu_operation_result "Restore result" "APT snapshot restoration completed." "$rc"
     ;;
-  back) return 0 ;;
+
   esac
 }
 
@@ -5659,8 +5656,7 @@ _menu_diagnostics() {
     _menu_choose "Diagnostics" "Choose a report" \
       "status" "System status" \
       "doctor" "Run local health checks" \
-      "network" "Run live DNS and TLS checks" \
-      "back" "Back to main menu"
+      "network" "Run live DNS and TLS checks" 
   )" || return 0
   case "$choice" in
   status)
@@ -5678,7 +5674,7 @@ _menu_diagnostics() {
     NETWORK_DIAGNOSTICS=false
     [[ "$JSON_OUTPUT" == true ]] || _menu_message "Network diagnostics" "Live DNS and TLS checks completed."
     ;;
-  back) return 0 ;;
+
   esac
 }
 
@@ -5689,8 +5685,7 @@ _menu_nodejs() {
       "status" "Inspect Node.js clients and registry hosts" \
       "test" "Test registry metadata and tarball host" \
       "configure" "Configure npm, pnpm or Yarn" \
-      "reset" "Reset app-managed registry" \
-      "back" "Back")" || return 0
+      "reset" "Reset app-managed registry" )" || return 0
     case "$choice" in
     status)
       _node_status_report
@@ -5705,11 +5700,11 @@ _menu_nodejs() {
       _menu_operation_result "Node.js registry test" "Registry metadata and tarball endpoint checks completed." "$rc"
       ;;
     configure)
-      NODE_CLIENT="$(_menu_choose "Node.js client" "Select package manager" "npm" "npm" "pnpm" "pnpm" "yarn" "Yarn Classic/Berry" "back" "Cancel")" || continue
-      [[ "$NODE_CLIENT" != back ]] || continue
+      NODE_CLIENT="$(_menu_choose "Node.js client" "Select package manager" "npm" "npm" "pnpm" "pnpm" "yarn" "Yarn Classic/Berry")" || continue
+
       NODE_REGISTRY_URL="$(_menu_input "Registry URL" "Credential-free HTTPS registry URL" "https://registry.npmjs.org/")" || continue
-      NODE_SCOPE="$(_menu_choose "Registry scope" "User is default; project is explicit" "user" "User config" "project" "Project config" "back" "Cancel")" || continue
-      [[ "$NODE_SCOPE" != back ]] || continue
+      NODE_SCOPE="$(_menu_choose "Registry scope" "User is default; project is explicit" "user" "User config" "project" "Project config")" || continue
+
       NODE_PROJECT_DIR=""
       if [[ "$NODE_SCOPE" == project ]]; then
         NODE_PROJECT_DIR="$(_menu_input "Project directory" "Directory containing package.json" "$PWD")" || continue
@@ -5720,10 +5715,10 @@ _menu_nodejs() {
       _menu_operation_result "Node.js" "Registry configuration completed." "$rc"
       ;;
     reset)
-      NODE_CLIENT="$(_menu_choose "Reset Node.js" "Select package manager" "npm" "npm" "pnpm" "pnpm" "yarn" "Yarn" "back" "Cancel")" || continue
-      [[ "$NODE_CLIENT" != back ]] || continue
-      NODE_SCOPE="$(_menu_choose "Reset scope" "Choose saved scope" "user" "User" "project" "Project" "back" "Cancel")" || continue
-      [[ "$NODE_SCOPE" != back ]] || continue
+      NODE_CLIENT="$(_menu_choose "Reset Node.js" "Select package manager" "npm" "npm" "pnpm" "pnpm" "yarn" "Yarn")" || continue
+
+      NODE_SCOPE="$(_menu_choose "Reset scope" "Choose saved scope" "user" "User" "project" "Project")" || continue
+
       NODE_PROJECT_DIR=""
       if [[ "$NODE_SCOPE" == project ]]; then
         NODE_PROJECT_DIR="$(_menu_input "Project directory" "Directory containing package.json" "$PWD")" || continue
@@ -5733,7 +5728,7 @@ _menu_nodejs() {
       _run_node_manager || rc=$?
       _menu_operation_result "Node.js" "Managed registry reset completed." "$rc"
       ;;
-    back) return 0 ;;
+
     esac
   done
 }
@@ -5746,8 +5741,7 @@ _menu_python() {
       "pip" "Configure pip" \
       "uv" "Configure uv" \
       "poetry" "Add Poetry source" \
-      "reset" "Reset app-managed source" \
-      "back" "Back")" || return 0
+      "reset" "Reset app-managed source" )" || return 0
     case "$choice" in
     status)
       _python_status_report
@@ -5766,21 +5760,21 @@ _menu_python() {
       PYTHON_SCOPE=auto
       PYTHON_PRIORITY=supplemental
       if [[ "$choice" == uv ]]; then
-        scope="$(_menu_choose "uv scope" "Choose scope" "user" "User" "project" "Project" "global" "System" "back" "Cancel")" || continue
-        [[ "$scope" != back ]] || continue
+        scope="$(_menu_choose "uv scope" "Choose scope" "user" "User" "project" "Project" "global" "System")" || continue
+
         PYTHON_SCOPE="$scope"
         if [[ "$scope" == project ]]; then
           PYTHON_PROJECT_FILE="$(_menu_input "uv project" "uv.toml or pyproject.toml" "uv.toml")" || continue
         fi
       elif [[ "$choice" == poetry ]]; then
         PYTHON_SCOPE=project
-        scope="$(_menu_choose "Poetry priority" "Supplemental preserves implicit PyPI" "supplemental" "Supplemental" "explicit" "Explicit" "primary" "Primary (disables PyPI)" "back" "Cancel")" || continue
-        [[ "$scope" != back ]] || continue
+        scope="$(_menu_choose "Poetry priority" "Supplemental preserves implicit PyPI" "supplemental" "Supplemental" "explicit" "Explicit" "primary" "Primary (disables PyPI)")" || continue
+
         PYTHON_PRIORITY="$scope"
         PYTHON_PROJECT_FILE="$(_menu_input "Poetry project" "pyproject.toml path" "pyproject.toml")" || continue
       else
-        scope="$(_menu_choose "pip scope" "Auto selects active venv" "auto" "Auto" "user" "User" "site" "Active venv" "global" "System" "back" "Cancel")" || continue
-        [[ "$scope" != back ]] || continue
+        scope="$(_menu_choose "pip scope" "Auto selects active venv" "auto" "Auto" "user" "User" "site" "Active venv" "global" "System")" || continue
+
         PYTHON_SCOPE="$scope"
       fi
       rc=0
@@ -5788,28 +5782,28 @@ _menu_python() {
       _menu_operation_result "Python" "Package index configuration completed." "$rc"
       ;;
     reset)
-      PYTHON_CLIENT="$(_menu_choose "Reset Python" "Choose client" "pip" "pip" "uv" "uv" "poetry" "Poetry" "back" "Cancel")" || continue
-      [[ "$PYTHON_CLIENT" != back ]] || continue
+      PYTHON_CLIENT="$(_menu_choose "Reset Python" "Choose client" "pip" "pip" "uv" "uv" "poetry" "Poetry")" || continue
+
       PYTHON_ACTION="reset"
       PYTHON_SCOPE=auto
       if [[ "$PYTHON_CLIENT" == poetry ]]; then
         PYTHON_SCOPE=project
         PYTHON_PROJECT_FILE="$(_menu_input "Project" "pyproject.toml path" "pyproject.toml")" || continue
       elif [[ "$PYTHON_CLIENT" == uv ]]; then
-        PYTHON_SCOPE="$(_menu_choose "uv scope" "Choose scope" "user" "User" "project" "Project" "global" "System" "back" "Cancel")" || continue
-        [[ "$PYTHON_SCOPE" != back ]] || continue
+        PYTHON_SCOPE="$(_menu_choose "uv scope" "Choose scope" "user" "User" "project" "Project" "global" "System")" || continue
+
         if [[ "$PYTHON_SCOPE" == project ]]; then
           PYTHON_PROJECT_FILE="$(_menu_input "uv project" "uv.toml or pyproject.toml" "uv.toml")" || continue
         fi
       else
-        PYTHON_SCOPE="$(_menu_choose "pip scope" "Choose scope" "user" "User" "site" "Active venv" "global" "System" "back" "Cancel")" || continue
-        [[ "$PYTHON_SCOPE" != back ]] || continue
+        PYTHON_SCOPE="$(_menu_choose "pip scope" "Choose scope" "user" "User" "site" "Active venv" "global" "System")" || continue
+
       fi
       rc=0
       _run_python_manager || rc=$?
       _menu_operation_result "Python" "Managed package index reset completed." "$rc"
       ;;
-    back) return 0 ;;
+
     esac
   done
 }
@@ -5837,8 +5831,7 @@ _menu_settings() {
         "official" "Official-only profile: $([[ "$OFFICIAL_ONLY" == true ]] && echo enabled || echo disabled)" \
         "refresh" "Refresh Ubuntu mirror catalog on next run" \
         "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \
-        "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" \
-        "back" "Back to main menu"
+        "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" 
     )" || return 0
     case "$choice" in
     timeout)
@@ -5912,7 +5905,7 @@ _menu_settings() {
     spinner)
       [[ "$NO_SPINNER" == true ]] && NO_SPINNER=false || NO_SPINNER=true
       ;;
-    back) return 0 ;;
+
     esac
   done
 }
@@ -5927,8 +5920,7 @@ _menu_docker() {
       "configure" "Configure daemon.json mirror (no restart)" \
       "reset" "Restore the prior app-managed daemon.json" \
       "restore" "Restore a specific conflict-checked snapshot" \
-      "restart" "Separately restart the active Docker daemon" \
-      "back" "Back")" || return 0
+      "restart" "Separately restart the active Docker daemon" )" || return 0
     case "$choice" in
     status)
       DOCKER_ACTION="status"
@@ -5974,7 +5966,7 @@ _menu_docker() {
       _run_docker_manager || rc=$?
       _menu_operation_result "Docker restart" "Docker daemon restart action completed." "$rc"
       ;;
-    back) return 0 ;;
+
     esac
   done
 }
@@ -5986,7 +5978,7 @@ _menu_main() {
   while true; do
     local choice
     choice="$(
-      _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \
+      MENU_ZERO_LABEL="Exit" _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \
         "overview" "Overview" \
         "apt" "APT management" \
         "python" "Python package sources" \
@@ -5995,8 +5987,7 @@ _menu_main() {
         "benchmark" "Mirror benchmark" \
         "backups" "Backup and Restore" \
         "diagnostics" "Diagnostics" \
-        "settings" "Settings" \
-        "quit" "Exit"
+        "settings" "Settings" 
     )" || return 0
     case "$choice" in
     overview) _menu_overview ;;
@@ -6008,7 +5999,7 @@ _menu_main() {
     backups) _menu_backups ;;
     diagnostics) _menu_diagnostics ;;
     settings) _menu_settings ;;
-    quit) return 0 ;;
+
     esac
   done
 }

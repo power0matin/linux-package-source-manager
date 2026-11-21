@@ -11,7 +11,7 @@ fail() {
 pass() { printf 'PASS %s\n' "$*"; }
 
 bash -n "$INSTALLER" || fail "installer syntax"
-grep -Fq 'readonly VERSION="v3.0.6"' "$INSTALLER" || fail "pinned version"
+grep -Fq 'readonly VERSION="v3.0.7"' "$INSTALLER" || fail "pinned version"
 grep -Fq 'sha256sum --check --status' "$INSTALLER" || fail "checksum verification"
 expected_command="sudo bash \"\${TMP_DIR}/\${SCRIPT_NAME}\" \"\$@\""
 grep -Fq "$expected_command" "$INSTALLER" || fail "sudo execution"

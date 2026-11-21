@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.7] — 2026-11-22
+
+### Changed
+
+- Organized the repository root by moving the tracked application source to `src/` and the roadmap to `docs/`.
+- Updated README, security, contributor and support references, tests, and CI/release workflows to use the new source paths.
+- Preserved the standalone release asset name `linux-package-source-manager.sh` and the verified one-line installer interface.
+
+### Tests
+
+- Added regression checks for the source and roadmap locations and for the absence of duplicate root-level copies.
+- Verified the lint, installer, and offline Ubuntu 20.04, 22.04, and 24.04 CI jobs.
+
 ## [3.0.6] — 2026-11-22
 
 ### Added

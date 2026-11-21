@@ -73,7 +73,7 @@ cleanup() {
 trap cleanup EXIT
 
 test_cli() {
-  local output code banner_source terminal_source readme_source logo_asset_state icon_asset_state
+  local output code banner_source terminal_source readme_source logo_asset_state icon_asset_state menu_source
   banner_source="$(sed -n '/^_print_banner() {/,/^}/p' "$SCRIPT")"
   assert_contains "LINUX PACKAGE SOURCE MANAGER" "$banner_source" "terminal banner displays the product name"
   assert_contains "APT | PyPI | npm | pnpm | Yarn | Docker / OCI" "$banner_source" "terminal banner lists supported ecosystems"
@@ -124,7 +124,14 @@ test_cli() {
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"
-  assert_contains "3.0.5" "$output" "version matches script version"
+  assert_contains "3.0.6" "$output" "version matches script version"
+  menu_source="$(sed -n '/^_menu_manage_mirrors() {/,/^_menu_main() {/p' "$SCRIPT")"
+  if grep -Eq '"back"[[:space:]]+"(Back|Cancel|Back to main menu)"|"quit"[[:space:]]+"Exit"|^[[:space:]]*(back|quit)\\)' <<<"$menu_source"; then
+    assert_equal "no duplicate navigation" "duplicate navigation" "interactive menus do not define separate Back or Exit actions"
+  else
+    assert_equal "no duplicate navigation" "no duplicate navigation" "interactive menus do not define separate Back or Exit actions"
+  fi
+  assert_contains '_menu_choose --zero-label "Exit"' "$menu_source" "main menu uses zero as its Exit action"
   assert_contains "--menu" "$(bash "$SCRIPT" --help 2>&1)" "help documents interactive menu"
   assert_contains "--doctor" "$(bash "$SCRIPT" --help 2>&1)" "help documents doctor command"
   assert_contains "--yes" "$(bash "$SCRIPT" --help 2>&1)" "help documents explicit non-interactive confirmation"
@@ -784,7 +791,7 @@ test_terminal_menu_progress() {
   assert_file_contains "$menu_log" "0) Back" "submenu zero entry is labeled Back"
 
   code=0
-  MENU_ZERO_LABEL="Exit" _menu_choose "Main menu test" "Choose an action" "first" "First option" <<<"0" >/dev/null 2>"$menu_log" || code=$?
+  _menu_choose --zero-label "Exit" "Main menu test" "Choose an action" "first" "First option" <<<"0" >/dev/null 2>"$menu_log" || code=$?
   assert_exit_code 1 "$code" "zero exits the main menu"
   assert_file_contains "$menu_log" "0) Exit" "main menu zero entry is labeled Exit"
 

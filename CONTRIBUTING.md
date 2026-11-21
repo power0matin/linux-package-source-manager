@@ -112,7 +112,7 @@ shfmt -d linux-package-source-manager.sh install.sh tests/test_installer.sh
 All code must pass ShellCheck with zero warnings:
 
 ```bash
-shellcheck -x linux-package-source-manager.sh
+shellcheck -x linux-package-source-manager.sh install.sh tests/test_installer.sh
 ```
 
 ### shfmt
@@ -124,7 +124,7 @@ All code must be formatted with shfmt:
 shfmt -d linux-package-source-manager.sh
 
 # Auto-fix formatting
-shfmt -w linux-package-source-manager.sh
+shfmt -w linux-package-source-manager.sh install.sh tests/test_installer.sh
 ```
 
 ### Comments

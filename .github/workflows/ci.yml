@@ -25,10 +25,12 @@ jobs:
           shellcheck -x linux-package-source-manager.sh install.sh
           # The test suite intentionally sources the application and mutates its globals/functions.
           shellcheck -x -e SC2034,SC2329 tests/run_tests.sh
+          shellcheck -x tests/test_installer.sh
       - name: Check shfmt formatting
         run: |
           shfmt -d linux-package-source-manager.sh install.sh
           shfmt -d tests/run_tests.sh
+          shfmt -d tests/test_installer.sh
 
   test:
     name: Offline tests (Ubuntu ${{ matrix.ubuntu-version }})

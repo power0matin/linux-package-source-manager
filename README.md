@@ -122,7 +122,7 @@ VERSION="v3.0.6"
 curl -fL "https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}/linux-package-source-manager.sh" -o linux-package-source-manager.sh
 curl -fL "https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}/linux-package-source-manager.sh.sha256" -o linux-package-source-manager.sh.sha256
 sha256sum -c linux-package-source-manager.sh.sha256
-sudo bash src/linux-package-source-manager.sh --menu
+sudo bash linux-package-source-manager.sh --menu
 ```
 
 For a source checkout instead:

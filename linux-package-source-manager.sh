@@ -5,7 +5,7 @@
 # Author  : Matin Shahabadi
 # GitHub  : https://github.com/power0matin/linux-package-source-manager
 # License : MIT
-# Version : 3.0.5
+# Version : 3.0.6
 #
 # Usage:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
@@ -19,7 +19,7 @@ IFS=$'\n\t'
 # === Constants ================================================================
 
 readonly APP_NAME="Linux Package Source Manager"
-readonly APP_VERSION="3.0.5"
+readonly APP_VERSION="3.0.6"
 readonly APP_SLUG="power-apt-boost"
 readonly APP_AUTHOR="Matin Shahabadi"
 readonly APP_GITHUB="https://github.com/power0matin/linux-package-source-manager"
@@ -5081,7 +5081,14 @@ _menu_clear_screen() {
 }
 
 _menu_choose() {
-  local title="$1" prompt="$2" answer="" numeric i
+  local zero_label="Back" title prompt answer="" numeric i
+  if [[ "${1:-}" == "--zero-label" ]]; then
+    [[ -n "${2:-}" ]] || return 2
+    zero_label="$2"
+    shift 2
+  fi
+  title="$1"
+  prompt="$2"
   shift 2
   local -a tags=() labels=()
   while (($# >= 2)); do
@@ -5096,7 +5103,7 @@ _menu_choose() {
   for ((i = 0; i < ${#tags[@]}; i++)); do
     printf '  %2d) %s\n' "$((i + 1))" "${labels[$i]}" >&2
   done
-  printf '   0) %s\n\n' "${MENU_ZERO_LABEL:-Back}" >&2
+  printf '   0) %s\n\n' "$zero_label" >&2
   printf 'Select an option number: ' >&2
 
   while true; do
@@ -5681,7 +5688,7 @@ _menu_nodejs() {
       "status" "Inspect Node.js clients and registry hosts" \
       "test" "Test registry metadata and tarball host" \
       "configure" "Configure npm, pnpm or Yarn" \
-      "reset" "Reset app-managed registry" )" || return 0
+      "reset" "Reset app-managed registry")" || return 0
     case "$choice" in
     status)
       _node_status_report
@@ -5736,7 +5743,7 @@ _menu_python() {
       "pip" "Configure pip" \
       "uv" "Configure uv" \
       "poetry" "Add Poetry source" \
-      "reset" "Reset app-managed source" )" || return 0
+      "reset" "Reset app-managed source")" || return 0
     case "$choice" in
     status)
       _python_status_report
@@ -5825,7 +5832,7 @@ _menu_settings() {
         "official" "Official-only profile: $([[ "$OFFICIAL_ONLY" == true ]] && echo enabled || echo disabled)" \
         "refresh" "Refresh Ubuntu mirror catalog on next run" \
         "ipv6" "IP family: $([[ "$USE_IPV6" == true ]] && echo IPv6 || echo IPv4)" \
-        "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)" 
+        "spinner" "Spinner: $([[ "$NO_SPINNER" == true ]] && echo disabled || echo enabled)"
     )" || return 0
     case "$choice" in
     timeout)
@@ -5913,7 +5920,7 @@ _menu_docker() {
       "configure" "Configure daemon.json mirror (no restart)" \
       "reset" "Restore the prior app-managed daemon.json" \
       "restore" "Restore a specific conflict-checked snapshot" \
-      "restart" "Separately restart the active Docker daemon" )" || return 0
+      "restart" "Separately restart the active Docker daemon")" || return 0
     case "$choice" in
     status)
       DOCKER_ACTION="status"
@@ -5970,7 +5977,7 @@ _menu_main() {
   while true; do
     local choice
     choice="$(
-      MENU_ZERO_LABEL="Exit" _menu_choose "$APP_NAME v$APP_VERSION" "Main menu" \
+      _menu_choose --zero-label "Exit" "$APP_NAME v$APP_VERSION" "Main menu" \
         "overview" "Overview" \
         "apt" "APT management" \
         "python" "Python package sources" \

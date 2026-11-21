@@ -6,14 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.6] — 2026-11-22
+
 ### Added
 
-- Added the Tux penguin PNG brand logo and matching square icon for the repository and README.
+- Added the Tux penguin logo and matching square icon for repository branding.
+- Added a single zero-key navigation action to every interactive menu.
+
+### Changed
+
+- Replaced unsupported terminal box-drawing and decorative glyphs with consistent ASCII-safe output.
+- Unified menu navigation: `0) Exit` in the main menu and `0) Back` in every submenu; removed separate Back and Exit entries.
+- Updated the verified bootstrap, installation documentation and CLI version to `v3.0.6`.
 
 ### Fixed
 
-- Replaced Unicode terminal separators, borders, spinner and progress glyphs with ASCII-safe output for SSH compatibility.
-- Removed the decorative ASCII monogram from the README.
+- Corrected menu navigation so selecting zero returns to the previous menu or exits the application without duplicated menu actions.
+- Corrected terminal menu formatting to satisfy the repository's shfmt check.
+
+### Tests
+
+- Added regression checks for zero-key Back and Exit labels and for the absence of explicit duplicate navigation options.
+- Updated installer and CLI version assertions for `v3.0.6`.
 
 ## [3.0.5] — 2026-11-21
 

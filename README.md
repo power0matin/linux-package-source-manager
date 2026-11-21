@@ -27,7 +27,7 @@ Ubuntu-first Linux package source and mirror manager for APT, Python, Node.js, a
 
 Linux Package Source Manager is an Ubuntu-first Linux package source and mirror manager for servers and developer environments. It currently supports Ubuntu APT mirrors, Python indexes for pip, uv and Poetry, Node.js registries for npm, pnpm and Yarn, and Docker/OCI registry mirrors. It provides interactive terminal workflows, read-only diagnostics, safe previews, validated snapshots and conflict-aware restore.
 
-> **Current source version:** `v3.0.4`. The standalone release artifact is `linux-package-source-manager.sh`. Releases through `v3.0.2` retain the historical `power-apt-boost.sh` asset; internal configuration and backup identifiers remain unchanged. The stable install command is pinned to the `v3.0.4` tag.
+> **Current source version:** `v3.0.5`. The standalone release artifact is `linux-package-source-manager.sh`. Releases through `v3.0.2` retain the historical `power-apt-boost.sh` asset; internal configuration and backup identifiers remain unchanged. The stable bootstrap is `install.sh`; it downloads and verifies the pinned release.
 
 ## Quick Start
 
@@ -36,14 +36,14 @@ On a terminal, clone the repository and open the interactive menu:
 ```bash
 git clone https://github.com/power0matin/linux-package-source-manager.git
 cd linux-package-source-manager
-git checkout v3.0.4
+git checkout v3.0.5
 sudo bash linux-package-source-manager.sh
 ```
 
 For an intentional non-interactive apply from a pipe or CI job, pass `--yes` explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.4/linux-package-source-manager.sh | sudo bash -s -- --yes
+bash <(curl -Ls https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
 ```
 
 Preview a mirror change without modifying APT configuration:
@@ -87,7 +87,7 @@ sudo bash linux-package-source-manager.sh --dry-run
 ### One-liner (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.4/linux-package-source-manager.sh | sudo bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.5/linux-package-source-manager.sh | sudo bash -s -- --yes
 ```
 
 ### Manual
@@ -95,18 +95,18 @@ curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-ma
 ```bash
 git clone https://github.com/power0matin/linux-package-source-manager.git
 cd linux-package-source-manager
-git checkout v3.0.4
+git checkout v3.0.5
 sudo bash linux-package-source-manager.sh
 ```
 
 ### Verify before running
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.4/linux-package-source-manager.sh | less
+curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.5/linux-package-source-manager.sh | less
 # Review the script, then launch an interactive menu after saving it locally:
 sudo bash linux-package-source-manager.sh
 # Or explicitly approve a non-interactive run:
-curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.4/linux-package-source-manager.sh | sudo bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.5/linux-package-source-manager.sh | sudo bash -s -- --yes
 ```
 
 ### Verify a downloaded release artifact
@@ -114,7 +114,7 @@ curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-ma
 Download the script and its published SHA-256 file, then verify the file before running it:
 
 ```bash
-VERSION="v3.0.4"
+VERSION="v3.0.5"
 curl -fLO "https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}/linux-package-source-manager.sh"
 curl -fLO "https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}/linux-package-source-manager.sh.sha256"
 sha256sum -c linux-package-source-manager.sh.sha256

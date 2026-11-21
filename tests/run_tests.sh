@@ -779,8 +779,14 @@ test_terminal_menu_progress() {
   assert_file_contains "$menu_log" "Invalid selection" "terminal menu rejects non-numeric input"
 
   code=0
-  _menu_choose "Menu test" "Choose one option" "first" "First option" <<<"0" >/dev/null 2>&1 || code=$?
+  _menu_choose "Menu test" "Choose one option" "first" "First option" <<<"0" >/dev/null 2>"$menu_log" || code=$?
   assert_exit_code 1 "$code" "zero exits a menu without selecting an action"
+  assert_file_contains "$menu_log" "0) Back" "submenu zero entry is labeled Back"
+
+  code=0
+  MENU_ZERO_LABEL="Exit" _menu_choose "Main menu test" "Choose an action" "first" "First option" <<<"0" >/dev/null 2>"$menu_log" || code=$?
+  assert_exit_code 1 "$code" "zero exits the main menu"
+  assert_file_contains "$menu_log" "0) Exit" "main menu zero entry is labeled Exit"
 
   value="$(_menu_input "Input test" "Enter a value" "fallback" <<<"")"
   assert_equal "fallback" "$value" "terminal input accepts the displayed default"

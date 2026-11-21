@@ -22,13 +22,17 @@ jobs:
           sudo chmod +x /usr/local/bin/shfmt
       - name: Run ShellCheck
         run: |
-          shellcheck -x linux-package-source-manager.sh
+          shellcheck -x linux-package-source-manager.sh install.sh
           # The test suite intentionally sources the application and mutates its globals/functions.
           shellcheck -x -e SC2034,SC2329 tests/run_tests.sh
+          shellcheck -x tests/test_installer.sh
       - name: Check shfmt formatting
         run: |
-          shfmt -d linux-package-source-manager.sh
+          shfmt -d linux-package-source-manager.sh install.sh
           shfmt -d tests/run_tests.sh
+          shfmt -d tests/test_installer.sh
+      - name: Run installer tests as an unprivileged user
+        run: bash tests/test_installer.sh
 
   test:
     name: Offline tests (Ubuntu ${{ matrix.ubuntu-version }})
@@ -47,4 +51,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Run offline regression suite
-        run: bash tests/run_tests.sh
+        run: |
+          bash tests/run_tests.sh
+          bash tests/test_installer.sh

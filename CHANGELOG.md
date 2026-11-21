@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.5] — 2026-11-21
+
+### Added
+
+- Added a short `bash <(curl ...)` bootstrap for new servers. It downloads the pinned release, verifies SHA-256, validates Bash syntax, and opens the interactive menu with privilege escalation when needed.
+
+### Changed
+
+- Updated source version and installation documentation to `v3.0.5`.
+- GitHub Release names contain only the version identifier.
+
+
 ## [3.0.4] — 2026-11-21
 
 ### Changed
@@ -248,7 +260,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added cache cleanup
 - Added branded banner
 
-[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.1...HEAD
+[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.5...HEAD
+[3.0.5]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.4...v3.0.5
+[3.0.4]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.3...v3.0.4
+[3.0.3]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.2...v3.0.3
+[3.0.2]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/power0matin/linux-package-source-manager/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/power0matin/linux-package-source-manager/compare/v2.0.0...v2.1.0

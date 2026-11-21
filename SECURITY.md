@@ -32,7 +32,7 @@ Send an email to the maintainer with:
 
 ### Scope
 
-This policy covers the `linux-package-source-manager.sh` script and its direct behavior. The following are out of scope:
+This policy covers the `install.sh` bootstrap, the `linux-package-source-manager.sh` application, their release workflow, and their direct behavior. The following are out of scope:
 
 - Bugs in third-party tools (curl, wget, apt)
 - Issues in Ubuntu itself
@@ -115,16 +115,17 @@ The `main` branch may contain changes that have not been published as a tagged r
 
 ## Best Practices for Users
 
-1. **Review the script** before running from a URL:
+1. **Review the bootstrap and application** before executing remote code. The one-line command launches `install.sh`, which downloads the pinned application and checksum:
 
    ```bash
-   curl -fsSL URL | less
+   curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh | less
+   curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.5/linux-package-source-manager.sh | less
    ```
 
 2. **Use `--dry-run` first** to see what would change:
 
    ```bash
-   curl -fsSL URL | sudo bash -s -- --dry-run
+   bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh) --dry-run
    ```
 
 3. **Check backups** after running:
@@ -133,8 +134,8 @@ The `main` branch may contain changes that have not been published as a tagged r
    ls -la /var/backups/power-apt-boost/
    ```
 
-4. **Verify the script** matches the repository:
+4. **Verify the downloaded application** against the checksum published with the pinned release. A checksum confirms that the files match each other; it is not a detached signature and does not independently authenticate the publisher:
 
    ```bash
-   sha256sum linux-package-source-manager.sh
+   sha256sum -c linux-package-source-manager.sh.sha256
    ```

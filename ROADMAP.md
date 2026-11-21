@@ -1163,13 +1163,13 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Repository snapshot (2026-11-21):** The `v3.0.3` release is published. The current source version is `3.0.4`; the public standalone artifact is `linux-package-source-manager.sh`.
+**Repository snapshot (2026-11-21):** The `v3.0.4` release is published. The current source version is `3.0.5`; the public standalone artifact is `linux-package-source-manager.sh`, with `install.sh` as the verified interactive bootstrap.
 
-**Hotfix scope:** `v3.0.4` replaces the oversized Unicode terminal banner with a compact ASCII-only banner and adds an ASCII LPSM monogram to the README. It does not alter package-source behavior, configuration formats, backup compatibility or system state.
+**Release scope:** `v3.0.4` introduced compact ASCII branding. `v3.0.5` adds a checksum-verifying one-line bootstrap and keeps package-source behavior, configuration formats and backup compatibility unchanged.
 
 **Implementation scope:** Python support covers pip, uv and Poetry; pipx is detected only. Node.js support covers npm, pnpm, Yarn Classic and Yarn Berry. Docker Engine APT sources are inspected separately from OCI registry mirrors; daemon changes are backed up and validated, and restart remains a separate confirmed action.
 
-**Next implementation phase:** Phase 8 — Go, Rust, PHP and Java adapters. Start only after `v3.0.4` is published and the phase scope is reviewed.
+**Next implementation phase:** Phase 8 — Go, Rust, PHP and Java adapters. Start only after `v3.0.5` is published and the phase scope is reviewed.
 
 **Deployment boundary:** A GitHub release publishes source artifacts only. It does not install packages, change APT or Docker configuration, restart services, or deploy to a VPS.
 

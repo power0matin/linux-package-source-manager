@@ -27,23 +27,29 @@ Ubuntu-first Linux package source and mirror manager for APT, Python, Node.js, a
 
 Linux Package Source Manager is an Ubuntu-first Linux package source and mirror manager for servers and developer environments. It currently supports Ubuntu APT mirrors, Python indexes for pip, uv and Poetry, Node.js registries for npm, pnpm and Yarn, and Docker/OCI registry mirrors. It provides interactive terminal workflows, read-only diagnostics, safe previews, validated snapshots and conflict-aware restore.
 
-> **Current source version:** `v3.0.4`. The standalone release artifact is `linux-package-source-manager.sh`. Releases through `v3.0.2` retain the historical `power-apt-boost.sh` asset; internal configuration and backup identifiers remain unchanged. The stable install command is pinned to the `v3.0.4` tag.
+> **Current source version:** `v3.0.5`. The standalone release artifact is `linux-package-source-manager.sh`. Releases through `v3.0.2` retain the historical `power-apt-boost.sh` asset; internal configuration and backup identifiers remain unchanged. The stable bootstrap is `install.sh`; it downloads and verifies the pinned release.
 
 ## Quick Start
 
-On a terminal, clone the repository and open the interactive menu:
+Open the interactive menu on a new Ubuntu server with one command:
 
 ```bash
-git clone https://github.com/power0matin/linux-package-source-manager.git
-cd linux-package-source-manager
-git checkout v3.0.4
-sudo bash linux-package-source-manager.sh
+bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
 ```
 
-For an intentional non-interactive apply from a pipe or CI job, pass `--yes` explicitly:
+The bootstrap downloads the pinned `v3.0.5` release, verifies the application against its published SHA-256 checksum, checks Bash syntax, and opens the menu. It requests `sudo` automatically when the current shell is not already root.
+
+For read-only commands, pass the desired arguments after the bootstrap:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.4/linux-package-source-manager.sh | sudo bash -s -- --yes
+bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh) --status
+bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh) --doctor
+```
+
+For a confirmed non-interactive change, specify the action and add `--yes`. The `--yes` flag alone does not select an action:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh) --mirror https://mirror.example.com/ubuntu --yes
 ```
 
 Preview a mirror change without modifying APT configuration:
@@ -51,6 +57,8 @@ Preview a mirror change without modifying APT configuration:
 ```bash
 sudo bash linux-package-source-manager.sh --dry-run
 ```
+
+The bootstrap is a launcher only. It does not install a daemon, create a systemd unit, or add a scheduled task.
 
 ## Features
 
@@ -84,41 +92,70 @@ sudo bash linux-package-source-manager.sh --dry-run
 
 ## Installation
 
-### One-liner (recommended)
+### Recommended: interactive one-liner
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.4/linux-package-source-manager.sh | sudo bash -s -- --yes
+bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
 ```
 
-### Manual
+This command requires Bash and curl. The bootstrap downloads the standalone script and checksum from the pinned `v3.0.5` GitHub Release, verifies SHA-256, runs `bash -n`, and starts the interactive menu in the current terminal. It does not require cloning the repository or manually writing a script file.
+
+The application is run with root privileges because its APT and Docker system-management features require them. When launched as a regular user, the bootstrap checks that `sudo` is available and requests authorization. When launched as root, it runs without an additional `sudo` prompt.
+
+### Pass CLI arguments
+
+The bootstrap forwards arguments to the main application. Read-only status and diagnostics can be run without opening the menu:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh) --status
+bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh) --doctor
+```
+
+For non-interactive changes, include the specific action and `--yes` to approve it. `--yes` alone does not select an action:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh) --mirror https://mirror.example.com/ubuntu --yes
+```
+
+### Manual installation from a pinned release
+
+To inspect and verify the release artifact yourself, download both files, verify the checksum, then launch the menu:
+
+```bash
+VERSION="v3.0.5"
+curl -fL "https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}/linux-package-source-manager.sh" -o linux-package-source-manager.sh
+curl -fL "https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}/linux-package-source-manager.sh.sha256" -o linux-package-source-manager.sh.sha256
+sha256sum -c linux-package-source-manager.sh.sha256
+sudo bash linux-package-source-manager.sh --menu
+```
+
+For a source checkout instead:
 
 ```bash
 git clone https://github.com/power0matin/linux-package-source-manager.git
 cd linux-package-source-manager
-git checkout v3.0.4
-sudo bash linux-package-source-manager.sh
+git checkout v3.0.5
+sudo bash linux-package-source-manager.sh --menu
 ```
 
-### Verify before running
+### Inspect the bootstrap before execution
+
+The bootstrap is a small, readable Bash file and is also attached to each release. Review it before running:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.4/linux-package-source-manager.sh | less
-# Review the script, then launch an interactive menu after saving it locally:
-sudo bash linux-package-source-manager.sh
-# Or explicitly approve a non-interactive run:
-curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/v3.0.4/linux-package-source-manager.sh | sudo bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh | less
 ```
 
-### Verify a downloaded release artifact
+### What the bootstrap verifies
 
-Download the script and its published SHA-256 file, then verify the file before running it:
+- Downloads `linux-package-source-manager.sh` and its SHA-256 file from the same pinned GitHub Release.
+- Checks the application against the published checksum and stops on a mismatch.
+- Runs `bash -n` before executing the application.
+- Uses a private temporary directory and removes it on exit.
+- Forwards CLI arguments and preserves the caller's terminal input for the interactive menu.
+- Does not install a daemon, create a systemd unit, or alter shell startup files.
 
-```bash
-VERSION="v3.0.4"
-curl -fLO "https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}/linux-package-source-manager.sh"
-curl -fLO "https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}/linux-package-source-manager.sh.sha256"
-sha256sum -c linux-package-source-manager.sh.sha256
-```
+A SHA-256 checksum detects an incomplete or altered application when it does not match the published checksum. It is not a detached cryptographic signature; review the script and release provenance when your threat model requires independent authenticity verification.
 
 ## Mirror catalog and benchmark
 
@@ -641,11 +678,12 @@ cd linux-package-source-manager
 chmod +x linux-package-source-manager.sh
 
 # Lint
-shellcheck -x linux-package-source-manager.sh
-shfmt -d linux-package-source-manager.sh
+shellcheck -x linux-package-source-manager.sh install.sh tests/test_installer.sh
+shfmt -d linux-package-source-manager.sh install.sh tests/test_installer.sh
 
 # Test
 bash tests/run_tests.sh
+bash tests/test_installer.sh
 ```
 
 ## Roadmap

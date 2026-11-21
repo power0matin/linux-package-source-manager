@@ -67,13 +67,13 @@ git clone https://github.com/YOUR_USERNAME/linux-package-source-manager.git
 cd linux-package-source-manager
 
 # Make the script executable
-chmod +x linux-package-source-manager.sh
+chmod +x linux-package-source-manager.sh install.sh
 
 # Run shellcheck
-shellcheck linux-package-source-manager.sh
+shellcheck -x linux-package-source-manager.sh install.sh tests/test_installer.sh
 
 # Run shfmt
-shfmt -d linux-package-source-manager.sh
+shfmt -d linux-package-source-manager.sh install.sh tests/test_installer.sh
 
 # Test locally (dry run)
 sudo bash linux-package-source-manager.sh --dry-run
@@ -84,12 +84,13 @@ sudo bash linux-package-source-manager.sh --dry-run
 ```bash
 # Run all tests
 bash tests/run_tests.sh
+bash tests/test_installer.sh
 
 # Run shellcheck
-shellcheck -x linux-package-source-manager.sh
+shellcheck -x linux-package-source-manager.sh install.sh tests/test_installer.sh
 
 # Run shfmt check
-shfmt -d linux-package-source-manager.sh
+shfmt -d linux-package-source-manager.sh install.sh tests/test_installer.sh
 ```
 
 ## Code Style
@@ -111,7 +112,7 @@ shfmt -d linux-package-source-manager.sh
 All code must pass ShellCheck with zero warnings:
 
 ```bash
-shellcheck -x linux-package-source-manager.sh
+shellcheck -x linux-package-source-manager.sh install.sh tests/test_installer.sh
 ```
 
 ### shfmt
@@ -123,7 +124,7 @@ All code must be formatted with shfmt:
 shfmt -d linux-package-source-manager.sh
 
 # Auto-fix formatting
-shfmt -w linux-package-source-manager.sh
+shfmt -w linux-package-source-manager.sh install.sh tests/test_installer.sh
 ```
 
 ### Comments
@@ -175,8 +176,9 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) format:
 
 ```
 linux-package-source-manager/
-├── linux-package-source-manager.sh      # Main script (single-file for curl | bash)
-├── tests/                   # Test suite
+├── linux-package-source-manager.sh      # Main single-file application
+├── install.sh                            # Version-pinned verified bootstrap
+├── tests/                                # Offline regression and installer tests
 ├── .github/                 # GitHub CI/CD and templates
 ├── README.md
 ├── CHANGELOG.md
@@ -194,13 +196,13 @@ linux-package-source-manager/
 
 ### Single-File Design
 
-Linux Package Source Manager is intentionally a single Bash script. This enables:
+Linux Package Source Manager keeps its application in one standalone Bash file. The small `install.sh` bootstrap is a separate launcher: it fetches the version-pinned release artifact and checksum, verifies the checksum, checks Bash syntax, and runs the application in the active terminal. The recommended entry point is:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/.../linux-package-source-manager.sh | sudo bash
+bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
 ```
 
-This is the primary installation method. Splitting into multiple files would break this workflow.
+The main application remains a single-file release artifact; the bootstrap does not split the application into modules or install a persistent component.
 
 ### Deb822 Format
 

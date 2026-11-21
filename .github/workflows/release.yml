@@ -24,12 +24,12 @@ jobs:
           sudo chmod +x /usr/local/bin/shfmt
       - name: Run ShellCheck
         run: |
-          shellcheck -x linux-package-source-manager.sh install.sh
+          shellcheck -x src/linux-package-source-manager.sh install.sh
           shellcheck -x -e SC2034,SC2329 tests/run_tests.sh
           shellcheck -x tests/test_installer.sh
       - name: Check shfmt formatting
         run: |
-          shfmt -d linux-package-source-manager.sh install.sh
+          shfmt -d src/linux-package-source-manager.sh install.sh
           shfmt -d tests/run_tests.sh
           shfmt -d tests/test_installer.sh
       - name: Run installer tests as an unprivileged user
@@ -70,7 +70,7 @@ jobs:
           set -Eeuo pipefail
           tag="${GITHUB_REF_NAME}"
           version="${tag#v}"
-          source_version="$(awk -F'"' '/^readonly APP_VERSION=/{print $2; exit}' linux-package-source-manager.sh)"
+          source_version="$(awk -F'"' '/^readonly APP_VERSION=/{print $2; exit}' src/linux-package-source-manager.sh)"
           installer_version="$(awk -F'"' '/^readonly VERSION=/{print $2; exit}' install.sh)"
           installer_version="${installer_version#v}"
 
@@ -112,6 +112,7 @@ jobs:
           ' CHANGELOG.md > RELEASE_NOTES.md
           test -s RELEASE_NOTES.md
 
+          cp src/linux-package-source-manager.sh "$SCRIPT_NAME"
           sha256sum linux-package-source-manager.sh > linux-package-source-manager.sh.sha256
           {
             cat RELEASE_NOTES.md

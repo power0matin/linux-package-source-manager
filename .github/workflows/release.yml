@@ -75,7 +75,7 @@ jobs:
           installer_version="${installer_version#v}"
 
           if [[ "$tag" != "v$version" || -z "$source_version" || "$source_version" != "$version" || "$installer_version" != "$version" ]]; then
-            printf 'Release tag %s does not match source version %s.\n' "$tag" "${source_version:-missing}" >&2
+            printf 'Release tag %s does not match source version %s or installer version %s.\n' "$tag" "${source_version:-missing}" "${installer_version:-missing}" >&2
             exit 1
           fi
 

@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.8] — 2026-11-22
+
+### Fixed
+
+- Corrected the release path after the existing `v3.0.7` tag was found to point to the legacy Power APT Boost history rather than the current Linux Package Source Manager source.
+- Added release provenance checks requiring a tagged commit to be present in `main` and to contain the expected LPSM source, bootstrap and installer tests.
+- Added post-publication checks for the standalone application, SHA-256 checksum and bootstrap assets.
+
+### Changed
+
+- Bumped the application, verified bootstrap and pinned installation documentation to `v3.0.8`.
+
 ## [3.0.7] — 2026-11-22
 
 ### Changed

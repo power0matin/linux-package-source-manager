@@ -11,8 +11,10 @@ fail() {
 pass() { printf 'PASS %s\n' "$*"; }
 
 bash -n "$INSTALLER" || fail "installer syntax"
-grep -Fq 'readonly VERSION="v3.0.7"' "$INSTALLER" || fail "pinned version"
+grep -Fq 'readonly VERSION="v3.0.8"' "$INSTALLER" || fail "pinned version"
 grep -Fq 'sha256sum --check --status' "$INSTALLER" || fail "checksum verification"
+grep -Fq 'readonly SCRIPT_NAME="linux-package-source-manager.sh"' "$INSTALLER" || fail "release artifact filename"
+grep -Fq 'readonly CHECKSUM_NAME="${SCRIPT_NAME}.sha256"' "$INSTALLER" || fail "release checksum filename"
 expected_command="sudo bash \"\${TMP_DIR}/\${SCRIPT_NAME}\" \"\$@\""
 grep -Fq "$expected_command" "$INSTALLER" || fail "sudo execution"
 pass "installer syntax and safety guards"

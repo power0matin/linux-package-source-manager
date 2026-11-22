@@ -5,7 +5,7 @@
 #
 set -Eeuo pipefail
 
-readonly VERSION="v3.0.7"
+readonly VERSION="v3.0.8"
 readonly BASE_URL="https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}"
 readonly SCRIPT_NAME="linux-package-source-manager.sh"
 readonly CHECKSUM_NAME="${SCRIPT_NAME}.sha256"

@@ -63,11 +63,32 @@ jobs:
     steps:
       - name: Checkout tagged source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Verify tag, source version and changelog entry
         id: version
         shell: bash
         run: |
           set -Eeuo pipefail
+
+          git fetch origin main --no-tags
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            printf 'Release tag %s must point to a commit already merged into main.\n' "${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+          for required_path in src/linux-package-source-manager.sh install.sh tests/test_installer.sh; do
+            if [[ ! -f "$required_path" ]]; then
+              printf 'Required LPSM release path is missing: %s\n' "$required_path" >&2
+              exit 1
+            fi
+          done
+
+          if [[ -e power-apt-boost.sh ]]; then
+            printf 'Legacy Power APT Boost source layout detected; refusing to publish an LPSM release.\n' >&2
+            exit 1
+          fi
+
           tag="${GITHUB_REF_NAME}"
           version="${tag#v}"
           source_version="$(awk -F'"' '/^readonly APP_VERSION=/{print $2; exit}' src/linux-package-source-manager.sh)"
@@ -123,6 +144,8 @@ jobs:
           test -s "$SCRIPT_NAME"
           test -s "$SCRIPT_NAME.sha256"
           sha256sum -c "$SCRIPT_NAME.sha256"
+          bash -n "$SCRIPT_NAME"
+          cmp -s src/linux-package-source-manager.sh "$SCRIPT_NAME"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -136,3 +159,24 @@ jobs:
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
+
+      - name: Verify published release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -Eeuo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.assets[].name' > published-assets.txt
+
+          for required_asset in linux-package-source-manager.sh linux-package-source-manager.sh.sha256 install.sh; do
+            if ! grep -Fxq "$required_asset" published-assets.txt; then
+              printf 'Published release is missing required asset: %s\n' "$required_asset" >&2
+              cat published-assets.txt >&2
+              exit 1
+            fi
+          done
+
+          if grep -Fxq 'power-apt-boost.sh' published-assets.txt; then
+            printf 'Unexpected legacy Power APT Boost asset found in LPSM release.\n' >&2
+            exit 1
+          fi

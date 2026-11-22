@@ -1163,13 +1163,13 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Repository snapshot (2026-11-22):** The current source version is `3.0.7`; the application is tracked under `src/`, the roadmap under `docs/`, and the public standalone artifact remains `linux-package-source-manager.sh`, launched through the verified `install.sh` bootstrap.
+**Repository snapshot (2026-11-22):** The current source version is `3.0.8`; the application is tracked under `src/`, the roadmap under `docs/`, and the public standalone artifact remains `linux-package-source-manager.sh`, launched through the verified `install.sh` bootstrap.
 
-**Release scope:** `v3.0.4` introduced compact ASCII terminal branding. `v3.0.5` added a checksum-verifying one-line bootstrap. `v3.0.6` added Tux PNG branding, terminal-safe ASCII separators, and a single zero-key Back/Exit navigation action. `v3.0.7` organizes the repository layout, moves the tracked application into `src/` and the roadmap into `docs/`, and preserves the stable standalone release artifact and installer behavior. Package-source behavior, configuration formats and backup compatibility remain unchanged.
+**Release scope:** `v3.0.4` introduced compact ASCII terminal branding. `v3.0.5` added a checksum-verifying one-line bootstrap. `v3.0.6` added Tux PNG branding, terminal-safe ASCII separators, and a single zero-key Back/Exit navigation action. `v3.0.7` organizes the repository layout, moves the tracked application into `src/` and the roadmap into `docs/`, and preserves the stable standalone release artifact and installer behavior. `v3.0.8` corrects release provenance and adds published-asset checks to prevent a legacy project revision from being published as LPSM. Package-source behavior, configuration formats and backup compatibility remain unchanged.
 
 **Implementation scope:** Python support covers pip, uv and Poetry; pipx is detected only. Node.js support covers npm, pnpm, Yarn Classic and Yarn Berry. Docker Engine APT sources are inspected separately from OCI registry mirrors; daemon changes are backed up and validated, and restart remains a separate confirmed action.
 
-**Next implementation phase:** Phase 8 — Go, Rust, PHP and Java adapters. Start only after `v3.0.7` is published and the phase scope is reviewed.
+**Next implementation phase:** Phase 8 — Go, Rust, PHP and Java adapters. Start only after `v3.0.8` is published and the phase scope is reviewed.
 
 **Deployment boundary:** A GitHub release publishes source artifacts only. It does not install packages, change APT or Docker configuration, restart services, or deploy to a VPS.
 

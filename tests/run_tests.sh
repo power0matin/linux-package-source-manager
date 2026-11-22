@@ -133,7 +133,7 @@ test_cli() {
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"
-  assert_contains "3.0.7" "$output" "version matches script version"
+  assert_contains "3.0.8" "$output" "version matches script version"
   menu_source="$(sed -n '/^_menu_manage_mirrors() {/,/^main() {/p' "$SCRIPT")"
   if grep -Eq '"back"[[:space:]]+"(Back|Cancel|Back to main menu)"|"quit"[[:space:]]+"Exit"|^[[:space:]]*(back|quit)\)' <<<"$menu_source"; then
     assert_equal "no duplicate navigation" "duplicate navigation" "interactive menus do not define separate Back or Exit actions"

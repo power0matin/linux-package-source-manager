@@ -23,7 +23,7 @@ Ubuntu-first Linux package source and mirror manager for APT, Python, Node.js, a
 
 Linux Package Source Manager is an Ubuntu-first Linux package source and mirror manager for servers and developer environments. It currently supports Ubuntu APT mirrors, Python indexes for pip, uv and Poetry, Node.js registries for npm, pnpm and Yarn, and Docker/OCI registry mirrors. It provides interactive terminal workflows, read-only diagnostics, safe previews, validated snapshots and conflict-aware restore.
 
-> **Current source version:** `v3.0.7`. The tracked application source lives at `src/linux-package-source-manager.sh`; the published standalone release asset keeps the filename `linux-package-source-manager.sh`. Releases through `v3.0.2` retain the historical `power-apt-boost.sh` asset; internal configuration and backup identifiers remain unchanged. The stable bootstrap is `install.sh`; it downloads and verifies the pinned release.
+> **Current source version:** `v3.0.8`. The tracked application source lives at `src/linux-package-source-manager.sh`; the published standalone release asset keeps the filename `linux-package-source-manager.sh`. Releases through `v3.0.2` retain the historical `power-apt-boost.sh` asset; internal configuration and backup identifiers remain unchanged. The stable bootstrap is `install.sh`; it downloads and verifies the pinned release.
 
 ## Quick Start
 
@@ -33,7 +33,7 @@ Open the interactive menu on a new Ubuntu server with one command:
 bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
 ```
 
-The bootstrap downloads the pinned `v3.0.7` release, verifies the application against its published SHA-256 checksum, checks Bash syntax, and opens the menu. It requests `sudo` automatically when the current shell is not already root.
+The bootstrap downloads the pinned `v3.0.8` release, verifies the application against its published SHA-256 checksum, checks Bash syntax, and opens the menu. It requests `sudo` automatically when the current shell is not already root.
 
 For read-only commands, pass the desired arguments after the bootstrap:
 
@@ -94,7 +94,7 @@ The bootstrap is a launcher only. It does not install a daemon, create a systemd
 bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
 ```
 
-This command requires Bash and curl. The bootstrap downloads the standalone script and checksum from the pinned `v3.0.7` GitHub Release, verifies SHA-256, runs `bash -n`, and starts the interactive menu in the current terminal. It does not require cloning the repository or manually writing a script file.
+This command requires Bash and curl. The bootstrap downloads the standalone script and checksum from the pinned `v3.0.8` GitHub Release, verifies SHA-256, runs `bash -n`, and starts the interactive menu in the current terminal. It does not require cloning the repository or manually writing a script file.
 
 The application is run with root privileges because its APT and Docker system-management features require them. When launched as a regular user, the bootstrap checks that `sudo` is available and requests authorization. When launched as root, it runs without an additional `sudo` prompt.
 
@@ -118,7 +118,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-so
 To inspect and verify the release artifact yourself, download both files, verify the checksum, then launch the menu:
 
 ```bash
-VERSION="v3.0.7"
+VERSION="v3.0.8"
 curl -fL "https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}/linux-package-source-manager.sh" -o linux-package-source-manager.sh
 curl -fL "https://github.com/power0matin/linux-package-source-manager/releases/download/${VERSION}/linux-package-source-manager.sh.sha256" -o linux-package-source-manager.sh.sha256
 sha256sum -c linux-package-source-manager.sh.sha256
@@ -130,7 +130,7 @@ For a source checkout instead:
 ```bash
 git clone https://github.com/power0matin/linux-package-source-manager.git
 cd linux-package-source-manager
-git checkout v3.0.7
+git checkout v3.0.8
 sudo bash src/linux-package-source-manager.sh --menu
 ```
 

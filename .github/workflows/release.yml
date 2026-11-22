@@ -158,6 +158,7 @@ jobs:
             install.sh
           draft: false
           prerelease: false
+          fail_on_unmatched_files: true
 
       - name: Verify published release assets
         env:
@@ -179,4 +180,3 @@ jobs:
             printf 'Unexpected legacy Power APT Boost asset found in LPSM release.\n' >&2
             exit 1
           fi
-          fail_on_unmatched_files: true

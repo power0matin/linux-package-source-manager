@@ -560,7 +560,10 @@ ATOMIC
   assert_file_contains "$APT_DEB822_FILE" 'Languages: none' "managed Deb822 preserves Languages"
   assert_file_contains "$APT_DEB822_FILE" '# Local comment that must survive a mirror switch' "managed Deb822 preserves user comments"
   assert_file_contains "$APT_DEB822_FILE" '# Mirror: https://new.example/ubuntu' "managed Deb822 updates its recorded mirror"
-  assert_equal "1" "$(grep -c '^URIs: https://new.example/ubuntu
+  assert_equal "1" "$(grep -c '^URIs: https://new.example/ubuntu$' "$APT_DEB822_FILE")" "managed Deb822 updates archive URI only"
+  assert_file_contains "$APT_DEB822_FILE" 'URIs: https://security.ubuntu.com/ubuntu' "managed Deb822 preserves security archive URI"
+
+  printf '# Power APT Boost test fixture\n# Mirror: https://archive.ubuntu.com/ubuntu\nAcquire::Languages "none";\nAcquire::Custom::Option "keep";\n' >"$APT_CONF_FILE"
   local unmanaged_config_status=0
   _write_apt_config >/dev/null 2>&1 || unmanaged_config_status=$?
   assert_exit_code 1 "$unmanaged_config_status" "managed APT config refuses an unexpected custom directive"

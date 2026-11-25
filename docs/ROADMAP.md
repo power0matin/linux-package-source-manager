@@ -4,7 +4,7 @@
 > **Prepared:** 2026-11-25  
 > **Project:** [power0matin/linux-package-source-manager](https://github.com/power0matin/linux-package-source-manager)  
 > **Initial roadmap audit baseline (2026-11-19):** `main` at `56eaf13e76e276bbaae160e59a0aca506490f02d`  
-> **Current script version string:** `3.0.11`
+> **Current script version string:** `3.0.12`
 
 This document is the implementation plan for evolving Linux Package Source Manager into an **Ubuntu-first package-source and mirror manager for servers and developer environments**. It expands the existing Ubuntu APT mirror selector to cover the package ecosystems commonly used on Ubuntu servers, including Python, Node.js, Docker/OCI, Go, Rust, PHP, Java and selected additional ecosystems.
 
@@ -1163,13 +1163,13 @@ The implementation must follow the current official behavior of each ecosystem. 
 
 This roadmap is intentionally comprehensive. It does not authorize implementing every phase in one change.
 
-**Repository snapshot (2026-11-25):** The current source version is `3.0.11`; the application is tracked under `src/`, the roadmap under `docs/`, and the public standalone artifact remains `linux-package-source-manager.sh`, launched through the verified `install.sh` bootstrap.
+**Repository snapshot (2026-11-25):** The current source version is `3.0.12`; the application is tracked under `src/`, the roadmap under `docs/`, and the public standalone artifact remains `linux-package-source-manager.sh`, launched through the verified `install.sh` bootstrap.
 
-**Release scope:** `v3.0.4` introduced compact ASCII terminal branding. `v3.0.5` added a checksum-verifying one-line bootstrap. `v3.0.6` added Tux PNG branding, terminal-safe ASCII separators, and a single zero-key Back/Exit navigation action. `v3.0.7` organizes the repository layout, moves the tracked application into `src/` and the roadmap into `docs/`, and preserves the stable standalone release artifact and installer behavior. `v3.0.8` corrects release provenance and adds published-asset checks to prevent a legacy project revision from being published as LPSM. `v3.0.9` fixes managed APT Deb822 validation, preserves supported optional source fields during mirror changes and rejects unsupported or security-weakening options. `v3.0.10` adds safe support for the combined single-stanza Ubuntu source layout and corrects inventory classification for managed mirrors. `v3.0.11` accepts valid APT `//` line comments in the existing managed network configuration while continuing to reject unrecognized directives. These hotfixes do not change backup compatibility.
+**Release scope:** `v3.0.4` introduced compact ASCII terminal branding. `v3.0.5` added a checksum-verifying one-line bootstrap. `v3.0.6` added Tux PNG branding, terminal-safe ASCII separators, and a single zero-key Back/Exit navigation action. `v3.0.7` organizes the repository layout, moves the tracked application into `src/` and the roadmap into `docs/`, and preserves the stable standalone release artifact and installer behavior. `v3.0.8` corrects release provenance and adds published-asset checks to prevent a legacy project revision from being published as LPSM. `v3.0.9` fixes managed APT Deb822 validation, preserves supported optional source fields during mirror changes and rejects unsupported or security-weakening options. `v3.0.10` adds safe support for the combined single-stanza Ubuntu source layout and corrects inventory classification for managed mirrors. `v3.0.11` accepts valid APT `//` line comments in the existing managed network configuration while continuing to reject unrecognized directives. `v3.0.12` validates both the combined four-suite Deb822 layout and the canonical two-stanza layout during the final APT pre-update verification. These hotfixes do not change backup compatibility.
 
 **Implementation scope:** Python support covers pip, uv and Poetry; pipx is detected only. Node.js support covers npm, pnpm, Yarn Classic and Yarn Berry. Docker Engine APT sources are inspected separately from OCI registry mirrors; daemon changes are backed up and validated, and restart remains a separate confirmed action.
 
-**Next implementation phase:** Phase 8 — Go, Rust, PHP and Java adapters. Start only after `v3.0.11` is published and the phase scope is reviewed.
+**Next implementation phase:** Phase 8 — Go, Rust, PHP and Java adapters. Start only after `v3.0.12` is published and the phase scope is reviewed.
 
 **Deployment boundary:** A GitHub release publishes source artifacts only. It does not install packages, change APT or Docker configuration, restart services, or deploy to a VPS.
 

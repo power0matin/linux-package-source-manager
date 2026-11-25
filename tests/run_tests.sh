@@ -552,7 +552,7 @@ ATOMIC
   write_managed_source_fixture "https://old.example/ubuntu"
   sed -i '/^Signed-By:/a Architectures: amd64' "$APT_DEB822_FILE"
   sed -i '/^Components:/a Languages: none' "$APT_DEB822_FILE"
-  printf '# Local comment that must survive a mirror switch\\n' >>"$APT_DEB822_FILE"
+  printf '# Local comment that must survive a mirror switch\n' >>"$APT_DEB822_FILE"
   local optional_status=0 optional_content
   _write_apt_sources "https://new.example/ubuntu" >/dev/null 2>&1 || optional_status=$?
   assert_exit_code 0 "$optional_status" "managed Deb822 accepts safe optional fields"

@@ -5,7 +5,7 @@
 # Author  : Matin Shahabadi
 # GitHub  : https://github.com/power0matin/linux-package-source-manager
 # License : MIT
-# Version : 3.0.10
+# Version : 3.0.11
 #
 # Usage:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
@@ -19,7 +19,7 @@ IFS=$'\n\t'
 # === Constants ================================================================
 
 readonly APP_NAME="Linux Package Source Manager"
-readonly APP_VERSION="3.0.10"
+readonly APP_VERSION="3.0.11"
 readonly APP_SLUG="power-apt-boost"
 readonly APP_AUTHOR="Matin Shahabadi"
 readonly APP_GITHUB="https://github.com/power0matin/linux-package-source-manager"
@@ -1848,7 +1848,7 @@ _write_apt_config() {
       return 1
     fi
     while IFS= read -r existing_line || [[ -n "$existing_line" ]]; do
-      [[ "$existing_line" =~ ^[[:space:]]*(#|$) ]] && continue
+      [[ "$existing_line" =~ ^[[:space:]]*(#|//|$) ]] && continue
       case "$existing_line" in
       'Acquire::ForceIPv4 "'*'";' | 'Acquire::ForceIPv6 "'*'";' | \
         'Acquire::Retries "'*'";' | 'Acquire::http::Timeout "'*'";' | \

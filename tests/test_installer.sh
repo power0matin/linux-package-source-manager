@@ -11,7 +11,7 @@ fail() {
 pass() { printf 'PASS %s\n' "$*"; }
 
 bash -n "$INSTALLER" || fail "installer syntax"
-grep -Fq 'readonly VERSION="v3.0.10"' "$INSTALLER" || fail "pinned version"
+grep -Fq 'readonly VERSION="v3.0.11"' "$INSTALLER" || fail "pinned version"
 grep -Fq 'sha256sum --check --status' "$INSTALLER" || fail "checksum verification"
 grep -Fq 'readonly SCRIPT_NAME="linux-package-source-manager.sh"' "$INSTALLER" || fail "release artifact filename"
 expected_checksum="readonly CHECKSUM_NAME=\"\${SCRIPT_NAME}.sha256\""

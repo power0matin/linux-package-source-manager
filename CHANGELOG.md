@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.11] — 2026-11-25
+
+### Fixed
+
+- Accept valid APT `//` full-line comments when validating the existing managed APT network configuration, including configurations created by earlier LPSM versions.
+- Continue rejecting unknown APT directives in managed configuration files.
+
+### Tests
+
+- Added regression coverage for legacy `//` comments and retained the rejection test for unsupported managed APT directives.
+
 ## [3.0.10] — 2026-11-25
 
 ### Fixed
@@ -332,8 +343,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added cache cleanup
 - Added branded banner
 
-[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.10...HEAD
+[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.11...HEAD
 [3.0.10]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.9...v3.0.10
+[3.0.11]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.10...v3.0.11
 [3.0.9]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.8...v3.0.9
 [3.0.8]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.7...v3.0.8
 [3.0.7]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.6...v3.0.7

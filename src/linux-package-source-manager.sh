@@ -1495,7 +1495,6 @@ _collect_source_inventory() {
   done
 }
 
-
 _validate_managed_apt_source_file() {
   local file="$1" archive_uri="$2" security_uri="$3"
   awk -v archive_uri="$archive_uri" -v security_uri="$security_uri" \

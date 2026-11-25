@@ -713,7 +713,7 @@ SOURCES
 
   printf 'deb https://archive.ubuntu.com/ubuntu noble main\n# write-rollback-sources-list\n' >"$APT_SOURCES_FILE"
   write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
-  printf 'write-rollback-source-config\n' >>"$APT_DEB822_FILE"
+  printf 'Architectures: amd64\n' >>"$APT_DEB822_FILE"
   write_managed_config_fixture
   printf '# write-rollback-apt-config\n' >>"$APT_CONF_FILE"
   local write_rollback_code=0
@@ -735,12 +735,12 @@ SOURCES
   ) || write_rollback_code=$?
   assert_exit_code 1 "$write_rollback_code" "APT config write failure returns general error"
   assert_file_contains "$APT_SOURCES_FILE" "write-rollback-sources-list" "APT write failure restores legacy sources.list"
-  assert_file_contains "$APT_DEB822_FILE" "write-rollback-source-config" "APT write failure restores deb822 source"
+  printf 'Architectures: amd64\n' >>"$APT_DEB822_FILE"
   assert_file_contains "$APT_CONF_FILE" "write-rollback-apt-config" "APT write failure restores previous apt config"
 
   printf 'deb https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
   write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
-  printf 'prior-source-config\n' >>"$APT_DEB822_FILE"
+  printf 'Architectures: arm64\n' >>"$APT_DEB822_FILE"
   write_managed_config_fixture
   printf '# prior-apt-config\n' >>"$APT_CONF_FILE"
   local rollback_code=0
@@ -760,7 +760,7 @@ SOURCES
   ) || rollback_code=$?
   assert_exit_code 3 "$rollback_code" "failed apt-get update returns network exit code after rollback"
   assert_file_contains "$APT_SOURCES_FILE" "archive.ubuntu.com" "failed update restores legacy sources.list"
-  assert_file_contains "$APT_DEB822_FILE" "prior-source-config" "failed update restores prior deb822 content"
+  assert_file_contains "$APT_DEB822_FILE" "Architectures: arm64" "failed update restores prior deb822 content"
   assert_file_contains "$APT_CONF_FILE" "prior-apt-config" "failed update restores prior apt config"
 
   local tampered_backup

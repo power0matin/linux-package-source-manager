@@ -1470,9 +1470,10 @@ _apt_source_records() {
 
 _is_managed_ubuntu_source_record() {
   local file="$1" uri="$2" suite="$3" managed_mirror="$4"
-  [[ "$file" == "$APT_DEB822_FILE" && -n "$managed_mirror" && "$uri" == "$managed_mirror" ]] || return 1
+  local codename="${CODENAME:-${REPORT_CODENAME:-}}"
+  [[ "$file" == "$APT_DEB822_FILE" && -n "$managed_mirror" && "$uri" == "$managed_mirror" && -n "$codename" ]] || return 1
   case "$suite" in
-  "$CODENAME" | "$CODENAME-updates" | "$CODENAME-backports" | "$CODENAME-security") return 0 ;;
+  "$codename" | "$codename-updates" | "$codename-backports" | "$codename-security") return 0 ;;
   *) return 1 ;;
   esac
 }

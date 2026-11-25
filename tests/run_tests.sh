@@ -669,10 +669,14 @@ Suites: noble
 Components: stable
 Signed-By: /etc/apt/keyrings/docker.asc
 SOURCES
+  local inventory_codename="$CODENAME"
+  CODENAME=""
+  REPORT_CODENAME="noble"
   _collect_source_inventory
   assert_equal "5" "$APT_SOURCE_TOTAL" "APT inventory counts managed Ubuntu and Docker source records"
-  assert_equal "4" "$APT_SOURCE_UBUNTU" "APT inventory recognizes managed non-canonical Ubuntu mirror records"
+  assert_equal "4" "$APT_SOURCE_UBUNTU" "APT inventory recognizes managed non-canonical Ubuntu mirror records during status checks"
   assert_equal "1" "$APT_SOURCE_THIRD_PARTY" "APT inventory keeps Docker records classified as third-party"
+  CODENAME="$inventory_codename"
   rm -f "${APT_SOURCES_DIR}/docker.sources" "$APT_DEB822_FILE"
 
   NO_SPINNER=true

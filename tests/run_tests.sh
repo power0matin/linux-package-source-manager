@@ -133,7 +133,7 @@ test_cli() {
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"
-  assert_contains "3.0.11" "$output" "version matches script version"
+  assert_contains "3.0.12" "$output" "version matches script version"
   menu_source="$(sed -n '/^_menu_manage_mirrors() {/,/^main() {/p' "$SCRIPT")"
   if grep -Eq '"back"[[:space:]]+"(Back|Cancel|Back to main menu)"|"quit"[[:space:]]+"Exit"|^[[:space:]]*(back|quit)\)' <<<"$menu_source"; then
     assert_equal "no duplicate navigation" "duplicate navigation" "interactive menus do not define separate Back or Exit actions"
@@ -582,6 +582,39 @@ ATOMIC
   assert_equal "1" "$(grep -c '^URIs:' "$APT_DEB822_FILE")" "single-stanza mirror rewrite preserves one URI field"
   assert_file_contains "$APT_DEB822_FILE" 'URIs: https://mirror.mobinhost.com/ubuntu' "single-stanza mirror rewrite updates the archive URI"
   assert_file_contains "$APT_DEB822_FILE" 'Suites: noble noble-updates noble-backports noble-security' "single-stanza mirror rewrite preserves all four suites"
+
+  local verify_combined_status=0 verify_split_status=0 verify_invalid_status=0
+  local verify_original_codename="$CODENAME" verify_original_mirror="$SELECTED_MIRROR"
+  CODENAME=noble
+  SELECTED_MIRROR="https://mirror.mobinhost.com/ubuntu"
+  APT_RETRIES=3
+
+  write_managed_single_source_fixture "$SELECTED_MIRROR"
+  write_managed_config_fixture
+  _write_apt_config
+  _verify_apt_configuration || verify_combined_status=$?
+  assert_exit_code 0 "$verify_combined_status" "APT final verification accepts combined four-suite Deb822 stanza"
+
+  write_managed_source_fixture "$SELECTED_MIRROR"
+  write_managed_config_fixture
+  _write_apt_config
+  _verify_apt_configuration || verify_split_status=$?
+  assert_exit_code 0 "$verify_split_status" "APT final verification accepts separate archive and security stanzas"
+
+  write_managed_single_source_fixture "$SELECTED_MIRROR"
+  sed -i 's/noble-security/noble-proposed/' "$APT_DEB822_FILE"
+  write_managed_config_fixture
+  _write_apt_config
+  local verify_invalid_before verify_invalid_after
+  verify_invalid_before="$(sha256sum "$APT_DEB822_FILE")"
+  _verify_apt_configuration >/dev/null 2>&1 || verify_invalid_status=$?
+  verify_invalid_after="$(sha256sum "$APT_DEB822_FILE")"
+  assert_exit_code 1 "$verify_invalid_status" "APT final verification rejects an unexpected suite"
+  assert_equal "$verify_invalid_before" "$verify_invalid_after" "failed final verification leaves source file unchanged"
+
+  CODENAME="$verify_original_codename"
+  SELECTED_MIRROR="$verify_original_mirror"
+  write_managed_config_fixture
 
   write_managed_single_source_fixture "https://mirror.arvancloud.ir/ubuntu"
   sed -i 's/noble-security/noble-proposed/' "$APT_DEB822_FILE"

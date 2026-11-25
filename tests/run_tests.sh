@@ -601,6 +601,17 @@ ATOMIC
   _verify_apt_configuration || verify_split_status=$?
   assert_exit_code 0 "$verify_split_status" "APT final verification accepts separate archive and security stanzas"
 
+  local verify_ports_status=0
+  dpkg() { printf 'arm64\n'; }
+  SELECTED_MIRROR="https://ports.ubuntu.com/ubuntu-ports"
+  write_managed_single_source_fixture "$SELECTED_MIRROR"
+  write_managed_config_fixture
+  _write_apt_config
+  _verify_apt_configuration || verify_ports_status=$?
+  assert_exit_code 0 "$verify_ports_status" "APT final verification accepts combined Ubuntu Ports suites"
+  unset -f dpkg
+
+  SELECTED_MIRROR="https://mirror.mobinhost.com/ubuntu"
   write_managed_single_source_fixture "$SELECTED_MIRROR"
   sed -i 's/noble-security/noble-proposed/' "$APT_DEB822_FILE"
   write_managed_config_fixture

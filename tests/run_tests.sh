@@ -133,7 +133,7 @@ test_cli() {
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"
-  assert_contains "3.0.10" "$output" "version matches script version"
+  assert_contains "3.0.11" "$output" "version matches script version"
   menu_source="$(sed -n '/^_menu_manage_mirrors() {/,/^main() {/p' "$SCRIPT")"
   if grep -Eq '"back"[[:space:]]+"(Back|Cancel|Back to main menu)"|"quit"[[:space:]]+"Exit"|^[[:space:]]*(back|quit)\)' <<<"$menu_source"; then
     assert_equal "no duplicate navigation" "duplicate navigation" "interactive menus do not define separate Back or Exit actions"
@@ -615,6 +615,16 @@ ATOMIC
   _write_apt_config >/dev/null 2>&1 || unmanaged_config_status=$?
   assert_exit_code 1 "$unmanaged_config_status" "managed APT config refuses an unexpected custom directive"
   assert_file_contains "$APT_CONF_FILE" 'Acquire::Custom::Option "keep";' "refused APT config overwrite leaves custom directive intact"
+  cat >"$APT_CONF_FILE" <<'APTCONF'
+# Power APT Boost test fixture
+// Force IPv4 for better compatibility
+Acquire::ForceIPv4 "true";
+// Retry failed downloads
+Acquire::Retries "3";
+APTCONF
+  local legacy_comment_status=0
+  _write_apt_config >/dev/null 2>&1 || legacy_comment_status=$?
+  assert_exit_code 0 "$legacy_comment_status" "managed APT config accepts valid C++-style line comments"
   write_managed_config_fixture
 
   dpkg() { printf 'mips64el\n'; }

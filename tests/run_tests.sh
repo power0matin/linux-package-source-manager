@@ -660,6 +660,7 @@ SOURCES
   assert_equal "1" "$APT_SOURCE_THIRD_PARTY" "APT inventory classifies third-party sources"
   assert_equal "1" "$APT_SOURCE_DUPLICATES" "APT inventory detects duplicate URI/suite records"
   rm -f "${APT_SOURCES_DIR}/inventory-thirdparty.list" "${APT_SOURCES_DIR}/inventory-duplicate.sources"
+  rm -f "$APT_SOURCES_FILE"
 
   write_managed_single_source_fixture "https://mirror.arvancloud.ir/ubuntu"
   cat >"${APT_SOURCES_DIR}/docker.sources" <<'SOURCES'

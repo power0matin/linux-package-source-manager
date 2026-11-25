@@ -1515,7 +1515,7 @@ _validate_managed_apt_source_file() {
     }
     function reject(reason) {
       if (!failed) {
-        printf "  Deb822 validation: %s\\n", reason > "/dev/stderr"
+        printf "  Deb822 validation: %s\n", reason > "/dev/stderr"
       }
       failed = 1
     }

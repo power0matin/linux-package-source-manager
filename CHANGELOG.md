@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.10] — 2026-11-25
+
+### Fixed
+
+- Accepted the managed single-stanza Deb822 layout when all four Ubuntu suites use the recorded mirror, while preserving its existing fields and comments during mirror changes.
+- Corrected APT inventory classification so the active mirror recorded by the managed Ubuntu source is counted as Ubuntu rather than third-party; independent repositories such as Docker remain third-party.
+
+### Tests
+
+- Added regression coverage for successful single-stanza validation and URI-only rewrites, rejection of unexpected suites without mutation, and correct Ubuntu/Docker inventory counts.
+
 ## [3.0.9] — 2026-11-25
 
 ### Fixed
@@ -321,7 +332,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added cache cleanup
 - Added branded banner
 
-[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.9...HEAD
+[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.10...HEAD
+[3.0.10]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.9...v3.0.10
 [3.0.9]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.8...v3.0.9
 [3.0.8]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.7...v3.0.8
 [3.0.7]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.6...v3.0.7

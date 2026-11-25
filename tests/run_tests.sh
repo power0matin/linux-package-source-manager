@@ -133,7 +133,7 @@ test_cli() {
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"
-  assert_contains "3.0.9" "$output" "version matches script version"
+  assert_contains "3.0.10" "$output" "version matches script version"
   menu_source="$(sed -n '/^_menu_manage_mirrors() {/,/^main() {/p' "$SCRIPT")"
   if grep -Eq '"back"[[:space:]]+"(Back|Cancel|Back to main menu)"|"quit"[[:space:]]+"Exit"|^[[:space:]]*(back|quit)\)' <<<"$menu_source"; then
     assert_equal "no duplicate navigation" "duplicate navigation" "interactive menus do not define separate Back or Exit actions"
@@ -361,6 +361,18 @@ Components: main restricted universe multiverse
 Signed-By: $KEYRING_PATH
 SOURCES
   }
+  write_managed_single_source_fixture() {
+    local mirror="${1:-https://mirror.arvancloud.ir/ubuntu}"
+    cat >"$APT_DEB822_FILE" <<SOURCES
+# Power APT Boost test fixture
+# Mirror: $mirror
+Types: deb
+URIs: $mirror
+Suites: noble noble-updates noble-backports noble-security
+Components: main restricted universe multiverse
+Signed-By: $KEYRING_PATH
+SOURCES
+  }
   write_managed_config_fixture() {
     mkdir -p "$APT_CONF_DIR"
     printf '# Power APT Boost test fixture\nAcquire::Languages "none";\n# prior-apt-config\n' >"$APT_CONF_FILE"
@@ -563,6 +575,23 @@ ATOMIC
   assert_equal "1" "$(grep -c '^URIs: https://new.example/ubuntu$' "$APT_DEB822_FILE")" "managed Deb822 updates archive URI only"
   assert_file_contains "$APT_DEB822_FILE" 'URIs: https://security.ubuntu.com/ubuntu' "managed Deb822 preserves security archive URI"
 
+  write_managed_single_source_fixture "https://mirror.arvancloud.ir/ubuntu"
+  local combined_status=0
+  _write_apt_sources "https://mirror.mobinhost.com/ubuntu" >/dev/null 2>&1 || combined_status=$?
+  assert_exit_code 0 "$combined_status" "managed single-stanza Deb822 accepts all four suites on its recorded mirror"
+  assert_equal "1" "$(grep -c '^URIs:' "$APT_DEB822_FILE")" "single-stanza mirror rewrite preserves one URI field"
+  assert_file_contains "$APT_DEB822_FILE" 'URIs: https://mirror.mobinhost.com/ubuntu' "single-stanza mirror rewrite updates the archive URI"
+  assert_file_contains "$APT_DEB822_FILE" 'Suites: noble noble-updates noble-backports noble-security' "single-stanza mirror rewrite preserves all four suites"
+
+  write_managed_single_source_fixture "https://mirror.arvancloud.ir/ubuntu"
+  sed -i 's/noble-security/noble-proposed/' "$APT_DEB822_FILE"
+  local combined_before combined_after combined_invalid_status=0
+  combined_before="$(sha256sum "$APT_DEB822_FILE")"
+  _write_apt_sources "https://mirror.mobinhost.com/ubuntu" >/dev/null 2>&1 || combined_invalid_status=$?
+  combined_after="$(sha256sum "$APT_DEB822_FILE")"
+  assert_exit_code 1 "$combined_invalid_status" "managed single-stanza Deb822 rejects an unexpected suite"
+  assert_equal "$combined_before" "$combined_after" "rejected single-stanza Deb822 remains byte-for-byte unchanged"
+
   write_managed_source_fixture "https://old.example/ubuntu"
   sed -i '/^Signed-By:/a Trusted: yes' "$APT_DEB822_FILE"
   local trusted_before trusted_after trusted_status=0
@@ -631,6 +660,25 @@ SOURCES
   assert_equal "1" "$APT_SOURCE_THIRD_PARTY" "APT inventory classifies third-party sources"
   assert_equal "1" "$APT_SOURCE_DUPLICATES" "APT inventory detects duplicate URI/suite records"
   rm -f "${APT_SOURCES_DIR}/inventory-thirdparty.list" "${APT_SOURCES_DIR}/inventory-duplicate.sources"
+  rm -f "$APT_SOURCES_FILE"
+
+  write_managed_single_source_fixture "https://mirror.arvancloud.ir/ubuntu"
+  cat >"${APT_SOURCES_DIR}/docker.sources" <<'SOURCES'
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: noble
+Components: stable
+Signed-By: /etc/apt/keyrings/docker.asc
+SOURCES
+  local inventory_codename="$CODENAME"
+  CODENAME=""
+  REPORT_CODENAME="noble"
+  _collect_source_inventory
+  assert_equal "5" "$APT_SOURCE_TOTAL" "APT inventory counts managed Ubuntu and Docker source records"
+  assert_equal "4" "$APT_SOURCE_UBUNTU" "APT inventory recognizes managed non-canonical Ubuntu mirror records during status checks"
+  assert_equal "1" "$APT_SOURCE_THIRD_PARTY" "APT inventory keeps Docker records classified as third-party"
+  CODENAME="$inventory_codename"
+  rm -f "${APT_SOURCES_DIR}/docker.sources" "$APT_DEB822_FILE"
 
   NO_SPINNER=true
   _start_spinner "test"

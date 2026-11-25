@@ -5,7 +5,7 @@
 # Author  : Matin Shahabadi
 # GitHub  : https://github.com/power0matin/linux-package-source-manager
 # License : MIT
-# Version : 3.0.9
+# Version : 3.0.10
 #
 # Usage:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
@@ -19,7 +19,7 @@ IFS=$'\n\t'
 # === Constants ================================================================
 
 readonly APP_NAME="Linux Package Source Manager"
-readonly APP_VERSION="3.0.9"
+readonly APP_VERSION="3.0.10"
 readonly APP_SLUG="power-apt-boost"
 readonly APP_AUTHOR="Matin Shahabadi"
 readonly APP_GITHUB="https://github.com/power0matin/linux-package-source-manager"
@@ -1468,19 +1468,37 @@ _apt_source_records() {
   fi
 }
 
+_is_managed_ubuntu_source_record() {
+  local file="$1" uri="$2" suite="$3" managed_mirror="$4"
+  local codename="${CODENAME:-${REPORT_CODENAME:-}}"
+  [[ "$file" == "$APT_DEB822_FILE" && -n "$managed_mirror" && "$uri" == "$managed_mirror" && -n "$codename" ]] || return 1
+  case "$suite" in
+  "$codename" | "$codename-updates" | "$codename-backports" | "$codename-security") return 0 ;;
+  *) return 1 ;;
+  esac
+}
+
 _collect_source_inventory() {
-  local file uri suite key
+  local file uri suite key managed_mirror=""
   local -A seen=()
   APT_SOURCE_TOTAL=0
   APT_SOURCE_UBUNTU=0
   APT_SOURCE_THIRD_PARTY=0
   APT_SOURCE_DUPLICATES=0
+
+  if [[ -r "$APT_DEB822_FILE" ]] && grep -q '^# Power APT Boost' "$APT_DEB822_FILE"; then
+    managed_mirror="$(sed -n 's/^# Mirror: //p' "$APT_DEB822_FILE" | head -1)"
+    if [[ -n "$managed_mirror" ]]; then
+      managed_mirror="$(_validate_mirror_url "$managed_mirror" 2>/dev/null || true)"
+    fi
+  fi
+
   for file in "$APT_SOURCES_FILE" "$APT_SOURCES_DIR"/*.list "$APT_SOURCES_DIR"/*.sources; do
     [[ -f "$file" ]] || continue
     while IFS='|' read -r uri suite; do
       [[ -n "$uri" && -n "$suite" ]] || continue
       ((APT_SOURCE_TOTAL += 1)) || true
-      if _is_official_ubuntu_uri "$uri"; then
+      if _is_official_ubuntu_uri "$uri" || _is_managed_ubuntu_source_record "$file" "$uri" "$suite" "$managed_mirror"; then
         ((APT_SOURCE_UBUNTU += 1)) || true
       else
         ((APT_SOURCE_THIRD_PARTY += 1)) || true
@@ -1518,17 +1536,34 @@ _validate_managed_apt_source_file() {
       }
       failed = 1
     }
-    function flush_stanza( key, value, expected_uri, expected_suites, field) {
+    function flush_stanza( key, value, expected_uri, expected_suites, field, archive_suites, combined_suites, security_suites) {
       if (!has_fields) {
         current = ""
         return
       }
 
       stanza++
-      expected_uri = (stanza == 1 ? archive_uri : security_uri)
-      expected_suites = (stanza == 1 ? codename " " codename "-updates " codename "-backports" : codename "-security")
+      archive_suites = codename " " codename "-updates " codename "-backports"
+      combined_suites = archive_suites " " codename "-security"
+      security_suites = codename "-security"
 
-      if (stanza > 2) reject("the managed file contains more than two stanzas")
+      if (stanza == 1) {
+        first_suites = normalize(values["suites"])
+        if (first_suites != archive_suites && first_suites != combined_suites) {
+          reject("the first stanza must contain the three archive suites, optionally with the security suite")
+        }
+        expected_uri = archive_uri
+        expected_suites = first_suites
+      } else if (stanza == 2) {
+        if (first_suites != archive_suites) reject("a separate security stanza requires the standard three-suite archive stanza")
+        expected_uri = security_uri
+        expected_suites = security_suites
+      } else {
+        reject("the managed file contains more than two stanzas")
+        expected_uri = archive_uri
+        expected_suites = ""
+      }
+
       if (normalize(values["types"]) != "deb") reject("each managed stanza must contain only Types: deb")
       if (normalize(values["uris"]) != expected_uri) reject("managed stanza URI does not match its recorded mirror")
       if (normalize(values["suites"]) != expected_suites) reject("managed stanza suites were changed")
@@ -1599,7 +1634,11 @@ _validate_managed_apt_source_file() {
     { reject("malformed Deb822 line") }
     END {
       flush_stanza()
-      if (stanza != 2) reject("expected exactly two Ubuntu archive stanzas")
+      expected_combined_suites = codename " " codename "-updates " codename "-backports " codename "-security"
+      if (stanza == 1 && first_suites != expected_combined_suites) {
+        reject("a single-stanza managed file must include all four Ubuntu suites")
+      }
+      if (stanza != 1 && stanza != 2) reject("expected one combined or two separate Ubuntu archive stanzas")
       exit failed
     }
   ' "$file"
@@ -1643,15 +1682,15 @@ _rewrite_managed_apt_source_file() {
       sub(/:.*/, "", key)
       if (tolower(key) == "uris") {
         uri_count++
-        if (uri_count == 1) print "URIs: " archive_uri
-        else if (uri_count == 2) print "URIs: " security_uri
+        if (stanza == 1) print "URIs: " archive_uri
+        else if (stanza == 2) print "URIs: " security_uri
         else exit 1
         next
       }
     }
     { print }
     END {
-      if (uri_count != 2) exit 1
+      if ((stanza != 1 && stanza != 2) || uri_count != stanza) exit 1
     }
   ' "$APT_DEB822_FILE" >"$stage"; then
     rm -f -- "$stage"
@@ -1708,7 +1747,7 @@ _write_apt_sources() {
         [[ -n "$existing_uri" && -n "$existing_suite" ]] || continue
         ((existing_count += 1))
         case "$existing_uri|$existing_suite" in
-        "$managed_mirror|$CODENAME" | "$managed_mirror|$CODENAME-updates" | "$managed_mirror|$CODENAME-backports" | "$security_url|$CODENAME-security") ;;
+        "$managed_mirror|$CODENAME" | "$managed_mirror|$CODENAME-updates" | "$managed_mirror|$CODENAME-backports" | "$managed_mirror|$CODENAME-security" | "$security_url|$CODENAME-security") ;;
         *)
           error "Managed Ubuntu source file contains an unexpected repository entry: $existing_uri ($existing_suite)."
           error "Move the extra repository to its own .sources file; no source file was changed."

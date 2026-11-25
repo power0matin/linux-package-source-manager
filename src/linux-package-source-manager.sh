@@ -5,7 +5,7 @@
 # Author  : Matin Shahabadi
 # GitHub  : https://github.com/power0matin/linux-package-source-manager
 # License : MIT
-# Version : 3.0.8
+# Version : 3.0.9
 #
 # Usage:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
@@ -19,7 +19,7 @@ IFS=$'\n\t'
 # === Constants ================================================================
 
 readonly APP_NAME="Linux Package Source Manager"
-readonly APP_VERSION="3.0.8"
+readonly APP_VERSION="3.0.9"
 readonly APP_SLUG="power-apt-boost"
 readonly APP_AUTHOR="Matin Shahabadi"
 readonly APP_GITHUB="https://github.com/power0matin/linux-package-source-manager"
@@ -1495,6 +1495,177 @@ _collect_source_inventory() {
   done
 }
 
+_validate_managed_apt_source_file() {
+  local file="$1" archive_uri="$2" security_uri="$3"
+  awk -v archive_uri="$archive_uri" -v security_uri="$security_uri" \
+    -v codename="$CODENAME" -v keyring="$KEYRING_PATH" '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+    function normalize(value) {
+      value = trim(value)
+      gsub(/[[:space:]]+/, " ", value)
+      return value
+    }
+    function valid_words(value) {
+      return value ~ /^[A-Za-z0-9][A-Za-z0-9+_.:-]*( [A-Za-z0-9][A-Za-z0-9+_.:-]*)*$/
+    }
+    function reject(reason) {
+      if (!failed) {
+        printf "  Deb822 validation: %s\n", reason > "/dev/stderr"
+      }
+      failed = 1
+    }
+    function flush_stanza( key, value, expected_uri, expected_suites, field) {
+      if (!has_fields) {
+        current = ""
+        return
+      }
+
+      stanza++
+      expected_uri = (stanza == 1 ? archive_uri : security_uri)
+      expected_suites = (stanza == 1 ? codename " " codename "-updates " codename "-backports" : codename "-security")
+
+      if (stanza > 2) reject("the managed file contains more than two stanzas")
+      if (normalize(values["types"]) != "deb") reject("each managed stanza must contain only Types: deb")
+      if (normalize(values["uris"]) != expected_uri) reject("managed stanza URI does not match its recorded mirror")
+      if (normalize(values["suites"]) != expected_suites) reject("managed stanza suites were changed")
+      if (normalize(values["components"]) != "main restricted universe multiverse") reject("managed stanza components were changed")
+      if (normalize(values["signed-by"]) != keyring) reject("managed stanza does not use the Ubuntu archive keyring")
+
+      for (field in values) {
+        value = normalize(values[field])
+        if (field == "types" || field == "uris" || field == "suites" || field == "components" || field == "signed-by") {
+          continue
+        }
+        if (field ~ /^(architectures|architectures-add|architectures-remove|languages|languages-add|languages-remove|targets)$/) {
+          if (!valid_words(value)) reject("invalid value for optional field " field)
+        } else if (field == "pdiffs") {
+          if (value != "yes" && value != "no") reject("invalid PDiffs value")
+        } else if (field == "by-hash") {
+          if (value != "yes" && value != "no" && value != "force") reject("invalid By-Hash value")
+        } else if (field == "check-valid-until") {
+          if (value != "yes") reject("Check-Valid-Until may not disable Release freshness checks")
+        } else if (field == "valid-until-min" || field == "valid-until-max" || field == "date-max-future") {
+          if (value !~ /^[0-9]+$/) reject("invalid numeric value for " field)
+        } else if (field == "no-support-for-architecture-all") {
+          if (value != "yes" && value != "no") reject("invalid No-Support-for-Architecture-all value")
+        } else {
+          reject("unsupported or security-sensitive field " field)
+        }
+      }
+
+      if (values["valid-until-min"] != "" && values["valid-until-max"] != "" &&
+          values["valid-until-min"] + 0 > values["valid-until-max"] + 0) {
+        reject("Valid-Until-Min exceeds Valid-Until-Max")
+      }
+
+      for (field in values) delete values[field]
+      for (field in seen) delete seen[field]
+      has_fields = 0
+      current = ""
+    }
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { flush_stanza(); next }
+    /^[^[:space:]][^:]*:/ {
+      has_fields = 1
+      key = $0
+      sub(/:.*/, "", key)
+      key = tolower(trim(key))
+      if (key !~ /^[a-z][a-z0-9-]*$/) {
+        reject("malformed field name")
+        current = ""
+        next
+      }
+      if (seen[key]++) reject("duplicate field " key)
+      value = $0
+      sub(/^[^:]*:/, "", value)
+      values[key] = trim(value)
+      current = key
+      next
+    }
+    /^[[:space:]]+/ {
+      if (current == "") {
+        reject("orphaned continuation line")
+      } else if (current == "uris") {
+        reject("folded URI fields are not supported")
+      } else {
+        values[current] = values[current] " " trim($0)
+      }
+      next
+    }
+    { reject("malformed Deb822 line") }
+    END {
+      flush_stanza()
+      if (stanza != 2) reject("expected exactly two Ubuntu archive stanzas")
+      exit failed
+    }
+  ' "$file"
+}
+
+_rewrite_managed_apt_source_file() {
+  local archive_uri="$1" security_uri="$2" architecture="$3"
+  local generated_at stage
+  generated_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  stage="$(mktemp "${APT_SOURCES_DIR}/.ubuntu.sources.rewrite.XXXXXX")" || {
+    error "Could not stage the managed Ubuntu source file."
+    return 1
+  }
+
+  if ! awk -v archive_uri="$archive_uri" -v security_uri="$security_uri" \
+    -v generated_at="$generated_at" -v architecture="$architecture" '
+    BEGIN { stanza = 0; in_stanza = 0; uri_count = 0 }
+    /^[[:space:]]*#/ {
+      if ($0 ~ /^# Generated:/) {
+        print "# Generated: " generated_at
+      } else if ($0 ~ /^# Mirror:/) {
+        print "# Mirror: " archive_uri
+      } else if ($0 ~ /^# Architecture:/) {
+        print "# Architecture: " architecture
+      } else {
+        print
+      }
+      next
+    }
+    /^[[:space:]]*$/ {
+      print
+      in_stanza = 0
+      next
+    }
+    /^[^[:space:]][^:]*:/ {
+      if (!in_stanza) {
+        stanza++
+        in_stanza = 1
+      }
+      key = $0
+      sub(/:.*/, "", key)
+      if (tolower(key) == "uris") {
+        uri_count++
+        if (uri_count == 1) print "URIs: " archive_uri
+        else if (uri_count == 2) print "URIs: " security_uri
+        else exit 1
+        next
+      }
+    }
+    { print }
+    END {
+      if (uri_count != 2) exit 1
+    }
+  ' "$APT_DEB822_FILE" >"$stage"; then
+    rm -f -- "$stage"
+    error "Could not safely rewrite the managed Ubuntu source file."
+    return 1
+  fi
+
+  if ! _atomic_write "$APT_DEB822_FILE" 0644 <"$stage"; then
+    rm -f -- "$stage"
+    return 1
+  fi
+  rm -f -- "$stage"
+}
+
 _write_apt_sources() {
   local mirror_url="$1"
   local has_third_party=false security_url managed_mirror="" existing_uri existing_suite existing_count=0
@@ -1524,18 +1695,20 @@ _write_apt_sources() {
     error "Refusing to replace a symlinked APT source file: $APT_DEB822_FILE."
     return 1
   fi
+  local managed_source=false
   if [[ -f "$APT_DEB822_FILE" ]]; then
     if grep -q '^# Power APT Boost' "$APT_DEB822_FILE"; then
+      managed_source=true
       managed_mirror="$(sed -n 's/^# Mirror: //p' "$APT_DEB822_FILE" | head -1)"
-      if [[ -z "$managed_mirror" ]]; then
-        error "Managed Ubuntu source file has no recorded mirror URL; refusing to replace it."
+      if [[ -z "$managed_mirror" ]] || ! managed_mirror="$(_validate_mirror_url "$managed_mirror")"; then
+        error "Managed Ubuntu source file has no valid recorded mirror URL; refusing to replace it."
         return 1
       fi
       while IFS='|' read -r existing_uri existing_suite; do
         [[ -n "$existing_uri" && -n "$existing_suite" ]] || continue
         ((existing_count += 1))
         case "$existing_uri|$existing_suite" in
-        "$managed_mirror|$CODENAME" | "$managed_mirror|$CODENAME-updates" | "$managed_mirror|$CODENAME-backports" | "$managed_mirror|$CODENAME-security" | "$security_url|$CODENAME-security") ;;
+        "$managed_mirror|$CODENAME" | "$managed_mirror|$CODENAME-updates" | "$managed_mirror|$CODENAME-backports" | "$security_url|$CODENAME-security") ;;
         *)
           error "Managed Ubuntu source file contains an unexpected repository entry: $existing_uri ($existing_suite)."
           error "Move the extra repository to its own .sources file; no source file was changed."
@@ -1547,20 +1720,8 @@ _write_apt_sources() {
         error "Managed Ubuntu source file has an unexpected number of active URI/suite entries; refusing to replace it."
         return 1
       fi
-      local field_count
-      field_count="$(grep -Ec '^[A-Za-z][A-Za-z0-9-]*:' "$APT_DEB822_FILE" || true)"
-      if [[ "$field_count" != 10 ]] ||
-        [[ "$(grep -c '^Types: deb$' "$APT_DEB822_FILE" || true)" != 2 ]] ||
-        [[ "$(grep -c '^URIs:' "$APT_DEB822_FILE" || true)" != 2 ]] ||
-        [[ "$(grep -c '^Suites:' "$APT_DEB822_FILE" || true)" != 2 ]] ||
-        [[ "$(grep -c '^Components: main restricted universe multiverse$' "$APT_DEB822_FILE" || true)" != 2 ]] ||
-        [[ "$(grep -c "^Signed-By: $KEYRING_PATH$" "$APT_DEB822_FILE" || true)" != 2 ]]; then
-        error "Managed Ubuntu source file contains unexpected fields or options; refusing to overwrite it."
-        return 1
-      fi
-      if ! grep -Fxq "Suites: $CODENAME $CODENAME-updates $CODENAME-backports" "$APT_DEB822_FILE" ||
-        ! grep -Fxq "Suites: $CODENAME-security" "$APT_DEB822_FILE"; then
-        error "Managed Ubuntu source file suite configuration was changed; refusing to overwrite it."
+      if ! _validate_managed_apt_source_file "$APT_DEB822_FILE" "$managed_mirror" "$security_url"; then
+        error "Managed Ubuntu source file contains unsupported, duplicated or unsafe Deb822 fields; refusing to overwrite it."
         return 1
       fi
     else
@@ -1599,7 +1760,12 @@ _write_apt_sources() {
     fi
   fi
 
-  if ! _atomic_write "$APT_DEB822_FILE" 0644 <<SOURCES; then
+  if [[ "$managed_source" == true ]]; then
+    if ! _rewrite_managed_apt_source_file "$mirror_url" "$security_url" "$(_apt_architecture)"; then
+      return 1
+    fi
+  else
+    if ! _atomic_write "$APT_DEB822_FILE" 0644 <<SOURCES; then
 # Power APT Boost — Ubuntu mirror configuration
 # Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 # Mirror: $mirror_url
@@ -1617,7 +1783,8 @@ Suites: $CODENAME-security
 Components: main restricted universe multiverse
 Signed-By: $KEYRING_PATH
 SOURCES
-    return 1
+      return 1
+    fi
   fi
 
   if [[ -f "$APT_SOURCES_FILE" ]]; then

@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.9] — 2026-11-25
+
+### Fixed
+
+- Replaced brittle exact Deb822 field-count checks with structure-aware validation of the two tool-managed Ubuntu archive stanzas.
+- Preserved supported, non-security-sensitive Deb822 options and existing comments when changing the selected mirror, instead of regenerating the managed file and dropping local settings.
+- Continued to reject third-party entries, duplicate or malformed fields, unknown options, signature-bypass settings and disabled Release freshness checks before any source file is changed.
+
+### Tests
+
+- Added regression coverage for optional architecture/language fields, comment preservation, URI updates, unsupported fields and signature/freshness downgrade attempts.
+- Verified rejected configurations remain byte-for-byte unchanged.
+
 ## [3.0.8] — 2026-11-22
 
 ### Fixed
@@ -308,7 +321,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added cache cleanup
 - Added branded banner
 
-[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.5...HEAD
+[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.9...HEAD
+[3.0.9]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.8...v3.0.9
+[3.0.8]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.7...v3.0.8
+[3.0.7]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.6...v3.0.7
+[3.0.6]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.5...v3.0.6
 [3.0.5]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.4...v3.0.5
 [3.0.4]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.3...v3.0.4
 [3.0.3]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.2...v3.0.3

@@ -133,7 +133,7 @@ test_cli() {
   assert_contains "--restore" "$output" "help displays restore option"
 
   output="$(bash "$SCRIPT" --version 2>&1)"
-  assert_contains "3.0.8" "$output" "version matches script version"
+  assert_contains "3.0.9" "$output" "version matches script version"
   menu_source="$(sed -n '/^_menu_manage_mirrors() {/,/^main() {/p' "$SCRIPT")"
   if grep -Eq '"back"[[:space:]]+"(Back|Cancel|Back to main menu)"|"quit"[[:space:]]+"Exit"|^[[:space:]]*(back|quit)\)' <<<"$menu_source"; then
     assert_equal "no duplicate navigation" "duplicate navigation" "interactive menus do not define separate Back or Exit actions"
@@ -549,6 +549,38 @@ ATOMIC
   assert_file_contains "$APT_SOURCES_FILE" "signed-by=/usr/share/keyrings/example.gpg" "legacy Ubuntu source options are preserved"
   rm -f "$APT_SOURCES_FILE"
 
+  write_managed_source_fixture "https://old.example/ubuntu"
+  sed -i '/^Signed-By:/a Architectures: amd64' "$APT_DEB822_FILE"
+  sed -i '/^Components:/a Languages: none' "$APT_DEB822_FILE"
+  printf '# Local comment that must survive a mirror switch\n' >>"$APT_DEB822_FILE"
+  local optional_status=0
+  _write_apt_sources "https://new.example/ubuntu" >/dev/null 2>&1 || optional_status=$?
+  assert_exit_code 0 "$optional_status" "managed Deb822 accepts safe optional fields"
+  assert_file_contains "$APT_DEB822_FILE" 'Architectures: amd64' "managed Deb822 preserves Architectures"
+  assert_file_contains "$APT_DEB822_FILE" 'Languages: none' "managed Deb822 preserves Languages"
+  assert_file_contains "$APT_DEB822_FILE" '# Local comment that must survive a mirror switch' "managed Deb822 preserves user comments"
+  assert_file_contains "$APT_DEB822_FILE" '# Mirror: https://new.example/ubuntu' "managed Deb822 updates its recorded mirror"
+  assert_equal "1" "$(grep -c '^URIs: https://new.example/ubuntu$' "$APT_DEB822_FILE")" "managed Deb822 updates archive URI only"
+  assert_file_contains "$APT_DEB822_FILE" 'URIs: https://security.ubuntu.com/ubuntu' "managed Deb822 preserves security archive URI"
+
+  write_managed_source_fixture "https://old.example/ubuntu"
+  sed -i '/^Signed-By:/a Trusted: yes' "$APT_DEB822_FILE"
+  local trusted_before trusted_after trusted_status=0
+  trusted_before="$(sha256sum "$APT_DEB822_FILE")"
+  _write_apt_sources "https://new.example/ubuntu" >/dev/null 2>&1 || trusted_status=$?
+  trusted_after="$(sha256sum "$APT_DEB822_FILE")"
+  assert_exit_code 1 "$trusted_status" "managed Deb822 rejects Trusted"
+  assert_equal "$trusted_before" "$trusted_after" "Trusted rejection preserves source file"
+
+  write_managed_source_fixture "https://old.example/ubuntu"
+  sed -i '/^Signed-By:/a Check-Valid-Until: no' "$APT_DEB822_FILE"
+  local freshness_before freshness_after freshness_status=0
+  freshness_before="$(sha256sum "$APT_DEB822_FILE")"
+  _write_apt_sources "https://new.example/ubuntu" >/dev/null 2>&1 || freshness_status=$?
+  freshness_after="$(sha256sum "$APT_DEB822_FILE")"
+  assert_exit_code 1 "$freshness_status" "managed Deb822 rejects disabled Release freshness"
+  assert_equal "$freshness_before" "$freshness_after" "freshness rejection preserves source file"
+
   printf '# Power APT Boost test fixture\n# Mirror: https://archive.ubuntu.com/ubuntu\nAcquire::Languages "none";\nAcquire::Custom::Option "keep";\n' >"$APT_CONF_FILE"
   local unmanaged_config_status=0
   _write_apt_config >/dev/null 2>&1 || unmanaged_config_status=$?
@@ -611,7 +643,7 @@ SOURCES
   printf 'cached-package\n' >"${_SYSTEM_ROOT}/var/cache/apt/archives/fixture.deb"
   printf 'deb https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
   write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
-  printf 'prior-source-config\n' >>"$APT_DEB822_FILE"
+  printf 'Architectures: amd64\n' >>"$APT_DEB822_FILE"
   write_managed_config_fixture
   printf '# prior-apt-config\n' >>"$APT_CONF_FILE"
   local cache_index_before cache_package_before
@@ -681,7 +713,7 @@ SOURCES
 
   printf 'deb https://archive.ubuntu.com/ubuntu noble main\n# write-rollback-sources-list\n' >"$APT_SOURCES_FILE"
   write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
-  printf 'write-rollback-source-config\n' >>"$APT_DEB822_FILE"
+  printf 'Architectures: amd64\n' >>"$APT_DEB822_FILE"
   write_managed_config_fixture
   printf '# write-rollback-apt-config\n' >>"$APT_CONF_FILE"
   local write_rollback_code=0
@@ -703,12 +735,12 @@ SOURCES
   ) || write_rollback_code=$?
   assert_exit_code 1 "$write_rollback_code" "APT config write failure returns general error"
   assert_file_contains "$APT_SOURCES_FILE" "write-rollback-sources-list" "APT write failure restores legacy sources.list"
-  assert_file_contains "$APT_DEB822_FILE" "write-rollback-source-config" "APT write failure restores deb822 source"
+  printf 'Architectures: amd64\n' >>"$APT_DEB822_FILE"
   assert_file_contains "$APT_CONF_FILE" "write-rollback-apt-config" "APT write failure restores previous apt config"
 
   printf 'deb https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
   write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
-  printf 'prior-source-config\n' >>"$APT_DEB822_FILE"
+  printf 'Architectures: arm64\n' >>"$APT_DEB822_FILE"
   write_managed_config_fixture
   printf '# prior-apt-config\n' >>"$APT_CONF_FILE"
   local rollback_code=0
@@ -728,7 +760,7 @@ SOURCES
   ) || rollback_code=$?
   assert_exit_code 3 "$rollback_code" "failed apt-get update returns network exit code after rollback"
   assert_file_contains "$APT_SOURCES_FILE" "archive.ubuntu.com" "failed update restores legacy sources.list"
-  assert_file_contains "$APT_DEB822_FILE" "prior-source-config" "failed update restores prior deb822 content"
+  assert_file_contains "$APT_DEB822_FILE" "Architectures: arm64" "failed update restores prior deb822 content"
   assert_file_contains "$APT_CONF_FILE" "prior-apt-config" "failed update restores prior apt config"
 
   local tampered_backup

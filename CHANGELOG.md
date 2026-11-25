@@ -15,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Tests
 
-- Added final-verification regression coverage for combined and split Deb822 layouts.
+- Added final-verification regression coverage for combined and split Deb822 layouts, including the architecture-specific Ubuntu Ports archive.
 - Confirmed final verification still rejects unexpected Ubuntu suites without changing the source file.
 
 ## [3.0.11] — 2026-11-25

@@ -5,7 +5,7 @@
 # Author  : Matin Shahabadi
 # GitHub  : https://github.com/power0matin/linux-package-source-manager
 # License : MIT
-# Version : 3.0.11
+# Version : 3.0.12
 #
 # Usage:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/power0matin/linux-package-source-manager/main/install.sh)
@@ -19,7 +19,7 @@ IFS=$'\n\t'
 # === Constants ================================================================
 
 readonly APP_NAME="Linux Package Source Manager"
-readonly APP_VERSION="3.0.11"
+readonly APP_VERSION="3.0.12"
 readonly APP_SLUG="power-apt-boost"
 readonly APP_AUTHOR="Matin Shahabadi"
 readonly APP_GITHUB="https://github.com/power0matin/linux-package-source-manager"
@@ -1890,11 +1890,12 @@ APTCONF
 }
 
 _verify_apt_configuration() {
+  local security_url="https://security.ubuntu.com/ubuntu"
   [[ -s "$APT_DEB822_FILE" && -f "$APT_CONF_FILE" ]] || return 1
-  grep -Fq "URIs: $SELECTED_MIRROR" "$APT_DEB822_FILE" || return 1
-  grep -Fq "Suites: $CODENAME $CODENAME-updates $CODENAME-backports" "$APT_DEB822_FILE" || return 1
-  grep -Fq "Suites: $CODENAME-security" "$APT_DEB822_FILE" || return 1
-  grep -Fq "Signed-By: $KEYRING_PATH" "$APT_DEB822_FILE" || return 1
+  if _uses_ports_archive; then
+    security_url="$SELECTED_MIRROR"
+  fi
+  _validate_managed_apt_source_file "$APT_DEB822_FILE" "$SELECTED_MIRROR" "$security_url" || return 1
   grep -Fq "Acquire::Retries \"$APT_RETRIES\";" "$APT_CONF_FILE" || return 1
   apt-get \
     -o "Dir::Etc::sourcelist=$APT_SOURCES_FILE" \

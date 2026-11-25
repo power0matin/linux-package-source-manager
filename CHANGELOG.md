@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.0.12] — 2026-11-25
+
+### Fixed
+
+- Validate the managed Ubuntu Deb822 source structure during final APT pre-update verification instead of requiring a separate security-suite stanza.
+- Support both the combined single-stanza four-suite layout and the canonical two-stanza archive/security layout, including the architecture-specific Ubuntu Ports layout.
+
+### Tests
+
+- Added final-verification regression coverage for combined and split Deb822 layouts.
+- Confirmed final verification still rejects unexpected Ubuntu suites without changing the source file.
+
 ## [3.0.11] — 2026-11-25
 
 ### Fixed
@@ -343,9 +355,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Added cache cleanup
 - Added branded banner
 
-[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.11...HEAD
+[Unreleased]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.12...HEAD
 [3.0.10]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.9...v3.0.10
 [3.0.11]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.10...v3.0.11
+[3.0.12]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.11...v3.0.12
 [3.0.9]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.8...v3.0.9
 [3.0.8]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.7...v3.0.8
 [3.0.7]: https://github.com/power0matin/linux-package-source-manager/compare/v3.0.6...v3.0.7

@@ -643,7 +643,7 @@ SOURCES
   printf 'cached-package\n' >"${_SYSTEM_ROOT}/var/cache/apt/archives/fixture.deb"
   printf 'deb https://archive.ubuntu.com/ubuntu noble main\n' >"$APT_SOURCES_FILE"
   write_managed_source_fixture "https://archive.ubuntu.com/ubuntu"
-  printf 'prior-source-config\n' >>"$APT_DEB822_FILE"
+  printf 'Architectures: amd64\n' >>"$APT_DEB822_FILE"
   write_managed_config_fixture
   printf '# prior-apt-config\n' >>"$APT_CONF_FILE"
   local cache_index_before cache_package_before
